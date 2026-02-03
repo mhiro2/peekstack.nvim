@@ -1,0 +1,384 @@
+*peekstack.txt*   Exploration-first peek stack
+
+peekstack.nvim
+
+==============================================================================
+INTRODUCTION                                                *peekstack*
+
+peekstack.nvim provides a peek stack UI for LSP, diagnostics, files, marks,
+and grep results. Pop open floating windows that stack visually, navigate
+between them, promote to splits, and optionally persist sessions.
+
+Requires Neovim >= 0.10.
+
+==============================================================================
+SETUP                                                      *peekstack-setup*
+
+Call `setup()` in your Neovim configuration to enable the plugin:
+>lua
+  require("peekstack").setup()
+<
+With options:
+>lua
+  require("peekstack").setup({
+    ui = {
+      layout = {
+        style = "stack",               -- "stack" | "cascade" | "single"
+        offset = { row = 1, col = 4 }, -- Cascade offset per popup
+        shrink = { w = 4, h = 2 },     -- Shrink per cascade level
+        min_size = { w = 60, h = 12 }, -- Minimum popup dimensions
+        max_ratio = 0.65,              -- Max ratio of editor size
+        zindex_base = 50,              -- Base z-index for popups
+      },
+      title = {
+        enabled = true,
+        format = "{provider} · {path}:{line}{context}",
+        breadcrumbs = true,
+        context = {
+          enabled = false,
+          max_depth = 5,
+          separator = " • ",
+          node_types = {},
+        },
+      },
+      path = {
+        base = "repo", -- "repo" | "cwd" | "absolute"
+        max_width = 80,
+      },
+      inline_preview = {
+        enabled = true,
+        max_lines = 10,
+        hl_group = "PeekstackInlinePreview",
+        close_events = { "CursorMoved", "InsertEnter", "BufLeave", "WinLeave" },
+      },
+      quick_peek = {
+        close_events = { "CursorMoved", "InsertEnter", "BufLeave", "WinLeave" },
+      },
+      popup = {
+        editable = false,              -- Allow editing popup scratch buffers
+        buffer_mode = "copy",          -- "copy" | "source"
+        source = {
+          prevent_auto_close_if_modified = true,
+          confirm_on_close = true,
+        },
+        history = {
+          max_items = 50,
+          restore_position = "top",    -- "top" | "original"
+        },
+        auto_close = {
+          enabled = false,
+          idle_ms = 300000,
+          check_interval_ms = 60000,
+          ignore_pinned = true,
+        },
+      },
+      feedback = {
+        highlight_origin_on_close = true,
+      },
+      promote = {
+        close_popup = true,  -- Close popup after promote
+      },
+      keys = {
+        close = "q",
+        focus_next = "<C-j>",
+        focus_prev = "<C-k>",
+        promote_split = "<C-x>",
+        promote_vsplit = "<C-v>",
+        promote_tab = "<C-t>",
+        toggle_stack_view = "<leader>os",
+      },
+    },
+    picker = {
+      backend = "builtin",  -- "builtin" | "telescope" | "fzf-lua" | "snacks"
+      builtin = {
+        preview_lines = 1,
+      },
+    },
+    providers = {
+      lsp = { enable = true },
+      diagnostics = { enable = true },
+      file = { enable = true },
+      marks = {
+        enable = false,
+        scope = "all", -- "buffer" | "global" | "all"
+        include = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        include_special = false,
+      },
+    },
+    persist = {
+      enabled = false,
+      max_items = 200,
+      session = {
+        default_name = "default",
+        prompt_if_missing = true,
+      },
+      auto = {
+        enabled = false,
+        session_name = "auto",
+        restore = true,
+        save = true,
+        restore_if_empty = true,
+        debounce_ms = 1000,
+        save_on_leave = true,
+      },
+    },
+  })
+<
+
+==============================================================================
+PICKER                                                     *peekstack-picker*
+
+Peekstack opens a picker when multiple locations are returned (e.g. references).
+Configure the backend with `picker.backend`:
+    builtin   (default)
+    telescope (requires nvim-telescope/telescope.nvim)
+    fzf-lua   (requires ibhagwan/fzf-lua)
+    snacks    (requires folke/snacks.nvim)
+
+>lua
+  require("peekstack").setup({
+    picker = { backend = "telescope" },
+  })
+<
+
+If the chosen plugin is not installed, a warning is shown and the picker will not open.
+
+==============================================================================
+COMMANDS                                                   *peekstack-cmds*
+
+Commands are registered after `setup()` is called.
+
+:PeekstackStack                              *:PeekstackStack*
+    Open the stack view panel listing all active popups.
+
+:PeekstackSaveSession                        *:PeekstackSaveSession*
+    Save the current popup stack to disk (requires persist.enabled = true).
+
+:PeekstackRestoreSession                     *:PeekstackRestoreSession*
+    Restore a previously saved session from disk.
+
+:PeekstackListSessions                       *:PeekstackListSessions*
+    List all saved sessions. Select one to view its summary.
+
+:PeekstackDeleteSession {name}               *:PeekstackDeleteSession*
+    Delete a saved session by name. Prompts for confirmation.
+
+:PeekstackRestorePopup                        *:PeekstackRestorePopup*
+    Restore the last closed popup from history (undo close).
+
+:PeekstackRestoreAllPopups                    *:PeekstackRestoreAllPopups*
+    Restore all closed popups from history.
+
+:PeekstackCloseAll                            *:PeekstackCloseAll*
+    Close all popups in the current stack.
+
+:PeekstackHistory                             *:PeekstackHistory*
+    Show popup history and select an entry to restore.
+
+:PeekstackQuickPeek                           *:PeekstackQuickPeek*
+    Quick peek without adding to the stack. Takes an optional provider name
+    (default: "lsp.definition"). Any registered provider can be used.
+
+==============================================================================
+PROVIDERS                                                 *peekstack-providers*
+
+Built-in providers are enabled via `providers.*.enable` in setup
+(grep is always available; requires rg).
+
+LSP:
+    lsp.definition
+    lsp.implementation
+    lsp.references
+    lsp.type_definition
+    lsp.declaration
+
+Diagnostics:
+    diagnostics.under_cursor   diagnostics at the cursor line (message shown above the preview)
+    diagnostics.in_buffer      all diagnostics in the current buffer
+
+File:
+    file.under_cursor          file path under cursor
+
+Grep (requires rg):
+    grep.search                prompts for a ripgrep query
+
+Marks (requires providers.marks.enable = true):
+    marks.buffer               buffer-local marks
+    marks.global               global marks
+    marks.all                  buffer + global marks
+    Filter with providers.marks.include / include_special.
+    Scope is selected by the provider name.
+
+==============================================================================
+API                                                       *peekstack-api*
+
+The main module exposes the following API:
+
+`require("peekstack").setup(opts)`
+    Initialize the plugin with the given options.
+
+`require("peekstack").peek(provider, opts)`                   *peek()*
+    Peek by provider name. Example:
+>lua
+    require("peekstack").peek("lsp.definition")
+<
+    opts.mode can be:
+    - "inline": show an inline preview without stacking
+    - "quick": temporary popup that does not join the stack
+
+`require("peekstack").peek.definition(opts)`
+`require("peekstack").peek.implementation(opts)`
+`require("peekstack").peek.references(opts)`
+`require("peekstack").peek.type_definition(opts)`
+`require("peekstack").peek.declaration(opts)`
+`require("peekstack").peek.diagnostics_cursor(opts)`
+`require("peekstack").peek.diagnostics_buffer(opts)`
+`require("peekstack").peek.file_under_cursor(opts)`
+`require("peekstack").peek.grep(opts)`
+`require("peekstack").peek.marks_buffer(opts)`
+`require("peekstack").peek.marks_global(opts)`
+`require("peekstack").peek.marks_all(opts)`
+    Convenience shortcuts for built-in providers.
+
+Built-in provider names:
+    lsp.definition
+    lsp.implementation
+    lsp.references
+    lsp.type_definition
+    lsp.declaration
+    diagnostics.under_cursor
+    diagnostics.in_buffer
+    file.under_cursor
+    grep.search
+    marks.buffer
+    marks.global
+    marks.all
+    (marks require their provider enabled; grep.search requires rg)
+
+`require("peekstack").peek_location(loc, opts)`
+    Peek a single normalized location.
+
+`require("peekstack").peek_locations(locations, opts)`
+    Peek multiple locations (uses picker if more than one).
+
+`require("peekstack").register_provider(name, fn)`
+    Register a custom location provider.
+>lua
+    require("peekstack").register_provider("my.provider", function(cb)
+      cb({ { uri = "file:///path", range = { ... } } })
+    end)
+<
+
+`require("peekstack").register_picker(name, mod)`
+    Register a custom picker backend.
+    The module must implement `pick(locations, opts, cb)` and call `cb` with the
+    chosen location (or nil to cancel).
+
+`require("peekstack").stack`
+    Proxy to the stack module. Key functions:
+    - `.push(location, opts)` - Push a popup onto the stack
+    - `.close(id, winid)` - Close a popup by id
+    - `.close_all(winid)` - Close all popups in a stack
+    - `.focus_next()` / `.focus_prev()` - Navigate popups
+    - `.list(winid)` - List all popups in a stack
+
+`require("peekstack").persist`
+    Proxy to the persist module:
+    - `.save_current()` - Save the current session
+    - `.restore()` - Restore a saved session
+    - `.list_sessions()` - List saved sessions
+    - `.delete_session(name)` - Delete a session
+    - `.rename_session(from, to)` - Rename a session
+
+==============================================================================
+PERSIST                                                   *peekstack-persist*
+
+Persistence is disabled by default. Enable with `persist.enabled = true`.
+
+Persistence scope is fixed to the current git repository ("repo").
+
+`persist.session.default_name` is used when a name is omitted, unless
+`persist.session.prompt_if_missing` is true.
+
+Auto persistence (`persist.auto`) requires `persist.enabled = true`:
+    enabled            enable auto save/restore
+    session_name       session name for auto mode (default: "auto")
+    restore            restore on VimEnter / DirChanged
+    restore_if_empty   only restore when the stack is empty
+    save               save on PeekstackPush/Close/RestorePopup (debounced)
+    debounce_ms        debounce time for auto save
+    save_on_leave      save on VimLeavePre
+
+Auto persistence runs only inside a git repository and uses scope "repo".
+
+==============================================================================
+BUFFER MODES                                           *peekstack-buffer-modes*
+
+`ui.popup.buffer_mode` controls how popup buffers are created:
+
+    "copy"   (default) scratch buffer with copied lines
+             editing is controlled by `ui.popup.editable`
+
+    "source" use the real source buffer (useful for editing)
+             `ui.popup.source.confirm_on_close` prompts on close if modified
+             `ui.popup.source.prevent_auto_close_if_modified` blocks auto-close
+
+==============================================================================
+EVENTS                                                   *peekstack-events*
+
+peekstack emits `User` autocmds for integration.
+
+Popup events:
+    PeekstackPush
+    PeekstackClose
+    PeekstackFocus
+    PeekstackHistoryPush
+    PeekstackRestorePopup
+    PeekstackPromote
+
+Persist events:
+    PeekstackSave
+    PeekstackRestore
+    PeekstackDeleteSession
+    PeekstackRenameSession
+
+Event data keys (vary per event):
+    event, popup_id, winid, bufnr, root_winid, provider, location
+    session, item_count, from, to, action, ephemeral
+
+==============================================================================
+KEYMAPS                                                *peekstack-keymaps*
+
+Default keymaps inside popup windows:
+
+    `q`           Close the current popup
+    `<C-j>`       Focus the next popup in the stack
+    `<C-k>`       Focus the previous popup in the stack
+    `<C-x>`       Promote to horizontal split
+    `<C-v>`       Promote to vertical split
+    `<C-t>`       Promote to new tab
+    `<leader>os`  Toggle the stack view panel
+
+Stack view keymaps:
+
+    `<CR>`        Focus the selected popup
+    `dd`          Close the selected popup
+    `u`           Undo close (restore last closed popup)
+    `U`           Restore all closed popups
+    `H`           Show history list (select to restore)
+    `r`           Rename the selected popup
+    `p`           Toggle pin (skip auto-close)
+    `/`           Filter the list
+    `J/K`         Move the selected item down/up
+    `?`           Toggle help
+    `q`           Close the stack view
+
+==============================================================================
+HEALTH                                                   *peekstack-health*
+
+Run `:checkhealth peekstack` to verify requirements:
+- Neovim >= 0.10
+- `rg` executable (optional, for grep.search)
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:
