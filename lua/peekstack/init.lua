@@ -16,6 +16,8 @@ local function set_hl()
   vim.api.nvim_set_hl(0, "PeekstackStackViewProvider", { default = true, link = "Type" })
   vim.api.nvim_set_hl(0, "PeekstackStackViewPath", { default = true, link = "Directory" })
   vim.api.nvim_set_hl(0, "PeekstackStackViewFilter", { default = true, link = "Search" })
+  vim.api.nvim_set_hl(0, "PeekstackStackViewHeader", { default = true, link = "Title" })
+  vim.api.nvim_set_hl(0, "PeekstackStackViewEmpty", { default = true, link = "Comment" })
   vim.api.nvim_set_hl(0, "PeekstackInlinePreview", { default = true, link = "Comment" })
 end
 

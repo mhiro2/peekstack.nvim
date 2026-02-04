@@ -68,6 +68,34 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(joined:find("No matches", 1, true) ~= nil)
   end)
 
+  it("renders header when filter is not set", function()
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
+      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
+    }
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    assert.is_true(lines[1]:find("Stack: 2", 1, true) ~= nil)
+  end)
+
+  it("renders empty state with header", function()
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    local joined = table.concat(lines, "\n")
+
+    assert.is_true(joined:find("Stack: 0", 1, true) ~= nil)
+    assert.is_true(joined:find("No stack entries", 1, true) ~= nil)
+  end)
+
   it("has U keymap bound in stack view buffer", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)

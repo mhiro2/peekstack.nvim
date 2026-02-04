@@ -212,15 +212,22 @@ local function render(s)
     end
   end
 
+  local header = nil
+  local header_hl = nil
   if s.filter and s.filter ~= "" then
-    local header = string.format("Filter: %s (%d/%d)", s.filter, #visible, #items)
-    table.insert(lines, header)
-    table.insert(highlights, { { col_start = 0, col_end = #header, hl_group = "PeekstackStackViewFilter" } })
-    s.header_lines = 1
-    if #visible == 0 then
-      table.insert(lines, "No matches")
-      table.insert(highlights, {})
-    end
+    header = string.format("Filter: %s (%d/%d)", s.filter, #visible, #items)
+    header_hl = "PeekstackStackViewFilter"
+  else
+    header = string.format("Stack: %d", #visible)
+    header_hl = "PeekstackStackViewHeader"
+  end
+  table.insert(lines, header)
+  table.insert(highlights, { { col_start = 0, col_end = #header, hl_group = header_hl } })
+  s.header_lines = 1
+  if #visible == 0 then
+    local empty = s.filter and s.filter ~= "" and "No matches" or "No stack entries"
+    table.insert(lines, empty)
+    table.insert(highlights, { { col_start = 0, col_end = #empty, hl_group = "PeekstackStackViewEmpty" } })
   end
 
   for idx, popup in ipairs(visible) do
@@ -269,10 +276,6 @@ local function render(s)
 
     s.line_to_id[idx + s.header_lines] = popup.id
   end
-  if #lines == 0 then
-    table.insert(lines, "No stack entries")
-    table.insert(highlights, {})
-  end
 
   vim.bo[s.bufnr].modifiable = true
   vim.api.nvim_buf_set_lines(s.bufnr, 0, -1, false, lines)
@@ -285,6 +288,13 @@ local function render(s)
         end_col = hl.col_end,
         hl_group = hl.hl_group,
       })
+    end
+  end
+
+  if s.winid and vim.api.nvim_win_is_valid(s.winid) and #visible > 0 then
+    local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
+    if cursor <= s.header_lines then
+      vim.api.nvim_win_set_cursor(s.winid, { s.header_lines + 1, 0 })
     end
   end
 end
