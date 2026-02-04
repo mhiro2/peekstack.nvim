@@ -20,6 +20,12 @@ local function set_hl()
   vim.api.nvim_set_hl(0, "PeekstackStackViewEmpty", { default = true, link = "Comment" })
   vim.api.nvim_set_hl(0, "PeekstackStackViewCursorLine", { default = true, link = "CursorLine" })
   vim.api.nvim_set_hl(0, "PeekstackInlinePreview", { default = true, link = "Comment" })
+  vim.api.nvim_set_hl(0, "PeekstackTitleProvider", { default = true, link = "Type" })
+  vim.api.nvim_set_hl(0, "PeekstackTitlePath", { default = true, link = "Directory" })
+  vim.api.nvim_set_hl(0, "PeekstackTitleKindError", { default = true, link = "DiagnosticError" })
+  vim.api.nvim_set_hl(0, "PeekstackTitleKindWarn", { default = true, link = "DiagnosticWarn" })
+  vim.api.nvim_set_hl(0, "PeekstackTitleKindInfo", { default = true, link = "DiagnosticInfo" })
+  vim.api.nvim_set_hl(0, "PeekstackTitleKindHint", { default = true, link = "DiagnosticHint" })
 end
 
 ---@param name string

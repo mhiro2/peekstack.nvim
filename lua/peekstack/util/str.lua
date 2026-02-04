@@ -44,20 +44,6 @@ function M.shorten_path(path)
 end
 
 ---@param path? string
----@return string
-function M.breadcrumb_path(path)
-  if not path or path == "" then
-    return ""
-  end
-  local normalized = path:gsub("\\", "/")
-  local parts = vim.split(normalized, "/", { plain = true, trimempty = true })
-  if #parts == 0 then
-    return ""
-  end
-  return table.concat(parts, " > ")
-end
-
----@param path? string
 ---@param base? "repo"|"cwd"|"absolute"
 ---@return string
 function M.relative_path(path, base)
@@ -108,18 +94,6 @@ function M.truncate_middle(text, max_width)
   local left_text = vim.fn.strcharpart(text, 0, left)
   local right_text = vim.fn.strcharpart(text, math.max(total_chars - right, 0), right)
   return left_text .. ellipsis .. right_text
-end
-
----@param fmt? string
----@param data table<string, any>
----@return string
-function M.format_title(fmt, data)
-  if not fmt then
-    return ""
-  end
-  return (fmt:gsub("{(.-)}", function(key)
-    return tostring(data[key] or "")
-  end))
 end
 
 return M

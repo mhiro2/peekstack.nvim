@@ -77,7 +77,7 @@ describe("peekstack.ui.diagnostics", function()
   end)
 
   it("truncates diagnostic title path with max_width", function()
-    config.setup({ ui = { path = { max_width = 10 }, title = { breadcrumbs = true } } })
+    config.setup({ ui = { path = { max_width = 10 } } })
     local tmpdir = string.format("%s/peekstack-title-%d", vim.uv.os_tmpdir(), vim.uv.hrtime())
     local nested = tmpdir .. "/very/long/path/segment"
     assert(vim.uv.fs_mkdir(tmpdir, 448))

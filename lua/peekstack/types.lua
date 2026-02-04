@@ -83,6 +83,10 @@
 ---@field separator string
 ---@field node_types table<string, string[]>
 
+---@class PeekstackTitleChunk
+---@field [1] string
+---@field [2]? string
+
 ---@class PeekstackStoreData
 ---@field version integer
 ---@field sessions table<string, PeekstackSession>
@@ -142,7 +146,6 @@
 ---@class PeekstackConfigTitle
 ---@field enabled boolean
 ---@field format string
----@field breadcrumbs boolean
 ---@field context PeekstackConfigTitleContext
 
 ---@class PeekstackConfigPath

@@ -100,7 +100,7 @@ local function capture_origin_from_win(winid)
 end
 
 ---@param location PeekstackLocation
----@param opts? { buffer_mode?: "copy"|"source", title?: string, editable?: boolean, ephemeral?: boolean, origin_winid?: integer }
+---@param opts? { buffer_mode?: "copy"|"source", title?: string|PeekstackTitleChunk[], editable?: boolean, ephemeral?: boolean, origin_winid?: integer }
 ---@return PeekstackPopupModel?
 function M.create(location, opts)
   opts = opts or {}
@@ -167,12 +167,27 @@ function M.create(location, opts)
     return nil
   end
 
-  local title = win_opts.title
+  local title = nil
+  local title_chunks = nil
+  if win_opts.title ~= nil then
+    if type(win_opts.title) == "table" then
+      title_chunks = win_opts.title
+    end
+    title = render.title_text(win_opts.title)
+    if title == "" then
+      title = nil
+      title_chunks = nil
+    end
+  end
   if opts.title and opts.title ~= "" then
-    title = opts.title
     win_opts.title = opts.title
     win_opts.title_pos = "center"
     pcall(vim.api.nvim_win_set_config, winid, win_opts)
+    title = render.title_text(opts.title)
+    title_chunks = nil
+    if title == "" then
+      title = nil
+    end
   end
   set_cursor(winid, location, line_offset)
 
@@ -194,6 +209,7 @@ function M.create(location, opts)
     origin_bufnr = origin.bufnr,
     origin_is_popup = origin_is_popup,
     title = title,
+    title_chunks = title_chunks,
     pinned = false,
     buffer_mode = buffer_mode,
     line_offset = line_offset,

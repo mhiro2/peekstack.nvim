@@ -1,10 +1,18 @@
 local config = require("peekstack.config")
 local location = require("peekstack.core.location")
+local render_mod = require("peekstack.ui.render")
 local str = require("peekstack.util.str")
 
 local M = {}
 
 local NS = vim.api.nvim_create_namespace("PeekstackStackView")
+
+---Map title highlight groups to their stack view equivalents
+---@type table<string, string>
+local TITLE_HL_TO_SV = {
+  PeekstackTitleProvider = "PeekstackStackViewProvider",
+  PeekstackTitlePath = "PeekstackStackViewPath",
+}
 
 ---@class PeekstackStackViewState
 ---@field bufnr integer?
@@ -238,11 +246,19 @@ local function render(s)
     if ui_path.max_width and ui_path.max_width > 0 then
       max_label_width = math.min(max_label_width, ui_path.max_width)
     end
-    local label = popup.title and str.truncate_middle(popup.title, max_label_width)
-      or location.display_text(popup.location, 0, {
+    local label
+    local label_chunks
+    if popup.title_chunks then
+      label_chunks = render_mod.truncate_chunks(popup.title_chunks, max_label_width)
+      label = render_mod.title_text(label_chunks)
+    elseif popup.title then
+      label = str.truncate_middle(popup.title, max_label_width)
+    else
+      label = location.display_text(popup.location, 0, {
         path_base = ui_path.base,
         max_width = max_label_width,
       })
+    end
     local line = prefix .. label
     table.insert(lines, line)
 
@@ -257,20 +273,21 @@ local function render(s)
         hl_group = "PeekstackStackViewPinned",
       })
     end
-    -- Provider highlight (if label contains " · ")
-    local label_start = #index_str + #pinned
-    local sep = label:find(" · ", 1, true)
-    if sep then
-      table.insert(line_hls, {
-        col_start = label_start,
-        col_end = label_start + sep - 1,
-        hl_group = "PeekstackStackViewProvider",
-      })
-      table.insert(line_hls, {
-        col_start = label_start + sep + 4,
-        col_end = #line,
-        hl_group = "PeekstackStackViewPath",
-      })
+    -- Label highlighting from structured title chunks
+    if label_chunks then
+      local pos = #index_str + #pinned
+      for _, chunk in ipairs(label_chunks) do
+        local text = chunk[1] or ""
+        local hl = chunk[2]
+        if hl and #text > 0 then
+          table.insert(line_hls, {
+            col_start = pos,
+            col_end = pos + #text,
+            hl_group = TITLE_HL_TO_SV[hl] or hl,
+          })
+        end
+        pos = pos + #text
+      end
     end
     table.insert(highlights, line_hls)
 

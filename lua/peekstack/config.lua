@@ -81,8 +81,7 @@ M.defaults = {
     },
     title = {
       enabled = true,
-      format = "{kind}{provider} · {path}:{line}{context}",
-      breadcrumbs = true,
+      format = "{kind}{provider} {path}:{line}{context}",
       context = {
         enabled = false,
         max_depth = 5,
