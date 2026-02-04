@@ -122,6 +122,30 @@ describe("peekstack.ui.stack_view", function()
     end)
   end)
 
+  it("creates distinct autoclose groups per tab", function()
+    local original_tab = vim.api.nvim_get_current_tabpage()
+
+    stack_view.open()
+    local state1 = stack_view._get_state()
+    assert.is_not_nil(state1.autoclose_group)
+
+    vim.api.nvim_cmd({ cmd = "tabnew" }, {})
+    stack_view.open()
+    local state2 = stack_view._get_state()
+    assert.is_not_nil(state2.autoclose_group)
+
+    assert.is_true(state1.autoclose_group ~= state2.autoclose_group)
+
+    stack_view.toggle()
+    vim.api.nvim_cmd({ cmd = "tabclose" }, {})
+    vim.api.nvim_set_current_tabpage(original_tab)
+
+    local state_back = stack_view._get_state()
+    if state_back.winid then
+      stack_view.toggle()
+    end
+  end)
+
   it("restores focus to stack view after undo close", function()
     local loc = helpers.make_location()
     local model = stack.push(loc)

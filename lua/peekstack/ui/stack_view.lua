@@ -16,6 +16,7 @@ local NS = vim.api.nvim_create_namespace("PeekstackStackView")
 ---@field help_bufnr integer?
 ---@field help_winid integer?
 ---@field help_augroup integer?
+---@field autoclose_group integer?
 ---@field autoclose_suspended integer
 
 ---@type table<integer, PeekstackStackViewState>
@@ -35,6 +36,7 @@ local function get_state()
       help_bufnr = nil,
       help_winid = nil,
       help_augroup = nil,
+      autoclose_group = nil,
       autoclose_suspended = 0,
     }
   end
@@ -609,7 +611,9 @@ function M.open()
   vim.bo[s.bufnr].filetype = "peekstack-stack"
 
   -- Auto-close when focus leaves the stack view window
-  local au_group = vim.api.nvim_create_augroup("PeekstackStackViewAutoClose", { clear = true })
+  local group_name = string.format("PeekstackStackViewAutoClose:%d", s.bufnr)
+  local au_group = vim.api.nvim_create_augroup(group_name, { clear = true })
+  s.autoclose_group = au_group
   vim.api.nvim_create_autocmd("WinLeave", {
     group = au_group,
     buffer = s.bufnr,
@@ -625,7 +629,10 @@ function M.open()
         s.root_winid = nil
         s.autoclose_suspended = 0
         s.help_augroup = nil
-        pcall(vim.api.nvim_del_augroup_by_id, au_group)
+        if s.autoclose_group then
+          pcall(vim.api.nvim_del_augroup_by_id, s.autoclose_group)
+        end
+        s.autoclose_group = nil
       end)
     end,
   })
@@ -639,7 +646,10 @@ function M.toggle()
   local s = get_state()
   if is_open(s) then
     close_help(s)
-    pcall(vim.api.nvim_del_augroup_by_name, "PeekstackStackViewAutoClose")
+    if s.autoclose_group then
+      pcall(vim.api.nvim_del_augroup_by_id, s.autoclose_group)
+    end
+    s.autoclose_group = nil
     vim.api.nvim_win_close(s.winid, true)
     s.winid = nil
     s.bufnr = nil
