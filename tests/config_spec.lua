@@ -138,6 +138,49 @@ describe("config", function()
       return false
     end
 
+    it("falls back on invalid keymap types", function()
+      local cfg = config.setup({
+        ui = {
+          keys = {
+            close = 123,
+            focus_next = false,
+          },
+        },
+      })
+      assert.is_true(has_message("ui.keys.close"))
+      assert.is_true(has_message("ui.keys.focus_next"))
+      assert.equals("q", cfg.ui.keys.close)
+      assert.equals("<C-j>", cfg.ui.keys.focus_next)
+    end)
+
+    it("falls back on invalid layout values", function()
+      local defaults = config.defaults.ui.layout
+      local cfg = config.setup({
+        ui = {
+          layout = {
+            max_ratio = 2,
+            min_size = { w = -1, h = 0 },
+            shrink = { w = -2, h = "x" },
+            offset = { row = -1, col = "x" },
+          },
+        },
+      })
+      assert.is_true(has_message("ui.layout.max_ratio"))
+      assert.is_true(has_message("ui.layout.min_size.w"))
+      assert.is_true(has_message("ui.layout.min_size.h"))
+      assert.is_true(has_message("ui.layout.shrink.w"))
+      assert.is_true(has_message("ui.layout.shrink.h"))
+      assert.is_true(has_message("ui.layout.offset.row"))
+      assert.is_true(has_message("ui.layout.offset.col"))
+      assert.equals(defaults.max_ratio, cfg.ui.layout.max_ratio)
+      assert.equals(defaults.min_size.w, cfg.ui.layout.min_size.w)
+      assert.equals(defaults.min_size.h, cfg.ui.layout.min_size.h)
+      assert.equals(defaults.shrink.w, cfg.ui.layout.shrink.w)
+      assert.equals(defaults.shrink.h, cfg.ui.layout.shrink.h)
+      assert.equals(defaults.offset.row, cfg.ui.layout.offset.row)
+      assert.equals(defaults.offset.col, cfg.ui.layout.offset.col)
+    end)
+
     it("warns on invalid inline preview config", function()
       config.setup({
         ui = {

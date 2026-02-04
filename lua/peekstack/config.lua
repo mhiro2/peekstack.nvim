@@ -31,6 +31,43 @@ local function validate_type(path, expected_type, value)
   end
 end
 
+---@param path string
+---@param value any
+---@param default number
+---@param opts? { min: number?, max: number? }
+---@return number
+local function validate_number_range(path, value, default, opts)
+  if type(value) ~= "number" then
+    notify.warn(string.format("%s must be a number, got %s. Falling back to %s", path, type(value), default))
+    return default
+  end
+  if opts and opts.min ~= nil and value < opts.min then
+    notify.warn(string.format("%s must be >= %s, got %s. Falling back to %s", path, opts.min, value, default))
+    return default
+  end
+  if opts and opts.max ~= nil and value > opts.max then
+    notify.warn(string.format("%s must be <= %s, got %s. Falling back to %s", path, opts.max, value, default))
+    return default
+  end
+  return value
+end
+
+---@param path string
+---@param value any
+---@param default number
+---@return number
+local function validate_ratio(path, value, default)
+  if type(value) ~= "number" then
+    notify.warn(string.format("%s must be a number, got %s. Falling back to %s", path, type(value), default))
+    return default
+  end
+  if value <= 0 or value > 1 then
+    notify.warn(string.format("%s must be in (0, 1], got %s. Falling back to %s", path, value, default))
+    return default
+  end
+  return value
+end
+
 ---@type PeekstackConfig
 M.defaults = {
   ui = {
@@ -171,9 +208,25 @@ end
 
 ---@param cfg table
 local function validate(cfg)
-  if cfg.ui and cfg.ui.keys then
-    for name, val in pairs(cfg.ui.keys) do
-      validate_type("ui.keys." .. name, "string", val)
+  if cfg.ui and cfg.ui.keys ~= nil then
+    if type(cfg.ui.keys) ~= "table" then
+      notify.warn(string.format("ui.keys must be a table, got %s. Falling back to defaults", type(cfg.ui.keys)))
+      cfg.ui.keys = vim.deepcopy(M.defaults.ui.keys)
+    else
+      local defaults = M.defaults.ui.keys
+      for name, val in pairs(cfg.ui.keys) do
+        if type(val) ~= "string" then
+          notify.warn(
+            string.format(
+              "ui.keys.%s must be a string, got %s. Falling back to %s",
+              name,
+              type(val),
+              tostring(defaults[name])
+            )
+          )
+          cfg.ui.keys[name] = defaults[name]
+        end
+      end
     end
   end
 
@@ -262,9 +315,70 @@ local function validate(cfg)
   end
 
   -- Validate layout style (fallback to default on invalid value)
-  if cfg.ui and cfg.ui.layout and cfg.ui.layout.style then
-    cfg.ui.layout.style =
-      validate_enum("ui.layout.style", cfg.ui.layout.style, KNOWN_LAYOUT_STYLES, M.defaults.ui.layout.style)
+  if cfg.ui and cfg.ui.layout ~= nil then
+    if type(cfg.ui.layout) ~= "table" then
+      notify.warn(string.format("ui.layout must be a table, got %s. Falling back to defaults", type(cfg.ui.layout)))
+      cfg.ui.layout = vim.deepcopy(M.defaults.ui.layout)
+    else
+      local layout = cfg.ui.layout
+      if layout.style then
+        layout.style = validate_enum("ui.layout.style", layout.style, KNOWN_LAYOUT_STYLES, M.defaults.ui.layout.style)
+      end
+      if layout.max_ratio ~= nil then
+        layout.max_ratio = validate_ratio("ui.layout.max_ratio", layout.max_ratio, M.defaults.ui.layout.max_ratio)
+      end
+      if layout.min_size ~= nil then
+        if type(layout.min_size) ~= "table" then
+          notify.warn(
+            string.format("ui.layout.min_size must be a table, got %s. Falling back to defaults", type(layout.min_size))
+          )
+          layout.min_size = vim.deepcopy(M.defaults.ui.layout.min_size)
+        else
+          layout.min_size.w =
+            validate_number_range("ui.layout.min_size.w", layout.min_size.w, M.defaults.ui.layout.min_size.w, {
+              min = 1,
+            })
+          layout.min_size.h =
+            validate_number_range("ui.layout.min_size.h", layout.min_size.h, M.defaults.ui.layout.min_size.h, {
+              min = 1,
+            })
+        end
+      end
+      if layout.shrink ~= nil then
+        if type(layout.shrink) ~= "table" then
+          notify.warn(
+            string.format("ui.layout.shrink must be a table, got %s. Falling back to defaults", type(layout.shrink))
+          )
+          layout.shrink = vim.deepcopy(M.defaults.ui.layout.shrink)
+        else
+          layout.shrink.w =
+            validate_number_range("ui.layout.shrink.w", layout.shrink.w, M.defaults.ui.layout.shrink.w, { min = 0 })
+          layout.shrink.h =
+            validate_number_range("ui.layout.shrink.h", layout.shrink.h, M.defaults.ui.layout.shrink.h, { min = 0 })
+        end
+      end
+      if layout.offset ~= nil then
+        if type(layout.offset) ~= "table" then
+          notify.warn(
+            string.format("ui.layout.offset must be a table, got %s. Falling back to defaults", type(layout.offset))
+          )
+          layout.offset = vim.deepcopy(M.defaults.ui.layout.offset)
+        else
+          layout.offset.row = validate_number_range(
+            "ui.layout.offset.row",
+            layout.offset.row,
+            M.defaults.ui.layout.offset.row,
+            { min = 0 }
+          )
+          layout.offset.col = validate_number_range(
+            "ui.layout.offset.col",
+            layout.offset.col,
+            M.defaults.ui.layout.offset.col,
+            { min = 0 }
+          )
+        end
+      end
+    end
   end
 
   -- Validate marks provider settings
