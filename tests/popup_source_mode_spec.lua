@@ -69,6 +69,24 @@ describe("popup source mode", function()
     popup.close(model)
   end)
 
+  it("keeps source mode buffers listed", function()
+    local temp = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "print('peekstack')" }, temp)
+    vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+    local source_bufnr = vim.api.nvim_get_current_buf()
+    vim.bo[source_bufnr].buflisted = true
+    local loc = {
+      uri = vim.uri_from_fname(temp),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      provider = "test",
+    }
+    local model = popup.create(loc, { buffer_mode = "source" })
+    assert.is_not_nil(model)
+    assert.equals(source_bufnr, model.bufnr)
+    assert.is_true(vim.bo[model.bufnr].buflisted)
+    popup.close(model)
+  end)
+
   it("copy mode buffer is a scratch buffer", function()
     local loc = make_location()
     local model = popup.create(loc, { buffer_mode = "copy" })

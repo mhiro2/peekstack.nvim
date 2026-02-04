@@ -123,6 +123,7 @@ function M.create(location, opts)
     end
   end
   local buffer_mode = resolve_buffer_mode(opts)
+  opts.buffer_mode = buffer_mode
 
   local ok_buf, fname = pcall(fs.uri_to_fname, location.uri)
   if not ok_buf or not fname then

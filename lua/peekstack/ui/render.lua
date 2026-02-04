@@ -100,10 +100,10 @@ end
 ---Open a popup window for a location
 ---@param bufnr integer
 ---@param location PeekstackLocation
----@param opts? table
+---@param opts? { buffer_mode?: "copy"|"source" }
 ---@return integer winid
 ---@return table win_opts
-function M.open(bufnr, location, _opts)
+function M.open(bufnr, location, opts)
   local layout_opts = layout.compute(1)
   local win_opts = {
     relative = "editor",
@@ -132,7 +132,9 @@ function M.open(bufnr, location, _opts)
   vim.wo[winid].foldcolumn = "0"
   vim.wo[winid].spell = false
   vim.wo[winid].list = false
-  vim.bo[bufnr].buflisted = false
+  if not opts or opts.buffer_mode ~= "source" then
+    vim.bo[bufnr].buflisted = false
+  end
 
   return winid, win_opts
 end
