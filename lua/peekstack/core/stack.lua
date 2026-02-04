@@ -534,8 +534,8 @@ function M.handle_win_closed(winid)
           table.remove(stack.history, 1)
         end
 
-        popup.close(item)
         table.remove(stack.popups, idx)
+        popup.close(item)
       end
       stacks[root_winid] = nil
     else

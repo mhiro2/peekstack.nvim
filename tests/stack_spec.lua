@@ -122,6 +122,46 @@ describe("stack.handle_win_closed", function()
     assert.equals(base + 2, cfg1.zindex)
     assert.equals(base + 1, cfg2.zindex)
   end)
+
+  it("does not emit duplicate close events when root window closes", function()
+    local popup = require("peekstack.core.popup")
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    local counts = {}
+    local group = vim.api.nvim_create_augroup("PeekstackTestCloseEvents", { clear = true })
+    vim.api.nvim_create_autocmd("User", {
+      group = group,
+      pattern = "PeekstackClose",
+      callback = function(args)
+        local id = args.data and args.data.popup_id
+        if id then
+          counts[id] = (counts[id] or 0) + 1
+        end
+      end,
+    })
+
+    local root_winid = stack.current_stack().root_winid
+    local original_close = popup.close
+    local ok, err = pcall(function()
+      popup.close = function(item)
+        original_close(item)
+        stack.handle_win_closed(item.winid)
+      end
+      stack.handle_win_closed(root_winid)
+    end)
+    popup.close = original_close
+    pcall(vim.api.nvim_del_augroup_by_id, group)
+    if not ok then
+      error(err)
+    end
+
+    assert.equals(1, counts[m1.id])
+    assert.equals(1, counts[m2.id])
+  end)
 end)
 
 describe("stack.close focus restore", function()
