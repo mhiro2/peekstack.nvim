@@ -146,6 +146,32 @@ describe("peekstack.ui.stack_view", function()
     end
   end)
 
+  it("cleans up tab states on tab close", function()
+    stack_view._get_state()
+    local initial_count = stack_view._state_count()
+
+    vim.api.nvim_cmd({ cmd = "tabnew" }, {})
+    stack_view.open()
+    local state = stack_view._get_state()
+    vim.api.nvim_set_current_win(state.winid)
+
+    vim.api.nvim_feedkeys("?", "nx", false)
+    vim.wait(50, function()
+      return state.help_winid ~= nil and vim.api.nvim_win_is_valid(state.help_winid)
+    end)
+
+    local help_winid = state.help_winid
+    vim.api.nvim_cmd({ cmd = "tabclose" }, {})
+
+    vim.wait(50, function()
+      return stack_view._state_count() == initial_count
+    end)
+
+    if help_winid then
+      assert.is_false(vim.api.nvim_win_is_valid(help_winid))
+    end
+  end)
+
   it("restores focus to stack view after undo close", function()
     local loc = helpers.make_location()
     local model = stack.push(loc)

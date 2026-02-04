@@ -22,6 +22,42 @@ local NS = vim.api.nvim_create_namespace("PeekstackStackView")
 ---@type table<integer, PeekstackStackViewState>
 local states = {}
 
+---@param s PeekstackStackViewState
+local function cleanup_state(s)
+  if s.help_winid and vim.api.nvim_win_is_valid(s.help_winid) then
+    pcall(vim.api.nvim_win_close, s.help_winid, true)
+  end
+  s.help_winid = nil
+  s.help_bufnr = nil
+  if s.help_augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, s.help_augroup)
+    s.help_augroup = nil
+  end
+  if s.autoclose_group then
+    pcall(vim.api.nvim_del_augroup_by_id, s.autoclose_group)
+    s.autoclose_group = nil
+  end
+end
+
+local function cleanup_invalid_states()
+  for tabpage, s in pairs(states) do
+    if not vim.api.nvim_tabpage_is_valid(tabpage) then
+      cleanup_state(s)
+      states[tabpage] = nil
+    end
+  end
+end
+
+do
+  local group = vim.api.nvim_create_augroup("PeekstackStackViewTabCleanup", { clear = true })
+  vim.api.nvim_create_autocmd("TabClosed", {
+    group = group,
+    callback = function()
+      cleanup_invalid_states()
+    end,
+  })
+end
+
 ---@return PeekstackStackViewState
 local function get_state()
   local tabpage = vim.api.nvim_get_current_tabpage()
@@ -674,6 +710,16 @@ end
 ---@return table
 function M._get_state()
   return get_state()
+end
+
+---Get stack view state count (for testing).
+---@return integer
+function M._state_count()
+  local count = 0
+  for _ in pairs(states) do
+    count = count + 1
+  end
+  return count
 end
 
 ---Render stack view state (for testing).
