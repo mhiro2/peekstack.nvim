@@ -96,6 +96,15 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(joined:find("No stack entries", 1, true) ~= nil)
   end)
 
+  it("enables cursorline highlight in stack view", function()
+    stack_view.open()
+    local state = stack_view._get_state()
+
+    assert.is_true(vim.wo[state.winid].cursorline)
+    local winhighlight = vim.wo[state.winid].winhighlight or ""
+    assert.is_true(winhighlight:find("CursorLine:PeekstackStackViewCursorLine", 1, true) ~= nil)
+  end)
+
   it("has U keymap bound in stack view buffer", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)

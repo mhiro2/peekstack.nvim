@@ -648,6 +648,8 @@ function M.open()
   s.root_winid = find_root_winid()
   s.bufnr = vim.api.nvim_create_buf(false, true)
   s.winid = vim.api.nvim_open_win(s.bufnr, true, stack_view_win_config())
+  vim.wo[s.winid].cursorline = true
+  vim.wo[s.winid].winhighlight = "CursorLine:PeekstackStackViewCursorLine"
   vim.api.nvim_win_set_var(s.winid, "peekstack_root_winid", s.root_winid)
   require("peekstack.core.stack")._register_stack_view_win(s.winid)
 
