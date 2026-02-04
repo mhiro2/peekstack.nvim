@@ -231,7 +231,7 @@ local function render(s)
   end
 
   for idx, popup in ipairs(visible) do
-    local pinned = popup.pinned and "[p] " or ""
+    local pinned = popup.pinned and "• " or ""
     local index_str = string.format("%d. ", idx)
     local prefix = index_str .. pinned
     local max_label_width = math.max(win_width - vim.fn.strdisplaywidth(prefix), 0)

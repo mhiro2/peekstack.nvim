@@ -105,6 +105,21 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(winhighlight:find("CursorLine:PeekstackStackViewCursorLine", 1, true) ~= nil)
   end)
 
+  it("renders pin badge for pinned items", function()
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = true },
+    }
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    assert.is_true(lines[2]:find("• ", 1, true) ~= nil)
+  end)
+
   it("has U keymap bound in stack view buffer", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)
