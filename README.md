@@ -1,4 +1,4 @@
-# peekstack.nvim
+# 👀 peekstack.nvim
 
 Exploration-first peek stack for Neovim — stack LSP/diagnostics/files/grep results without losing context.
 
@@ -304,3 +304,10 @@ See `:help peekstack` for complete documentation.
 ## 📄 License
 
 MIT License. See [LICENSE](./LICENSE).
+
+## 🔁 Alternatives
+
+- [WilliamHsieh/overlook.nvim](https://github.com/WilliamHsieh/overlook.nvim)
+- [rmagatti/goto-preview](https://github.com/rmagatti/goto-preview)
+- [dnlhc/glance.nvim](https://github.com/dnlhc/glance.nvim)
+- [nvimdev/lspsaga.nvim](https://github.com/nvimdev/lspsaga.nvim)
