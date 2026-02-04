@@ -28,10 +28,44 @@ describe("peekstack.persist.sessions", function()
   end
 
   ---@param scope string
+  ---@return PeekstackStoreData
+  local function read_and_wait(scope)
+    local done = false
+    local result = nil
+    store.read(scope, {
+      on_done = function(data)
+        result = data
+        done = true
+      end,
+    })
+    local ok = vim.wait(wait_timeout_ms, function()
+      return done
+    end, wait_interval_ms)
+    assert.is_true(ok, "Timed out waiting for store read")
+    return result or { version = 2, sessions = {} }
+  end
+
+  ---@param scope string
   ---@param predicate fun(data: PeekstackStoreData): boolean
   local function wait_for_store(scope, predicate)
+    local satisfied = false
+    local in_flight = false
     local ok = vim.wait(wait_timeout_ms, function()
-      return predicate(store.read(scope))
+      if satisfied then
+        return true
+      end
+      if not in_flight then
+        in_flight = true
+        store.read(scope, {
+          on_done = function(data)
+            if predicate(data) then
+              satisfied = true
+            end
+            in_flight = false
+          end,
+        })
+      end
+      return satisfied
     end, wait_interval_ms)
     assert.is_true(ok, "Timed out waiting for store update")
   end
@@ -40,15 +74,31 @@ describe("peekstack.persist.sessions", function()
   ---@param present boolean
   ---@return table<string, PeekstackSession>
   local function wait_for_session(name, present)
+    local satisfied = false
+    local in_flight = false
+    local result = {}
     local ok = vim.wait(wait_timeout_ms, function()
-      local sessions = persist.list_sessions()
-      if present then
-        return sessions[name] ~= nil
+      if satisfied then
+        return true
       end
-      return sessions[name] == nil
+      if not in_flight then
+        in_flight = true
+        persist.list_sessions({
+          on_done = function(sessions)
+            result = sessions
+            if present then
+              satisfied = sessions[name] ~= nil
+            else
+              satisfied = sessions[name] == nil
+            end
+            in_flight = false
+          end,
+        })
+      end
+      return satisfied
     end, wait_interval_ms)
     assert.is_true(ok, "Timed out waiting for session: " .. name)
-    return persist.list_sessions()
+    return result
   end
 
   before_each(function()
@@ -69,7 +119,7 @@ describe("peekstack.persist.sessions", function()
   it("should save and restore a named session", function()
     -- This test requires a valid Neovim buffer/window context
     -- For now, we test the data structure manipulation
-    local data = migrate.ensure(store.read(test_scope))
+    local data = migrate.ensure(read_and_wait(test_scope))
     assert.same({ version = 2, sessions = {} }, data)
   end)
 
@@ -155,7 +205,7 @@ describe("peekstack.persist.sessions", function()
     end)
 
     -- Read and ensure migration
-    local migrated = migrate.ensure(store.read(test_scope))
+    local migrated = migrate.ensure(read_and_wait(test_scope))
 
     assert.equals(2, migrated.version)
     assert.is_not_nil(migrated.sessions)
@@ -177,8 +227,8 @@ describe("peekstack.persist.sessions", function()
       return ensured.sessions.scoped_session ~= nil
     end)
 
-    local repo_data = migrate.ensure(store.read("repo"))
-    local global_data = migrate.ensure(store.read("global"))
+    local repo_data = migrate.ensure(read_and_wait("repo"))
+    local global_data = migrate.ensure(read_and_wait("global"))
     assert.is_not_nil(repo_data.sessions.scoped_session)
     assert.is_nil(global_data.sessions.scoped_session)
 
@@ -217,7 +267,7 @@ describe("peekstack.persist.sessions", function()
         and #ensured.sessions.root_specific.items == 2
     end)
 
-    local data = migrate.ensure(store.read(test_scope))
+    local data = migrate.ensure(read_and_wait(test_scope))
     assert.equals(2, #data.sessions.root_specific.items)
     assert.equals("file:///tmp/b.lua", data.sessions.root_specific.items[1].uri)
     assert.equals("file:///tmp/c.lua", data.sessions.root_specific.items[2].uri)
@@ -274,7 +324,7 @@ describe("peekstack.persist.sessions", function()
         and ensured.sessions.stack_view_active.items
         and #ensured.sessions.stack_view_active.items == 1
     end)
-    local data = migrate.ensure(store.read(test_scope))
+    local data = migrate.ensure(read_and_wait(test_scope))
     assert.is_not_nil(data.sessions.stack_view_active)
     assert.equals(1, #data.sessions.stack_view_active.items)
 

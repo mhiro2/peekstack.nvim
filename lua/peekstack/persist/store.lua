@@ -2,28 +2,55 @@ local fs = require("peekstack.util.fs")
 
 local M = {}
 
----@param scope string
 ---@return PeekstackStoreData
-function M.read(scope)
+local function empty_data()
+  return { version = 2, sessions = {} }
+end
+
+---@param scope string
+---@param opts { on_done: fun(data: PeekstackStoreData) }
+function M.read(scope, opts)
+  local on_done = opts and opts.on_done or nil
+  if not on_done then
+    return
+  end
+
   local path = fs.scope_path(scope)
-  local stat = vim.uv.fs_stat(path)
-  if not stat then
-    return { version = 2, sessions = {} }
-  end
-  local fd = vim.uv.fs_open(path, "r", 438)
-  if not fd then
-    return { version = 2, sessions = {} }
-  end
-  local data = vim.uv.fs_read(fd, stat.size, 0)
-  vim.uv.fs_close(fd)
-  if not data or data == "" then
-    return { version = 2, sessions = {} }
-  end
-  local ok, decoded = pcall(vim.json.decode, data)
-  if not ok or type(decoded) ~= "table" then
-    return { version = 2, sessions = {} }
-  end
-  return decoded
+  vim.uv.fs_stat(path, function(stat_err, stat)
+    if stat_err or not stat or stat.size == 0 then
+      vim.schedule(function()
+        on_done(empty_data())
+      end)
+      return
+    end
+
+    vim.uv.fs_open(path, "r", 438, function(open_err, fd)
+      if open_err or not fd then
+        vim.schedule(function()
+          on_done(empty_data())
+        end)
+        return
+      end
+
+      vim.uv.fs_read(fd, stat.size, 0, function(read_err, data)
+        vim.uv.fs_close(fd)
+        if read_err or not data or data == "" then
+          vim.schedule(function()
+            on_done(empty_data())
+          end)
+          return
+        end
+        vim.schedule(function()
+          local ok, decoded = pcall(vim.json.decode, data)
+          if not ok or type(decoded) ~= "table" then
+            on_done(empty_data())
+            return
+          end
+          on_done(decoded)
+        end)
+      end)
+    end)
+  end)
 end
 
 ---@param scope string
@@ -33,7 +60,9 @@ function M.write(scope, data, opts)
   local on_done = opts and opts.on_done or nil
   local function finish(success)
     if on_done then
-      on_done(success)
+      vim.schedule(function()
+        on_done(success)
+      end)
     end
   end
 

@@ -6,6 +6,19 @@ describe("peekstack.core.user_events", function()
   -- Track received events
   local received_events = {}
 
+  ---@param name string
+  ---@return boolean
+  local function wait_for_event(name)
+    return vim.wait(500, function()
+      for _, ev in ipairs(received_events) do
+        if ev.event == name then
+          return true
+        end
+      end
+      return false
+    end, 10)
+  end
+
   before_each(function()
     received_events = {}
     stack._reset()
@@ -106,7 +119,8 @@ describe("peekstack.core.user_events", function()
 
     persist.save_current("test_session")
 
-    vim.wait(100)
+    local ok = wait_for_event("PeekstackSave")
+    assert.is_true(ok, "Timed out waiting for PeekstackSave event")
 
     local found = false
     for _, ev in ipairs(received_events) do

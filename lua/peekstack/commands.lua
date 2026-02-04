@@ -4,8 +4,9 @@ local loaded = false
 
 ---@return string[]
 local function list_session_names()
-  local sessions = require("peekstack.persist").list_sessions()
-  return vim.tbl_keys(sessions)
+  local persist = require("peekstack.persist")
+  persist.list_sessions({ on_done = function() end })
+  return vim.tbl_keys(persist.list_sessions())
 end
 
 function M.setup()
@@ -47,29 +48,32 @@ function M.setup()
 
   vim.api.nvim_create_user_command("PeekstackListSessions", function()
     local persist = require("peekstack.persist")
-    local sessions = persist.list_sessions()
-    local names = vim.tbl_keys(sessions)
-    if #names == 0 then
-      vim.notify("No saved sessions", vim.log.levels.INFO)
-      return
-    end
-    vim.ui.select(names, { prompt = "Select a session" }, function(selected)
-      if not selected then
-        return
-      end
-      local session = sessions[selected]
-      local info = string.format(
-        "%s: %d items (updated: %s)",
-        selected,
-        #session.items,
-        os.date("%Y-%m-%d %H:%M:%S", session.meta.updated_at)
-      )
-      vim.ui.select({ "Restore", "Info only" }, { prompt = info }, function(action)
-        if action == "Restore" then
-          persist.restore(selected)
+    persist.list_sessions({
+      on_done = function(sessions)
+        local names = vim.tbl_keys(sessions)
+        if #names == 0 then
+          vim.notify("No saved sessions", vim.log.levels.INFO)
+          return
         end
-      end)
-    end)
+        vim.ui.select(names, { prompt = "Select a session" }, function(selected)
+          if not selected then
+            return
+          end
+          local session = sessions[selected]
+          local info = string.format(
+            "%s: %d items (updated: %s)",
+            selected,
+            #session.items,
+            os.date("%Y-%m-%d %H:%M:%S", session.meta.updated_at)
+          )
+          vim.ui.select({ "Restore", "Info only" }, { prompt = info }, function(action)
+            if action == "Restore" then
+              persist.restore(selected)
+            end
+          end)
+        end)
+      end,
+    })
   end, {})
 
   vim.api.nvim_create_user_command("PeekstackDeleteSession", function(opts)
