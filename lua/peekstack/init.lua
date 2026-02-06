@@ -74,7 +74,7 @@ end
 ---Normalize location and set provider from opts if needed
 ---@param loc table
 ---@param opts? table
----@return PeekstackLocation
+---@return PeekstackLocation?
 local function prepare_location(loc, opts)
   local location = require("peekstack.core.location")
   local provider = opts and opts.provider
@@ -83,7 +83,13 @@ local function prepare_location(loc, opts)
     loc.provider = provider
   end
 
-  return location.normalize(loc, loc.provider) or loc
+  local normalized = location.normalize(loc, loc.provider)
+  if normalized then
+    return normalized
+  end
+
+  vim.notify("Invalid location payload: expected uri/range", vim.log.levels.WARN)
+  return nil
 end
 
 ---@param loc table
@@ -94,6 +100,9 @@ function M.peek_location(loc, opts)
   end
 
   local normalized = prepare_location(loc, opts)
+  if not normalized then
+    return
+  end
   local mode = opts and opts.mode
 
   if mode == "inline" then
@@ -160,8 +169,8 @@ local function peek_by_provider(provider, opts)
       if uri and pos.line ~= nil and pos.character ~= nil then
         filtered = {}
         for _, loc in ipairs(locations) do
-          local normalized = location_mod.normalize(loc, provider) or loc
-          if not location_mod.is_same_position(normalized, uri, pos.line, pos.character) then
+          local normalized = location_mod.normalize(loc, provider)
+          if normalized and not location_mod.is_same_position(normalized, uri, pos.line, pos.character) then
             table.insert(filtered, normalized)
           end
         end

@@ -181,8 +181,8 @@ describe("config", function()
       assert.equals(defaults.offset.col, cfg.ui.layout.offset.col)
     end)
 
-    it("warns on invalid inline preview config", function()
-      config.setup({
+    it("falls back on invalid inline preview config", function()
+      local cfg = config.setup({
         ui = {
           inline_preview = {
             enabled = "yes",
@@ -196,6 +196,7 @@ describe("config", function()
       assert.is_true(has_message("ui.inline_preview.max_lines"))
       assert.is_true(has_message("ui.inline_preview.hl_group"))
       assert.is_true(has_message("ui.inline_preview.close_events"))
+      assert.equals(config.defaults.ui.inline_preview.max_lines, cfg.ui.inline_preview.max_lines)
     end)
 
     it("warns on invalid quick peek config", function()
@@ -290,8 +291,8 @@ describe("config", function()
       assert.is_true(has_message("ui.popup.source.confirm_on_close"))
     end)
 
-    it("warns on invalid history config types", function()
-      config.setup({
+    it("falls back on invalid history config types", function()
+      local cfg = config.setup({
         ui = {
           popup = {
             history = {
@@ -301,6 +302,27 @@ describe("config", function()
         },
       })
       assert.is_true(has_message("ui.popup.history.max_items"))
+      assert.equals(config.defaults.ui.popup.history.max_items, cfg.ui.popup.history.max_items)
+    end)
+
+    it("falls back on invalid persist max_items", function()
+      local cfg = config.setup({
+        persist = {
+          max_items = "many",
+        },
+      })
+      assert.is_true(has_message("persist.max_items"))
+      assert.equals(config.defaults.persist.max_items, cfg.persist.max_items)
+    end)
+
+    it("falls back when persist max_items is less than 1", function()
+      local cfg = config.setup({
+        persist = {
+          max_items = 0,
+        },
+      })
+      assert.is_true(has_message("persist.max_items"))
+      assert.equals(config.defaults.persist.max_items, cfg.persist.max_items)
     end)
 
     it("falls back on invalid restore_position", function()

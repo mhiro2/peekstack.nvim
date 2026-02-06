@@ -126,4 +126,19 @@ describe("peekstack.quick_peek", function()
     local stack_list = stack.list()
     assert.equals(1, #stack_list)
   end)
+
+  it("ignores invalid location payload safely", function()
+    local original_notify = vim.notify
+    local notifications = {}
+    vim.notify = function(msg)
+      table.insert(notifications, msg)
+    end
+
+    peekstack.peek_location({ uri = vim.uri_from_bufnr(0) }, {})
+
+    vim.notify = original_notify
+    assert.equals(0, #stack.list())
+    assert.is_true(#notifications > 0)
+    assert.is_true(tostring(notifications[1]):find("Invalid location payload", 1, true) ~= nil)
+  end)
 end)

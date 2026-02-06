@@ -273,7 +273,12 @@ local function validate(cfg)
   if cfg.ui and cfg.ui.popup and cfg.ui.popup.history then
     local history = cfg.ui.popup.history
     if history.max_items ~= nil then
-      validate_type("ui.popup.history.max_items", "number", history.max_items)
+      history.max_items = validate_number_range(
+        "ui.popup.history.max_items",
+        history.max_items,
+        M.defaults.ui.popup.history.max_items,
+        { min = 1 }
+      )
     end
     if history.restore_position then
       history.restore_position = validate_enum(
@@ -291,7 +296,12 @@ local function validate(cfg)
       validate_type("ui.inline_preview.enabled", "boolean", inline_preview.enabled)
     end
     if inline_preview.max_lines ~= nil then
-      validate_type("ui.inline_preview.max_lines", "number", inline_preview.max_lines)
+      inline_preview.max_lines = validate_number_range(
+        "ui.inline_preview.max_lines",
+        inline_preview.max_lines,
+        M.defaults.ui.inline_preview.max_lines,
+        { min = 1 }
+      )
     end
     if inline_preview.hl_group ~= nil then
       validate_type("ui.inline_preview.hl_group", "string", inline_preview.hl_group)
@@ -393,6 +403,11 @@ local function validate(cfg)
     if marks.include_special ~= nil then
       validate_type("providers.marks.include_special", "boolean", marks.include_special)
     end
+  end
+
+  if cfg.persist and cfg.persist.max_items ~= nil then
+    cfg.persist.max_items =
+      validate_number_range("persist.max_items", cfg.persist.max_items, M.defaults.persist.max_items, { min = 1 })
   end
 
   if cfg.persist and cfg.persist.session then
