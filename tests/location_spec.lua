@@ -43,13 +43,13 @@ describe("location", function()
         col = 3,
         text = "hello",
       }
-      local result = location.normalize(loc, "grep.rg")
+      local result = location.normalize(loc, "grep.search")
       assert.is_not_nil(result)
       assert.is_true(result.uri:find("test.lua") ~= nil)
       assert.equals(4, result.range.start.line) -- lnum 5 -> line 4 (0-indexed)
       assert.equals(2, result.range.start.character) -- col 3 -> character 2 (0-indexed)
       assert.equals("hello", result.text)
-      assert.equals("grep.rg", result.provider)
+      assert.equals("grep.search", result.provider)
     end)
 
     it("returns nil for unknown location format", function()

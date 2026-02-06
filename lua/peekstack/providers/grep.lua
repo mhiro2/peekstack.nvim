@@ -3,22 +3,32 @@ local location = require("peekstack.core.location")
 
 local M = {}
 
+---@param line string
+---@return string?, integer?, integer?, string?
+local function parse_rg_line(line)
+  local path, lnum, col, text = line:match("^(.*):(%d+):(%d+):(.*)$")
+  if not path then
+    return nil, nil, nil, nil
+  end
+  return path, tonumber(lnum), tonumber(col), text
+end
+
 ---@param output string
 ---@return PeekstackLocation[]
 local function parse_rg_output(output)
   local items = {}
   for _, line in ipairs(vim.split(output, "\n", { trimempty = true })) do
-    local path, lnum, col, text = line:match("^(.-):(%d+):(%d+):(.*)$")
+    local path, lnum, col, text = parse_rg_line(line)
     if path and lnum and col then
       local uri = fs.fname_to_uri(vim.fn.fnamemodify(path, ":p"))
       local loc = location.normalize({
         uri = uri,
         range = {
-          start = { line = tonumber(lnum) - 1, character = tonumber(col) - 1 },
-          ["end"] = { line = tonumber(lnum) - 1, character = tonumber(col) - 1 },
+          start = { line = lnum - 1, character = col - 1 },
+          ["end"] = { line = lnum - 1, character = col - 1 },
         },
         text = text,
-      }, "grep.rg")
+      }, "grep.search")
       if loc then
         table.insert(items, loc)
       end
@@ -54,5 +64,8 @@ function M.search(_, cb)
     end)
   end)
 end
+
+---Expose parser for tests.
+M._parse_output = parse_rg_output
 
 return M
