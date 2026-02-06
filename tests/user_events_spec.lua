@@ -113,6 +113,29 @@ describe("peekstack.core.user_events", function()
     assert.is_true(found, "PeekstackFocus event not found")
   end)
 
+  it("should emit PeekstackFocus event when focusing with focus_prev", function()
+    local location = {
+      uri = vim.uri_from_bufnr(0),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+      provider = "test",
+    }
+
+    local first = stack.push(location)
+    local _second = stack.push(location)
+    stack.focus_prev()
+
+    vim.wait(100)
+
+    local found = false
+    for _, ev in ipairs(received_events) do
+      if ev.event == "PeekstackFocus" and ev.data and ev.data.popup_id == first.id then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "PeekstackFocus event from focus_prev not found")
+  end)
+
   it("should emit PeekstackSave event when saving session", function()
     local persist = require("peekstack.persist")
     config.setup({ persist = { enabled = true } })

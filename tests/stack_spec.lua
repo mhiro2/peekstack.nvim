@@ -75,6 +75,39 @@ describe("stack.focus_by_id", function()
   end)
 end)
 
+describe("stack.focus_relative", function()
+  before_each(function()
+    stack._reset()
+    config.setup({})
+  end)
+
+  after_each(function()
+    local s = stack.current_stack()
+    for i = #s.popups, 1, -1 do
+      stack.close(s.popups[i].id)
+    end
+    stack._reset()
+  end)
+
+  it("updates zindex when focus_prev changes focused popup", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    assert.equals(m2.winid, vim.api.nvim_get_current_win())
+    assert.is_true(stack.focus_prev())
+    assert.equals(m1.winid, vim.api.nvim_get_current_win())
+
+    local base = config.get().ui.layout.zindex_base
+    local cfg1 = vim.api.nvim_win_get_config(m1.winid)
+    local cfg2 = vim.api.nvim_win_get_config(m2.winid)
+    assert.equals(base + 2, cfg1.zindex)
+    assert.equals(base + 1, cfg2.zindex)
+  end)
+end)
+
 describe("stack.handle_win_closed", function()
   before_each(function()
     stack._reset()
@@ -161,6 +194,27 @@ describe("stack.handle_win_closed", function()
 
     assert.equals(1, counts[m1.id])
     assert.equals(1, counts[m2.id])
+  end)
+
+  it("clears diagnostic extmarks when source-mode popup is closed manually", function()
+    local location = helpers.make_location({
+      provider = "diagnostics.under_cursor",
+      text = "manual close leak check",
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+    })
+    local model = stack.push(location, { buffer_mode = "source" })
+    assert.is_not_nil(model)
+
+    local ns = vim.api.nvim_get_namespaces().peekstack_diagnostics
+    assert.is_not_nil(ns)
+    local before = vim.api.nvim_buf_get_extmarks(model.bufnr, ns, 0, -1, {})
+    assert.is_true(#before > 0)
+
+    vim.api.nvim_win_close(model.winid, true)
+    stack.handle_win_closed(model.winid)
+
+    local after = vim.api.nvim_buf_get_extmarks(model.bufnr, ns, 0, -1, {})
+    assert.equals(0, #after)
   end)
 end)
 

@@ -495,7 +495,8 @@ local function focus_relative(step)
     end
   end
   local next_idx = ((idx + step - 1) % count) + 1
-  return popup.focus(stack.popups[next_idx])
+  local target = stack.popups[next_idx]
+  return M.focus_by_id(target.id, stack.root_winid)
 end
 
 ---@return boolean
@@ -556,6 +557,7 @@ function M.handle_win_closed(winid)
           emit_popup_event("PeekstackClose", item, root_winid)
           feedback.highlight_origin(item.origin)
           table.remove(stack.popups, idx)
+          popup.close(item)
           removed = true
         end
       end
