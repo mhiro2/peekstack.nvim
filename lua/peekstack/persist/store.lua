@@ -54,6 +54,33 @@ function M.read(scope, opts)
 end
 
 ---@param scope string
+---@return PeekstackStoreData
+function M.read_sync(scope)
+  local path = fs.scope_path(scope)
+  local stat = vim.uv.fs_stat(path)
+  if not stat or stat.size == 0 then
+    return empty_data()
+  end
+
+  local fd = vim.uv.fs_open(path, "r", 438)
+  if not fd then
+    return empty_data()
+  end
+
+  local data = vim.uv.fs_read(fd, stat.size, 0)
+  pcall(vim.uv.fs_close, fd)
+  if not data or data == "" then
+    return empty_data()
+  end
+
+  local ok, decoded = pcall(vim.json.decode, data)
+  if not ok or type(decoded) ~= "table" then
+    return empty_data()
+  end
+  return decoded
+end
+
+---@param scope string
 ---@param data PeekstackStoreData
 ---@param opts? { on_done?: fun(success: boolean) }
 function M.write(scope, data, opts)

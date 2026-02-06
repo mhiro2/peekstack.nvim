@@ -166,6 +166,11 @@ function M.save_on_leave(opts)
 end
 
 function M.setup()
+  timer_util.close(save_timer)
+  timer_util.get_store().persist_auto = nil
+  save_timer = nil
+  pending_root_winid = nil
+
   local group = vim.api.nvim_create_augroup("PeekstackPersistAuto", { clear = true })
 
   if not is_enabled() then

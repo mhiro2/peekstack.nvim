@@ -1,12 +1,25 @@
 local M = {}
 
 local loaded = false
+local COMMAND_NAMES = {
+  "PeekstackStack",
+  "PeekstackSaveSession",
+  "PeekstackRestoreSession",
+  "PeekstackListSessions",
+  "PeekstackDeleteSession",
+  "PeekstackRestorePopup",
+  "PeekstackRestoreAllPopups",
+  "PeekstackHistory",
+  "PeekstackCloseAll",
+  "PeekstackQuickPeek",
+}
 
 ---@return string[]
 local function list_session_names()
   local persist = require("peekstack.persist")
-  persist.list_sessions({ on_done = function() end })
-  return vim.tbl_keys(persist.list_sessions())
+  local names = vim.tbl_keys(persist.list_sessions())
+  table.sort(names)
+  return names
 end
 
 function M.setup()
@@ -154,6 +167,14 @@ function M.setup()
       }
     end,
   })
+end
+
+---Reset command registration state (for tests).
+function M._reset()
+  loaded = false
+  for _, name in ipairs(COMMAND_NAMES) do
+    pcall(vim.api.nvim_del_user_command, name)
+  end
 end
 
 return M

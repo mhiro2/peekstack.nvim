@@ -127,4 +127,28 @@ describe("peekstack.persist.store", function()
     local result = read_and_wait(test_scope)
     assert.same({ version = 2, sessions = {} }, result)
   end)
+
+  it("read_sync returns data for valid store content", function()
+    local data = {
+      version = 2,
+      sessions = {
+        sync_sample = {
+          items = {},
+          meta = { created_at = 1, updated_at = 2 },
+        },
+      },
+    }
+    write_and_wait(test_scope, data)
+
+    local result = store.read_sync(test_scope)
+    assert.same(data, result)
+  end)
+
+  it("read_sync returns empty data for invalid JSON", function()
+    local path = fs.scope_path(test_scope)
+    write_raw_and_wait(path, "{ invalid json")
+
+    local result = store.read_sync(test_scope)
+    assert.same({ version = 2, sessions = {} }, result)
+  end)
 end)

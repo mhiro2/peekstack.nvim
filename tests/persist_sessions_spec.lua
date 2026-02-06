@@ -133,6 +133,22 @@ describe("peekstack.persist.sessions", function()
     assert.is_not_nil(sessions["test_session_2"])
   end)
 
+  it("should load sessions synchronously on first list_sessions call", function()
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        sync_loaded = {
+          items = {},
+          meta = { created_at = 1, updated_at = 1 },
+        },
+      },
+    })
+    persist._reset_cache()
+
+    local sessions = persist.list_sessions()
+    assert.is_not_nil(sessions.sync_loaded)
+  end)
+
   it("should delete a session", function()
     persist.save_current("to_delete")
 

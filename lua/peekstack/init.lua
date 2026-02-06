@@ -231,6 +231,10 @@ function M.setup(opts)
   local config = require("peekstack.config")
   local events = require("peekstack.core.events")
   local commands = require("peekstack.commands")
+  local persist_auto = require("peekstack.persist.auto")
+
+  providers = {}
+  pickers = {}
 
   config.setup(opts)
   set_hl()
@@ -288,9 +292,7 @@ function M.setup(opts)
     register_providers("marks.", marks_provider, { "buffer", "global", "all" })
   end
 
-  if cfg.persist.enabled and type(cfg.persist.auto) == "table" and cfg.persist.auto.enabled then
-    require("peekstack.persist.auto").setup()
-  end
+  persist_auto.setup()
 end
 
 ---@return table

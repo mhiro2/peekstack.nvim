@@ -208,11 +208,7 @@ function M.list_sessions(opts)
       end,
     })
   elseif not cache_loaded then
-    store.read(SCOPE, {
-      on_done = function(read_data)
-        update_cache(read_data)
-      end,
-    })
+    update_cache(store.read_sync(SCOPE))
   end
   return cached_sessions
 end
@@ -300,6 +296,12 @@ function M.rename_session(from, to)
       })
     end,
   })
+end
+
+---Reset in-memory session cache (for testing).
+function M._reset_cache()
+  cached_sessions = {}
+  cache_loaded = false
 end
 
 return M
