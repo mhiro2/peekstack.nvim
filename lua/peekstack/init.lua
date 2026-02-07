@@ -167,10 +167,16 @@ local function peek_by_provider(provider, opts)
         uri = vim.uri_from_bufnr(ctx.bufnr)
       end
       if uri and pos.line ~= nil and pos.character ~= nil then
+        local realpath_cache = {}
         filtered = {}
         for _, loc in ipairs(locations) do
           local normalized = location_mod.normalize(loc, provider)
-          if normalized and not location_mod.is_same_position(normalized, uri, pos.line, pos.character) then
+          if
+            normalized
+            and not location_mod.is_same_position(normalized, uri, pos.line, pos.character, {
+              realpath_cache = realpath_cache,
+            })
+          then
             table.insert(filtered, normalized)
           end
         end

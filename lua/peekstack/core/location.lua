@@ -2,6 +2,20 @@ local fs = require("peekstack.util.fs")
 local str = require("peekstack.util.str")
 
 local M = {}
+local realpath_cache = {}
+
+---@param fname string
+---@param cache? table<string, string>
+---@return string
+local function resolve_realpath(fname, cache)
+  local store = cache or realpath_cache
+  if store[fname] then
+    return store[fname]
+  end
+  local resolved = vim.uv.fs_realpath(fname) or fname
+  store[fname] = resolved
+  return resolved
+end
 
 ---@param range? PeekstackRange
 ---@return PeekstackRange
@@ -146,19 +160,22 @@ end
 ---@param uri string
 ---@param line integer
 ---@param character integer
+---@param opts? { realpath_cache?: table<string, string> }
 ---@return boolean
-function M.is_same_position(location, uri, line, character)
+function M.is_same_position(location, uri, line, character, opts)
   if not location or not location.uri or not location.range or not location.range.start then
     return false
   end
+  opts = opts or {}
+  local path_cache = opts.realpath_cache
   local loc_uri = location.uri
   local loc_fname = fs.uri_to_fname(loc_uri)
   local cur_fname = fs.uri_to_fname(uri)
   if loc_fname then
-    loc_fname = vim.uv.fs_realpath(loc_fname) or loc_fname
+    loc_fname = resolve_realpath(loc_fname, path_cache)
   end
   if cur_fname then
-    cur_fname = vim.uv.fs_realpath(cur_fname) or cur_fname
+    cur_fname = resolve_realpath(cur_fname, path_cache)
   end
   if loc_fname and cur_fname then
     if loc_fname ~= cur_fname then
