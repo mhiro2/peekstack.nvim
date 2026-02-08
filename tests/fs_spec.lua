@@ -78,12 +78,72 @@ describe("fs", function()
   end)
 
   describe("repo_root", function()
+    local original_find
+
+    before_each(function()
+      fs._reset_repo_root_cache()
+      original_find = vim.fs.find
+    end)
+
+    after_each(function()
+      vim.fs.find = original_find
+      fs._reset_repo_root_cache()
+    end)
+
     it("finds repo root from current directory", function()
       local root = fs.repo_root()
       -- We're running in the plugin repo, so this should find a root
       if root then
         assert.is_string(root)
       end
+    end)
+
+    it("caches current-directory lookups", function()
+      local calls = 0
+      vim.fs.find = function(name, opts)
+        calls = calls + 1
+        assert.equals(".git", name)
+        assert.is_truthy(opts)
+        return { "/tmp/peekstack-cache/.git" }
+      end
+
+      assert.equals("/tmp/peekstack-cache", fs.repo_root())
+      assert.equals("/tmp/peekstack-cache", fs.repo_root())
+      assert.equals(1, calls)
+    end)
+
+    it("invalidates cache on DirChanged", function()
+      local calls = 0
+      vim.fs.find = function()
+        calls = calls + 1
+        if calls == 1 then
+          return { "/tmp/peekstack-before/.git" }
+        end
+        return { "/tmp/peekstack-after/.git" }
+      end
+
+      assert.equals("/tmp/peekstack-before", fs.repo_root())
+      assert.equals("/tmp/peekstack-before", fs.repo_root())
+      assert.equals(1, calls)
+
+      vim.api.nvim_exec_autocmds("DirChanged", { modeline = false })
+      assert.equals("/tmp/peekstack-after", fs.repo_root())
+      assert.equals(2, calls)
+    end)
+
+    it("does not cache explicit start paths", function()
+      local calls = 0
+      vim.fs.find = function(_, opts)
+        calls = calls + 1
+        if opts.path == "/tmp/a/project" then
+          return { "/tmp/a/.git" }
+        end
+        return { "/tmp/b/.git" }
+      end
+
+      assert.equals("/tmp/a", fs.repo_root("/tmp/a/project"))
+      assert.equals("/tmp/a", fs.repo_root("/tmp/a/project"))
+      assert.equals(2, calls)
     end)
   end)
 end)

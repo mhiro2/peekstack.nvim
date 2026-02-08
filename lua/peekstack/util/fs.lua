@@ -1,5 +1,20 @@
 local M = {}
 
+---@type string?
+local cached_repo_root = nil
+---@type string?
+local cached_repo_cwd = nil
+
+local function reset_repo_root_cache()
+  cached_repo_root = nil
+  cached_repo_cwd = nil
+end
+
+vim.api.nvim_create_autocmd("DirChanged", {
+  group = vim.api.nvim_create_augroup("PeekstackRepoRootCache", { clear = true }),
+  callback = reset_repo_root_cache,
+})
+
 ---@param uri? string
 ---@return string?
 function M.uri_to_fname(uri)
@@ -21,11 +36,22 @@ end
 ---@param start? string
 ---@return string?
 function M.repo_root(start)
-  local root = vim.fs.find(".git", { upward = true, path = start or vim.fn.getcwd() })[1]
-  if root then
-    return vim.fs.dirname(root)
+  local path = start or vim.fn.getcwd()
+  if not start and cached_repo_cwd == path then
+    return cached_repo_root
   end
-  return nil
+  local root = vim.fs.find(".git", { upward = true, path = path })[1]
+  local repo_root = root and vim.fs.dirname(root) or nil
+  if not start then
+    cached_repo_cwd = path
+    cached_repo_root = repo_root
+  end
+  return repo_root
+end
+
+---Reset internal cache (for testing).
+function M._reset_repo_root_cache()
+  reset_repo_root_cache()
 end
 
 ---@param path string
