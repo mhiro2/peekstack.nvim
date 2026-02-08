@@ -309,6 +309,7 @@ local function restore_entry(stack, entry)
     table.insert(stack.popups, model)
   end
 
+  stack.focused_id = model.id
   layout.reflow(stack)
   emit_popup_event("PeekstackPush", model, stack.root_winid)
   user_events.emit("PeekstackRestorePopup", user_events.build_popup_data(model, stack.root_winid))
@@ -563,9 +564,13 @@ function M.handle_win_closed(winid)
       stacks[root_winid] = nil
     else
       local removed = false
+      local focused_removed = false
       for idx = #stack.popups, 1, -1 do
         local item = stack.popups[idx]
         if item.winid == winid then
+          if stack.focused_id == item.id then
+            focused_removed = true
+          end
           emit_popup_event("PeekstackClose", item, root_winid)
           feedback.highlight_origin(item.origin)
           table.remove(stack.popups, idx)
@@ -574,6 +579,13 @@ function M.handle_win_closed(winid)
         end
       end
       if removed then
+        if focused_removed then
+          if #stack.popups > 0 then
+            stack.focused_id = stack.popups[#stack.popups].id
+          else
+            stack.focused_id = nil
+          end
+        end
         layout.reflow(stack)
       end
     end
@@ -814,6 +826,7 @@ function M.close_all(winid)
 
     table.remove(stack.popups, idx)
   end
+  stack.focused_id = nil
 end
 
 ---Get the focused popup id for a stack.

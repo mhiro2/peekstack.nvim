@@ -572,4 +572,47 @@ describe("stack.focused_id", function()
     stack.close(m1.id)
     assert.is_nil(stack.focused_id())
   end)
+
+  it("is updated to restored popup after restore_last", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    assert.is_not_nil(m1)
+
+    stack.close(m1.id)
+    assert.is_nil(stack.focused_id())
+
+    local restored = stack.restore_last()
+    assert.is_not_nil(restored)
+    assert.equals(restored.id, stack.focused_id())
+
+    stack.close(restored.id)
+  end)
+
+  it("is nil after close_all", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    assert.equals(m2.id, stack.focused_id())
+    stack.close_all()
+    assert.is_nil(stack.focused_id())
+  end)
+
+  it("is updated when focused popup window is closed externally", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    assert.equals(m2.id, stack.focused_id())
+
+    -- Simulate external window close
+    vim.api.nvim_win_close(m2.winid, true)
+    stack.handle_win_closed(m2.winid)
+
+    assert.equals(m1.id, stack.focused_id())
+  end)
 end)
