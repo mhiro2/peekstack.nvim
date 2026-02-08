@@ -98,6 +98,7 @@
 ---@class PeekstackHistoryEntry
 ---@field location PeekstackLocation
 ---@field title? string
+---@field title_chunks? PeekstackTitleChunk[]
 ---@field pinned boolean
 ---@field buffer_mode "copy"|"source"
 ---@field source_bufnr? integer
