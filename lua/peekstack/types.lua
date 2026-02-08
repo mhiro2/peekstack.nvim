@@ -143,9 +143,14 @@
 ---@field separator string
 ---@field node_types table<string, string[]>
 
+---@class PeekstackConfigTitleIcons
+---@field enabled boolean
+---@field map table<string, string>
+
 ---@class PeekstackConfigTitle
 ---@field enabled boolean
 ---@field format string
+---@field icons PeekstackConfigTitleIcons
 ---@field context PeekstackConfigTitleContext
 
 ---@class PeekstackConfigPath

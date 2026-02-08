@@ -12,6 +12,8 @@ local NS = vim.api.nvim_create_namespace("PeekstackStackView")
 local TITLE_HL_TO_SV = {
   PeekstackTitleProvider = "PeekstackStackViewProvider",
   PeekstackTitlePath = "PeekstackStackViewPath",
+  PeekstackTitleIcon = "PeekstackStackViewIcon",
+  PeekstackTitleLine = "PeekstackStackViewLine",
 }
 
 ---@class PeekstackStackViewState

@@ -347,5 +347,29 @@ describe("config", function()
       assert.equals(100, cfg.ui.popup.history.max_items)
       assert.equals("top", cfg.ui.popup.history.restore_position) -- default preserved
     end)
+
+    it("falls back when ui.title.icons is not a table", function()
+      local cfg = config.setup({
+        ui = { title = { icons = true } },
+      })
+      assert.is_true(has_message("ui.title.icons must be a table"))
+      assert.equals("table", type(cfg.ui.title.icons))
+      assert.is_true(cfg.ui.title.icons.enabled)
+    end)
+
+    it("falls back when ui.title.icons.map is not a table", function()
+      local cfg = config.setup({
+        ui = { title = { icons = { enabled = true, map = "invalid" } } },
+      })
+      assert.is_true(has_message("ui.title.icons.map must be a table"))
+      assert.equals("table", type(cfg.ui.title.icons.map))
+    end)
+
+    it("has icons enabled by default", function()
+      local cfg = config.setup({})
+      assert.is_true(cfg.ui.title.icons.enabled)
+      assert.equals("table", type(cfg.ui.title.icons.map))
+      assert.is_not_nil(cfg.ui.title.icons.map.lsp)
+    end)
   end)
 end)

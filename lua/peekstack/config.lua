@@ -81,7 +81,17 @@ M.defaults = {
     },
     title = {
       enabled = true,
-      format = "{kind}{provider} {path}:{line}{context}",
+      format = "{icon}{kind}{provider} {path}:{line}{context}",
+      icons = {
+        enabled = true,
+        map = {
+          lsp = " ",
+          diagnostics = " ",
+          grep = " ",
+          file = " ",
+          marks = " ",
+        },
+      },
       context = {
         enabled = false,
         max_depth = 5,
@@ -315,6 +325,23 @@ local function validate(cfg)
     local quick_peek = cfg.ui.quick_peek
     if quick_peek.close_events ~= nil then
       validate_event_list("ui.quick_peek.close_events", quick_peek.close_events)
+    end
+  end
+
+  -- Validate ui.title.icons
+  if cfg.ui and cfg.ui.title then
+    if cfg.ui.title.icons ~= nil and type(cfg.ui.title.icons) ~= "table" then
+      notify.warn("ui.title.icons must be a table, got " .. type(cfg.ui.title.icons) .. ". Falling back to defaults")
+      cfg.ui.title.icons = vim.deepcopy(M.defaults.ui.title.icons)
+    elseif type(cfg.ui.title.icons) == "table" then
+      local icons = cfg.ui.title.icons
+      if icons.enabled ~= nil then
+        validate_type("ui.title.icons.enabled", "boolean", icons.enabled)
+      end
+      if icons.map ~= nil and type(icons.map) ~= "table" then
+        notify.warn("ui.title.icons.map must be a table, got " .. type(icons.map) .. ". Falling back to defaults")
+        icons.map = vim.deepcopy(M.defaults.ui.title.icons.map)
+      end
     end
   end
 

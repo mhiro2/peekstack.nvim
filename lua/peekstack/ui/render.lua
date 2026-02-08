@@ -110,6 +110,13 @@ local function build_title(location)
   local provider_name = location.provider or ""
   local is_diagnostic = provider_name:match("^diagnostics%.") ~= nil
 
+  local icon = ""
+  local icons_cfg = ui.title.icons
+  if type(icons_cfg) == "table" and icons_cfg.enabled and type(icons_cfg.map) == "table" then
+    local category = provider_name:match("^(.-)%.") or provider_name
+    icon = icons_cfg.map[provider_name] or icons_cfg.map[category] or ""
+  end
+
   local path = str.shorten_path(fs.uri_to_fname(location.uri))
   local path_max_width = ui.path and ui.path.max_width
   if is_diagnostic and type(path_max_width) == "number" and path_max_width > 0 then
@@ -143,6 +150,7 @@ local function build_title(location)
   end
 
   local data = {
+    icon = icon,
     provider = provider,
     path = path,
     line = tostring(line),
@@ -152,9 +160,10 @@ local function build_title(location)
   }
 
   local hls = {
+    icon = "PeekstackTitleIcon",
     provider = "PeekstackTitleProvider",
     path = "PeekstackTitlePath",
-    line = "PeekstackTitlePath",
+    line = "PeekstackTitleLine",
     text = nil,
     kind = kind_hl,
   }
