@@ -148,7 +148,17 @@ Configure via `require("peekstack").setup({ ... })`.
     },
     title = {
       enabled = true,
-      format = "{kind}{provider} {path}:{line}{context}",
+      format = "{icon}{kind}{provider} {path}:{line}{context}",
+      icons = {
+        enabled = true,
+        map = {
+          lsp = " ",
+          diagnostics = " ",
+          grep = " ",
+          file = " ",
+          marks = " ",
+        },
+      },
       context = {
         enabled = false,
         max_depth = 5,

@@ -32,7 +32,17 @@ With options:
       },
       title = {
         enabled = true,
-        format = "{kind}{provider} {path}:{line}{context}",
+        format = "{icon}{kind}{provider} {path}:{line}{context}",
+        icons = {
+          enabled = true,
+          map = {
+            lsp = " ",
+            diagnostics = " ",
+            grep = " ",
+            file = " ",
+            marks = " ",
+          },
+        },
         context = {
           enabled = false,
           max_depth = 5,
@@ -149,6 +159,8 @@ Commands are registered after `setup()` is called.
 
 :PeekstackStack                              *:PeekstackStack*
     Open the stack view panel listing all active popups.
+    The focused popup is highlighted with a `▶` marker.
+    Each entry shows a preview line of the source code below it.
 
 :PeekstackSaveSession                        *:PeekstackSaveSession*
     Save the current popup stack to disk (requires persist.enabled = true).
@@ -371,6 +383,41 @@ Stack view keymaps:
     `J/K`         Move the selected item down/up
     `?`           Toggle help
     `q`           Close the stack view
+
+==============================================================================
+HIGHLIGHT GROUPS                                     *peekstack-highlights*
+
+Title highlights:
+    PeekstackTitleProvider     Provider name (links to Type)
+    PeekstackTitlePath         File path (links to Directory)
+    PeekstackTitleIcon         Provider icon (links to Special)
+    PeekstackTitleLine         Line number (links to LineNr)
+    PeekstackTitleKindError    Diagnostic error severity (links to DiagnosticError)
+    PeekstackTitleKindWarn     Diagnostic warn severity (links to DiagnosticWarn)
+    PeekstackTitleKindInfo     Diagnostic info severity (links to DiagnosticInfo)
+    PeekstackTitleKindHint     Diagnostic hint severity (links to DiagnosticHint)
+
+Popup border highlights:
+    PeekstackPopupBorder           Unfocused popup border (links to FloatBorder)
+    PeekstackPopupBorderFocused    Focused popup border (links to Function)
+
+Stack view highlights:
+    PeekstackStackViewIndex        Entry index number (links to LineNr)
+    PeekstackStackViewPinned       Pin badge (links to DiagnosticWarn)
+    PeekstackStackViewProvider     Provider name (links to Type)
+    PeekstackStackViewPath         File path (links to Directory)
+    PeekstackStackViewIcon         Provider icon (links to Special)
+    PeekstackStackViewLine         Line number (links to LineNr)
+    PeekstackStackViewFocused      Focused entry marker (links to Type)
+    PeekstackStackViewPreview      Preview line text (links to Comment)
+    PeekstackStackViewFilter       Filter header (links to Search)
+    PeekstackStackViewHeader       Stack header (links to Title)
+    PeekstackStackViewEmpty        Empty state text (links to Comment)
+    PeekstackStackViewCursorLine   Cursor line (links to CursorLine)
+
+Other highlights:
+    PeekstackOrigin                Origin highlight flash (links to IncSearch)
+    PeekstackInlinePreview         Inline preview text (links to Comment)
 
 ==============================================================================
 HEALTH                                                   *peekstack-health*
