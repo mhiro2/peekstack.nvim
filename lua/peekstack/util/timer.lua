@@ -16,6 +16,12 @@ function M.close(handle)
   pcall(function()
     handle:stop()
   end)
+  local ok, is_closing = pcall(function()
+    return handle:is_closing()
+  end)
+  if ok and is_closing then
+    return
+  end
   pcall(function()
     handle:close()
   end)
