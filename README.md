@@ -1,5 +1,8 @@
 # 👀 peekstack.nvim
 
+[![GitHub Release](https://img.shields.io/github/release/mhiro2/peekstack.nvim?style=flat)](https://github.com/mhiro2/peekstack.nvim/releases/latest)
+[![CI](https://github.com/mhiro2/peekstack.nvim/actions/workflows/ci.yaml/badge.svg)](https://github.com/mhiro2/peekstack.nvim/actions/workflows/ci.yaml)
+
 Exploration-first peek stack for Neovim — stack LSP/diagnostics/files/grep results without losing context.
 
 peekstack.nvim keeps your exploration flow intact by stacking “peek” windows. You can move through the stack, then promote only the results you care about into splits or tabs.
@@ -13,6 +16,8 @@ peekstack.nvim focuses on preserving the _trail_ of your exploration.
 - **Context-preserving**: move back/forward in a stack of popups
 - **Promote when needed**: elevate only the interesting results to splits/tabs
 - **Session persistence**: save and restore exploration sessions
+
+![demo](./assets/demo.gif)
 
 ## ✨ Features
 
