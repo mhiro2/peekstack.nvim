@@ -163,6 +163,9 @@ function M.create(location, opts)
 
   local ok_win, winid, win_opts = pcall(render.open, bufnr, location, opts)
   if not ok_win or not winid then
+    if buffer_mode ~= "source" and vim.api.nvim_buf_is_valid(bufnr) then
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end
     vim.notify("Failed to open popup window", vim.log.levels.WARN)
     return nil
   end

@@ -94,4 +94,28 @@ describe("popup source mode", function()
     assert.equals("nofile", vim.bo[model.bufnr].buftype)
     popup.close(model)
   end)
+
+  it("deletes copy-mode scratch buffer when render.open fails", function()
+    local render = require("peekstack.ui.render")
+    local loc = make_location()
+    local original_open = render.open
+    local created_bufnr = nil
+
+    local ok, err = pcall(function()
+      render.open = function(bufnr)
+        created_bufnr = bufnr
+        error("open failed")
+      end
+      local model = popup.create(loc, { buffer_mode = "copy" })
+      assert.is_nil(model)
+    end)
+
+    render.open = original_open
+    if not ok then
+      error(err)
+    end
+
+    assert.is_not_nil(created_bufnr)
+    assert.is_false(vim.api.nvim_buf_is_valid(created_bufnr))
+  end)
 end)
