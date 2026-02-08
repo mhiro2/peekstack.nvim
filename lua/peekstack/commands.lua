@@ -14,6 +14,27 @@ local COMMAND_NAMES = {
   "PeekstackQuickPeek",
 }
 
+---@param session PeekstackSession|table
+---@return integer
+local function session_item_count(session)
+  local items = session and session.items
+  if type(items) ~= "table" then
+    return 0
+  end
+  return #items
+end
+
+---@param session PeekstackSession|table
+---@return string
+local function session_updated_at_text(session)
+  local meta = session and session.meta
+  local updated_at = type(meta) == "table" and meta.updated_at or nil
+  if type(updated_at) ~= "number" then
+    return "unknown"
+  end
+  return os.date("%Y-%m-%d %H:%M:%S", updated_at)
+end
+
 ---@return string[]
 local function list_session_names()
   local persist = require("peekstack.persist")
@@ -76,8 +97,8 @@ function M.setup()
           local info = string.format(
             "%s: %d items (updated: %s)",
             selected,
-            #session.items,
-            os.date("%Y-%m-%d %H:%M:%S", session.meta.updated_at)
+            session_item_count(session),
+            session_updated_at_text(session)
           )
           vim.ui.select({ "Restore", "Info only" }, { prompt = info }, function(action)
             if action == "Restore" then
