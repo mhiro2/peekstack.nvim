@@ -46,13 +46,14 @@
 ---@field origin_bufnr integer
 ---@field origin_is_popup boolean
 ---@field title string
+---@field title_chunks? PeekstackTitleChunk[]
 ---@field pinned boolean
 ---@field buffer_mode "copy"|"source"
 ---@field line_offset integer
 ---@field created_at integer
 ---@field last_active_at integer
 ---@field ephemeral boolean
----@field win_opts table
+---@field win_opts PeekstackRenderWinOpts
 
 ---@class PeekstackStackModel
 ---@field root_winid integer
@@ -87,6 +88,19 @@
 ---@class PeekstackTitleChunk
 ---@field [1] string
 ---@field [2]? string
+
+---@class PeekstackRenderWinOpts
+---@field relative string
+---@field row number
+---@field col number
+---@field width integer
+---@field height integer
+---@field style string
+---@field border string|string[]
+---@field focusable boolean
+---@field zindex integer
+---@field title? string|PeekstackTitleChunk[]
+---@field title_pos? string
 
 ---@class PeekstackStoreData
 ---@field version integer

@@ -287,9 +287,10 @@ end
 ---@param location PeekstackLocation
 ---@param opts? { buffer_mode?: "copy"|"source" }
 ---@return integer winid
----@return table win_opts
+---@return PeekstackRenderWinOpts win_opts
 function M.open(bufnr, location, opts)
   local layout_opts = layout.compute(1)
+  ---@type PeekstackRenderWinOpts
   local win_opts = {
     relative = "editor",
     row = layout_opts.row,
