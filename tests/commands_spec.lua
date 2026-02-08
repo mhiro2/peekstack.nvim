@@ -2,15 +2,20 @@ describe("peekstack.commands", function()
   local commands = require("peekstack.commands")
   local persist = require("peekstack.persist")
   local original_list_sessions = nil
+  local original_select = nil
 
   before_each(function()
     commands._reset()
     original_list_sessions = persist.list_sessions
+    original_select = vim.ui.select
   end)
 
   after_each(function()
     if original_list_sessions then
       persist.list_sessions = original_list_sessions
+    end
+    if original_select then
+      vim.ui.select = original_select
     end
     commands._reset()
   end)
@@ -33,5 +38,34 @@ describe("peekstack.commands", function()
 
     assert.same({ "alpha", "beta" }, names)
     assert.is_false(called_with_opts)
+  end)
+
+  it("handles missing session meta in list command", function()
+    local prompts = {}
+    persist.list_sessions = function(opts)
+      assert.is_truthy(opts)
+      assert.is_truthy(opts.on_done)
+      opts.on_done({
+        broken = {
+          items = { { uri = "file:///tmp/a.lua" } },
+        },
+      })
+      return {}
+    end
+
+    vim.ui.select = function(_items, opts, on_choice)
+      table.insert(prompts, opts.prompt)
+      if opts.prompt == "Select a session" then
+        on_choice("broken")
+        return
+      end
+      on_choice("Info only")
+    end
+
+    commands.setup()
+    vim.api.nvim_cmd({ cmd = "PeekstackListSessions" }, {})
+
+    assert.equals("Select a session", prompts[1])
+    assert.equals("broken: 1 items (updated: unknown)", prompts[2])
   end)
 end)

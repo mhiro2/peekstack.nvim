@@ -75,6 +75,9 @@ function M.setup()
     group = group,
     callback = function()
       local winid = vim.api.nvim_get_current_win()
+      if vim.w[winid].peekstack_popup_id == nil then
+        return
+      end
       if is_floating_window(winid) then
         stack.touch(winid)
       end

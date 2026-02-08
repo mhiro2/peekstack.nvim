@@ -31,6 +31,18 @@ describe("fs", function()
   end)
 
   describe("scope_path", function()
+    local original_ensure_dir
+
+    before_each(function()
+      fs._reset_scope_path_cache()
+      original_ensure_dir = fs.ensure_dir
+    end)
+
+    after_each(function()
+      fs.ensure_dir = original_ensure_dir
+      fs._reset_scope_path_cache()
+    end)
+
     it("returns a global path for 'global' scope", function()
       local path = fs.scope_path("global")
       assert.is_true(path:find("peekstack/global.json") ~= nil)
@@ -52,6 +64,20 @@ describe("fs", function()
       local state_dir = vim.fn.stdpath("state")
       local path = fs.scope_path("global")
       assert.is_true(path:find(state_dir, 1, true) ~= nil)
+    end)
+
+    it("runs ensure_dir only once after cache warmup", function()
+      local calls = 0
+      fs.ensure_dir = function(path)
+        calls = calls + 1
+        return path
+      end
+
+      fs.scope_path("global")
+      fs.scope_path("cwd")
+      fs.scope_path("global")
+
+      assert.equals(1, calls)
     end)
   end)
 

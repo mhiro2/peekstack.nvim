@@ -194,9 +194,25 @@ local function peek_by_provider(provider, opts)
   end)
 end
 
+---@class PeekstackPeekMethods
+---@field definition fun(opts?: table)
+---@field implementation fun(opts?: table)
+---@field references fun(opts?: table)
+---@field type_definition fun(opts?: table)
+---@field declaration fun(opts?: table)
+---@field diagnostics_cursor fun(opts?: table)
+---@field diagnostics_buffer fun(opts?: table)
+---@field file_under_cursor fun(opts?: table)
+---@field grep fun(opts?: table)
+---@field marks_buffer fun(opts?: table)
+---@field marks_global fun(opts?: table)
+---@field marks_all fun(opts?: table)
+
+---@alias PeekstackPeekCallable fun(provider: string, opts?: table)
+
 --- `M.peek` is a callable table: call `M.peek("provider", opts)` directly,
 --- or use convenience shortcuts like `M.peek.definition(opts)`.
----@type table
+---@type PeekstackPeekMethods|PeekstackPeekCallable
 M.peek = setmetatable({
   definition = function(opts)
     return peek_by_provider("lsp.definition", opts)

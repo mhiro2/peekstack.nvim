@@ -4,10 +4,32 @@ local M = {}
 local cached_repo_root = nil
 ---@type string?
 local cached_repo_cwd = nil
+---@type string?
+local cached_scope_base = nil
+local scope_base_ready = false
 
 local function reset_repo_root_cache()
   cached_repo_root = nil
   cached_repo_cwd = nil
+end
+
+local function reset_scope_base_cache()
+  cached_scope_base = nil
+  scope_base_ready = false
+end
+
+---@return string
+local function scope_base_dir()
+  local base = vim.fn.stdpath("state") .. "/peekstack"
+  if cached_scope_base ~= base then
+    cached_scope_base = base
+    scope_base_ready = false
+  end
+  if not scope_base_ready then
+    M.ensure_dir(base)
+    scope_base_ready = true
+  end
+  return base
 end
 
 vim.api.nvim_create_autocmd("DirChanged", {
@@ -54,6 +76,11 @@ function M._reset_repo_root_cache()
   reset_repo_root_cache()
 end
 
+---Reset scope-path cache (for testing).
+function M._reset_scope_path_cache()
+  reset_scope_base_cache()
+end
+
 ---@param path string
 ---@return string
 function M.ensure_dir(path)
@@ -80,8 +107,7 @@ end
 ---@param scope string
 ---@return string
 function M.scope_path(scope)
-  local base = vim.fn.stdpath("state") .. "/peekstack"
-  M.ensure_dir(base)
+  local base = scope_base_dir()
   if scope == "global" then
     return base .. "/global.json"
   end
