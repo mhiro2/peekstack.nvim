@@ -59,6 +59,7 @@
 ---@field popups PeekstackPopupModel[]
 ---@field history PeekstackHistoryEntry[]
 ---@field layout_state any
+---@field focused_id integer?
 
 ---@class PeekstackUserEventData
 ---@field event string

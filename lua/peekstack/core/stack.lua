@@ -102,6 +102,7 @@ local function ensure_stack(winid)
       popups = {},
       history = {},
       layout_state = {},
+      focused_id = nil,
     }
   end
   return stacks[root_winid]
@@ -140,6 +141,7 @@ function M.push(location, opts)
     return nil
   end
   table.insert(stack.popups, model)
+  stack.focused_id = model.id
   layout.reflow(stack)
 
   emit_popup_event("PeekstackPush", model, stack.root_winid)
@@ -204,6 +206,15 @@ local function close_stack_item(stack, idx, item)
   })
 
   layout.reflow(stack)
+
+  -- Update focused_id when the focused popup was closed
+  if stack.focused_id == item.id then
+    if #stack.popups > 0 then
+      stack.focused_id = stack.popups[#stack.popups].id
+    else
+      stack.focused_id = nil
+    end
+  end
 
   if should_restore_focus and #stack.popups > 0 then
     local next_popup = stack.popups[#stack.popups]
@@ -436,6 +447,7 @@ function M.focus_by_id(id, winid)
         end
       end
       if ok then
+        stack.focused_id = target.id
         layout.update_focus_zindex(stack, target.winid)
         emit_popup_event("PeekstackFocus", target, stack.root_winid)
       end
@@ -802,6 +814,14 @@ function M.close_all(winid)
 
     table.remove(stack.popups, idx)
   end
+end
+
+---Get the focused popup id for a stack.
+---@param winid? integer
+---@return integer?
+function M.focused_id(winid)
+  local stack = ensure_stack(winid)
+  return stack.focused_id
 end
 
 --- Reset all stacks (for testing).

@@ -304,4 +304,128 @@ describe("peekstack.ui.stack_view", function()
 
     assert.is_nil(state.help_winid)
   end)
+
+  it("shows focus marker on the focused popup", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+
+    -- m2 is the focused one (last pushed), it should be the second visible entry
+    -- Entry lines start after header (line 1)
+    local has_focused = false
+    local has_unfocused = false
+    for _, line in ipairs(lines) do
+      if line:find("▶", 1, true) then
+        has_focused = true
+      end
+      if line:match("^  %d+%.") then
+        has_unfocused = true
+      end
+    end
+
+    assert.is_true(has_focused, "should have a focused marker")
+    assert.is_true(has_unfocused, "should have an unfocused entry")
+  end)
+
+  it("does not show focus marker on unfocused popup", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    assert.is_not_nil(m1)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    -- Only one popup and it is focused, so all entries have the marker
+    local focused_count = 0
+    for _, line in ipairs(lines) do
+      if line:find("▶", 1, true) then
+        focused_count = focused_count + 1
+      end
+    end
+    assert.equals(1, focused_count)
+  end)
+
+  it("renders preview line with source code", function()
+    local tmpfile = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "local x = 42" }, tmpfile)
+
+    local loc = helpers.make_location({
+      uri = vim.uri_from_fname(tmpfile),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+    })
+    local model = stack.push(loc)
+    assert.is_not_nil(model)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    local joined = table.concat(lines, "\n")
+
+    assert.is_true(joined:find("local x = 42", 1, true) ~= nil, "preview line should contain source code")
+
+    vim.fn.delete(tmpfile)
+  end)
+
+  it("does not crash when source buffer is invalid for preview", function()
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      {
+        id = 1,
+        title = "Alpha",
+        location = location_for("/tmp/alpha.lua"),
+        pinned = false,
+        source_bufnr = -1,
+        bufnr = -1,
+      },
+    }
+    s.focused_id = 1
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    assert.has_no.errors(function()
+      stack_view._render(state)
+    end)
+  end)
+
+  it("maps preview line to the same popup id", function()
+    local tmpfile = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "local x = 42" }, tmpfile)
+
+    local loc = helpers.make_location({
+      uri = vim.uri_from_fname(tmpfile),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+    })
+    local model = stack.push(loc)
+    assert.is_not_nil(model)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    -- Find all line numbers mapped to this popup id
+    local mapped_lines = {}
+    for line_nr, id in pairs(state.line_to_id) do
+      if id == model.id then
+        table.insert(mapped_lines, line_nr)
+      end
+    end
+
+    -- Should have at least 2 entries: the entry line and the preview line
+    assert.is_true(#mapped_lines >= 2, "preview line should also map to the popup id")
+
+    vim.fn.delete(tmpfile)
+  end)
 end)

@@ -192,6 +192,30 @@ end
 ---@field col_end integer
 ---@field hl_group string
 
+--- Get a trimmed preview line from a source buffer
+---@param source_bufnr integer?
+---@param line integer
+---@param max_width integer
+---@return string
+local function get_preview_line(source_bufnr, line, max_width)
+  if not source_bufnr or not vim.api.nvim_buf_is_valid(source_bufnr) then
+    return ""
+  end
+  local ok, buf_lines = pcall(vim.api.nvim_buf_get_lines, source_bufnr, line, line + 1, false)
+  if not ok or not buf_lines or #buf_lines == 0 then
+    return ""
+  end
+  local text = vim.trim(buf_lines[1] or "")
+  if text == "" then
+    return ""
+  end
+  local available = math.max(10, max_width - 4)
+  if vim.fn.strdisplaywidth(text) > available then
+    text = vim.fn.strcharpart(text, 0, available - 3) .. "..."
+  end
+  return "    " .. text
+end
+
 ---Render the stack view list
 ---@param s table
 local function render(s)
@@ -240,10 +264,14 @@ local function render(s)
     table.insert(highlights, { { col_start = 0, col_end = #empty, hl_group = "PeekstackStackViewEmpty" } })
   end
 
+  local focused_id = stack.focused_id(s.root_winid)
+
   for idx, popup in ipairs(visible) do
+    local is_focused = popup.id == focused_id
+    local focus_marker = is_focused and "▶ " or "  "
     local pinned = popup.pinned and "• " or ""
     local index_str = string.format("%d. ", idx)
-    local prefix = index_str .. pinned
+    local prefix = focus_marker .. index_str .. pinned
     local max_label_width = math.max(win_width - vim.fn.strdisplaywidth(prefix), 0)
     if ui_path.max_width and ui_path.max_width > 0 then
       max_label_width = math.min(max_label_width, ui_path.max_width)
@@ -264,20 +292,30 @@ local function render(s)
     local line = prefix .. label
     table.insert(lines, line)
 
+    local entry_line_nr = #lines
     local line_hls = {}
+    -- Focus marker highlight
+    if is_focused then
+      table.insert(line_hls, { col_start = 0, col_end = #focus_marker, hl_group = "PeekstackStackViewFocused" })
+    end
     -- Index number highlight
-    table.insert(line_hls, { col_start = 0, col_end = #index_str, hl_group = "PeekstackStackViewIndex" })
+    local idx_start = #focus_marker
+    table.insert(
+      line_hls,
+      { col_start = idx_start, col_end = idx_start + #index_str, hl_group = "PeekstackStackViewIndex" }
+    )
     -- Pinned badge highlight
     if popup.pinned then
+      local pin_start = idx_start + #index_str
       table.insert(line_hls, {
-        col_start = #index_str,
-        col_end = #index_str + #pinned,
+        col_start = pin_start,
+        col_end = pin_start + #pinned,
         hl_group = "PeekstackStackViewPinned",
       })
     end
     -- Label highlighting from structured title chunks
     if label_chunks then
-      local pos = #index_str + #pinned
+      local pos = #prefix
       for _, chunk in ipairs(label_chunks) do
         local text = chunk[1] or ""
         local hl = chunk[2]
@@ -293,7 +331,24 @@ local function render(s)
     end
     table.insert(highlights, line_hls)
 
-    s.line_to_id[idx + s.header_lines] = popup.id
+    s.line_to_id[entry_line_nr] = popup.id
+
+    -- Preview line
+    local source_line = popup.location
+      and popup.location.range
+      and popup.location.range.start
+      and popup.location.range.start.line
+    if source_line then
+      local preview = get_preview_line(popup.source_bufnr or popup.bufnr, source_line, win_width)
+      if preview ~= "" then
+        table.insert(lines, preview)
+        local preview_line_nr = #lines
+        table.insert(highlights, {
+          { col_start = 0, col_end = #preview, hl_group = "PeekstackStackViewPreview" },
+        })
+        s.line_to_id[preview_line_nr] = popup.id
+      end
+    end
   end
 
   vim.bo[s.bufnr].modifiable = true
@@ -324,11 +379,14 @@ local function move_cursor_to_id(s, id)
   if not s.winid or not vim.api.nvim_win_is_valid(s.winid) then
     return
   end
+  local min_line = nil
   for line, entry_id in pairs(s.line_to_id) do
-    if entry_id == id then
-      vim.api.nvim_win_set_cursor(s.winid, { line, 0 })
-      return
+    if entry_id == id and (not min_line or line < min_line) then
+      min_line = line
     end
+  end
+  if min_line then
+    vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
   end
 end
 

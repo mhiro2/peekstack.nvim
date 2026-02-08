@@ -513,3 +513,63 @@ describe("stack focus reopen", function()
     end
   end)
 end)
+
+describe("stack.focused_id", function()
+  before_each(function()
+    stack._reset()
+    config.setup({})
+  end)
+
+  after_each(function()
+    local s = stack.current_stack()
+    for i = #s.popups, 1, -1 do
+      stack.close(s.popups[i].id)
+    end
+    stack._reset()
+  end)
+
+  it("is set to the pushed popup id after push", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.equals(m1.id, stack.focused_id())
+
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m2)
+    assert.equals(m2.id, stack.focused_id())
+  end)
+
+  it("is updated after focus_by_id", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    assert.equals(m2.id, stack.focused_id())
+
+    stack.focus_by_id(m1.id)
+    assert.equals(m1.id, stack.focused_id())
+  end)
+
+  it("is updated to next popup when focused popup is closed", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    assert.equals(m2.id, stack.focused_id())
+    stack.close(m2.id)
+    assert.equals(m1.id, stack.focused_id())
+  end)
+
+  it("is nil when last popup is closed", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    assert.is_not_nil(m1)
+
+    stack.close(m1.id)
+    assert.is_nil(stack.focused_id())
+  end)
+end)
