@@ -67,6 +67,16 @@ function M.compute(index)
   }
 end
 
+---@param winid integer
+---@param is_focused boolean
+local function set_popup_winhighlight(winid, is_focused)
+  if not vim.api.nvim_win_is_valid(winid) then
+    return
+  end
+  vim.wo[winid].winhighlight = is_focused and "FloatBorder:PeekstackPopupBorderFocused"
+    or "FloatBorder:PeekstackPopupBorder"
+end
+
 ---@param stack PeekstackStackModel
 ---@return integer?
 local function focused_popup_winid(stack)
@@ -86,9 +96,10 @@ function M.reflow(stack)
   local top = base + #stack.popups
   for idx, popup in ipairs(stack.popups) do
     if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
+      local is_focused = focused_winid ~= nil and popup.winid == focused_winid
       local layout = M.compute(idx)
       local z = layout.zindex
-      if focused_winid and popup.winid == focused_winid then
+      if is_focused then
         z = top
       end
       local win_opts = vim.tbl_extend("force", popup.win_opts or {}, {
@@ -99,6 +110,7 @@ function M.reflow(stack)
         zindex = z,
       })
       vim.api.nvim_win_set_config(popup.winid, win_opts)
+      set_popup_winhighlight(popup.winid, is_focused)
     end
   end
 end
@@ -117,7 +129,8 @@ function M.update_focus_zindex(stack, focused_winid)
 
   for idx, popup in ipairs(stack.popups) do
     if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
-      local z = (popup.winid == focused_winid) and top or (base + idx - 1)
+      local is_focused = popup.winid == focused_winid
+      local z = is_focused and top or (base + idx - 1)
       local lo = M.compute(idx)
       local win_opts = vim.tbl_extend("force", popup.win_opts or {}, {
         row = lo.row,
@@ -127,6 +140,7 @@ function M.update_focus_zindex(stack, focused_winid)
         zindex = z,
       })
       pcall(vim.api.nvim_win_set_config, popup.winid, win_opts)
+      set_popup_winhighlight(popup.winid, is_focused)
     end
   end
 end

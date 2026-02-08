@@ -309,6 +309,7 @@ function M.open(bufnr, location, opts)
   end
 
   local winid = vim.api.nvim_open_win(bufnr, true, win_opts)
+  vim.wo[winid].winhighlight = "FloatBorder:PeekstackPopupBorderFocused"
   vim.wo[winid].wrap = false
   vim.wo[winid].cursorline = true
   vim.wo[winid].number = false

@@ -180,4 +180,48 @@ describe("layout.update_focus_zindex", function()
     assert.equals(base + 2, cfg1.zindex)
     assert.equals(base + 1, cfg2.zindex)
   end)
+
+  it("sets focused popup winhighlight to PeekstackPopupBorderFocused", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    local s = stack.current_stack()
+    layout.update_focus_zindex(s, m2.winid)
+
+    local wh2 = vim.wo[m2.winid].winhighlight
+    assert.is_true(wh2:find("PeekstackPopupBorderFocused", 1, true) ~= nil)
+
+    local wh1 = vim.wo[m1.winid].winhighlight
+    assert.is_true(wh1:find("PeekstackPopupBorder", 1, true) ~= nil)
+    assert.is_nil(wh1:find("PeekstackPopupBorderFocused", 1, true))
+  end)
+
+  it("swaps winhighlight when focus changes", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    local s = stack.current_stack()
+
+    layout.update_focus_zindex(s, m2.winid)
+    assert.is_true(vim.wo[m2.winid].winhighlight:find("PeekstackPopupBorderFocused", 1, true) ~= nil)
+
+    layout.update_focus_zindex(s, m1.winid)
+    assert.is_true(vim.wo[m1.winid].winhighlight:find("PeekstackPopupBorderFocused", 1, true) ~= nil)
+    assert.is_nil(vim.wo[m2.winid].winhighlight:find("PeekstackPopupBorderFocused", 1, true))
+  end)
+
+  it("sets initial winhighlight as focused on new popup", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    assert.is_not_nil(m1)
+
+    local wh = vim.wo[m1.winid].winhighlight
+    assert.is_true(wh:find("PeekstackPopupBorderFocused", 1, true) ~= nil)
+  end)
 end)
