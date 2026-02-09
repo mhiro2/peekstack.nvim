@@ -163,6 +163,10 @@ Commands are registered after `setup()` is called.
 :PeekstackStack                              *:PeekstackStack*
     Open the stack view panel listing all active popups.
     The focused popup is highlighted with a `▶` marker.
+    Tree guides are shown for nested popup depth:
+      `├` / `└` for sibling relation under the same parent.
+      `│` is shown only when an ancestor branch continues.
+      No guide for root-level popups or when parent is not visible.
     Each entry shows a preview line of the source code below it.
     Preview lines use Tree-sitter based syntax highlights when available.
 
@@ -386,9 +390,14 @@ Stack view keymaps:
     `/`           Filter the list
     `gg/G`        Jump to first/last stack item
     `j/k`         Move cursor by stack item (skip header/preview lines)
-    `J/K`         Move the selected item down/up
     `?`           Toggle help
     `q`           Close the stack view
+
+Stack view tree guides:
+
+    `├` / `└`     Sibling relation under the same parent
+    `│`           Ancestor branch that still has later siblings
+    no guide      Root-level popup or parent not visible
 
 ==============================================================================
 HIGHLIGHT GROUPS                                     *peekstack-highlights*

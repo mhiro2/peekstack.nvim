@@ -2,43 +2,6 @@ local stack = require("peekstack.core.stack")
 local config = require("peekstack.config")
 local helpers = require("tests.helpers")
 
-describe("stack.move_by_id", function()
-  before_each(function()
-    stack._reset()
-  end)
-
-  it("moves items within the stack", function()
-    local s = stack.current_stack()
-    s.popups = {
-      { id = 1 },
-      { id = 2 },
-      { id = 3 },
-    }
-
-    assert.is_true(stack.move_by_id(1, 1))
-    assert.equals(2, s.popups[1].id)
-    assert.equals(1, s.popups[2].id)
-    assert.equals(3, s.popups[3].id)
-
-    assert.is_true(stack.move_by_id(3, -1))
-    assert.equals(2, s.popups[1].id)
-    assert.equals(3, s.popups[2].id)
-    assert.equals(1, s.popups[3].id)
-  end)
-
-  it("returns false when movement is not possible", function()
-    local s = stack.current_stack()
-    s.popups = {
-      { id = 1 },
-      { id = 2 },
-    }
-
-    assert.is_false(stack.move_by_id(1, -1))
-    assert.is_false(stack.move_by_id(2, 1))
-    assert.is_false(stack.move_by_id(99, 1))
-  end)
-end)
-
 describe("stack.focus_by_id", function()
   before_each(function()
     stack._reset()

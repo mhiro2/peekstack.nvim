@@ -436,6 +436,166 @@ local function get_preview_line(source_bufnr, line, max_width, preview_prefix)
   }
 end
 
+---Sort visible items in DFS tree order so children appear right after their parent.
+---Items without a visible parent are treated as roots and keep their relative order.
+---@param items PeekstackPopupModel[]
+---@return PeekstackPopupModel[]
+local function tree_sort(items)
+  local by_id = {}
+  for _, popup in ipairs(items) do
+    by_id[popup.id] = popup
+  end
+
+  ---@type table<integer, PeekstackPopupModel[]>
+  local children = {}
+  local roots = {}
+
+  for _, popup in ipairs(items) do
+    local pid = popup.parent_popup_id
+    if pid and by_id[pid] then
+      if not children[pid] then
+        children[pid] = {}
+      end
+      table.insert(children[pid], popup)
+    else
+      table.insert(roots, popup)
+    end
+  end
+
+  local result = {}
+  local visiting = {}
+  local function dfs(node)
+    if visiting[node.id] then
+      return
+    end
+    visiting[node.id] = true
+    table.insert(result, node)
+    if children[node.id] then
+      for _, child in ipairs(children[node.id]) do
+        dfs(child)
+      end
+    end
+  end
+
+  for _, root in ipairs(roots) do
+    dfs(root)
+  end
+
+  -- Safety fallback: keep any unvisited items (e.g. cyclic/invalid parent links)
+  -- so entries are never dropped from the stack view.
+  for _, popup in ipairs(items) do
+    if not visiting[popup.id] then
+      dfs(popup)
+    end
+  end
+
+  return result
+end
+
+---@param items PeekstackPopupModel[]
+---@return table<integer, PeekstackPopupModel>
+local function visible_popup_by_id(items)
+  local by_id = {}
+  for _, popup in ipairs(items) do
+    by_id[popup.id] = popup
+  end
+  return by_id
+end
+
+---@param visible PeekstackPopupModel[]
+---@return table<integer, string>
+local function tree_guide_by_id(visible)
+  local guides = {}
+  local by_id = visible_popup_by_id(visible)
+  ---@type table<integer, integer[]>
+  local children_by_parent = {}
+
+  -- Children order follows `visible` (stack push order).
+  -- If sorting is added, children_by_parent must be rebuilt in display order.
+  for _, popup in ipairs(visible) do
+    local parent_id = popup.parent_popup_id
+    if parent_id and by_id[parent_id] then
+      if not children_by_parent[parent_id] then
+        children_by_parent[parent_id] = {}
+      end
+      table.insert(children_by_parent[parent_id], popup.id)
+    end
+  end
+
+  ---@type table<integer, integer>
+  local sibling_pos = {}
+  ---@type table<integer, integer>
+  local sibling_total = {}
+  for _, children in pairs(children_by_parent) do
+    local total = #children
+    for idx, child_id in ipairs(children) do
+      sibling_pos[child_id] = idx
+      sibling_total[child_id] = total
+    end
+  end
+
+  ---@type table<integer, integer[]>
+  local chain_cache = {}
+
+  ---@param popup_id integer
+  ---@param visiting table<integer, boolean>
+  ---@return integer[]
+  local function visible_chain(popup_id, visiting)
+    local cached = chain_cache[popup_id]
+    if cached then
+      return cached
+    end
+    if visiting[popup_id] then
+      return {}
+    end
+
+    local popup = by_id[popup_id]
+    if not popup then
+      return {}
+    end
+
+    local parent_id = popup.parent_popup_id
+    if not parent_id or not by_id[parent_id] then
+      local root_chain = { popup_id }
+      chain_cache[popup_id] = root_chain
+      return root_chain
+    end
+
+    visiting[popup_id] = true
+    local parent_chain = visible_chain(parent_id, visiting)
+    visiting[popup_id] = nil
+
+    local chain = {}
+    for _, id in ipairs(parent_chain) do
+      table.insert(chain, id)
+    end
+    table.insert(chain, popup_id)
+    chain_cache[popup_id] = chain
+    return chain
+  end
+
+  for _, popup in ipairs(visible) do
+    local chain = visible_chain(popup.id, {})
+    local depth = #chain - 1
+    if depth > 0 then
+      local segments = {}
+      for level = 1, depth - 1 do
+        local path_child_id = chain[level + 1]
+        local pos = sibling_pos[path_child_id] or 1
+        local total = sibling_total[path_child_id] or 1
+        segments[#segments + 1] = (pos < total) and "│ " or "  "
+      end
+      local pos = sibling_pos[popup.id] or 1
+      local total = sibling_total[popup.id] or 1
+      segments[#segments + 1] = (pos < total) and "├ " or "└ "
+      guides[popup.id] = table.concat(segments)
+    else
+      guides[popup.id] = ""
+    end
+  end
+  return guides
+end
+
 ---Render the stack view list
 ---@param s table
 local function render(s)
@@ -467,6 +627,8 @@ local function render(s)
       table.insert(visible, popup)
     end
   end
+  visible = tree_sort(visible)
+  local tree_guides = tree_guide_by_id(visible)
 
   local header = nil
   local header_hl = nil
@@ -493,7 +655,8 @@ local function render(s)
     local focus_marker = is_focused and "▶ " or "  "
     local pinned = popup.pinned and "• " or ""
     local index_str = string.format("%d. ", idx)
-    local prefix = focus_marker .. index_str .. pinned
+    local tree_guide = tree_guides[popup.id] or ""
+    local prefix = focus_marker .. index_str .. pinned .. tree_guide
     local max_label_width = math.max(win_width - vim.fn.strdisplaywidth(prefix), 0)
     if ui_path.max_width and ui_path.max_width > 0 then
       max_label_width = math.min(max_label_width, ui_path.max_width)
@@ -533,6 +696,15 @@ local function render(s)
         col_start = pin_start,
         col_end = pin_start + #pinned,
         hl_group = "PeekstackStackViewPinned",
+      })
+    end
+    if tree_guide ~= "" then
+      -- Byte offsets: #tree_guide is byte length, correct for extmark col/end_col.
+      local tree_start = idx_start + #index_str + #pinned
+      table.insert(line_hls, {
+        col_start = tree_start,
+        col_end = tree_start + #tree_guide,
+        hl_group = "PeekstackStackViewTree",
       })
     end
     -- Label highlighting from structured title chunks
@@ -611,22 +783,6 @@ local function render(s)
 end
 
 ---@param s table
----@param id integer
-local function move_cursor_to_id(s, id)
-  if not s.winid or not vim.api.nvim_win_is_valid(s.winid) then
-    return
-  end
-  local min_line = nil
-  for line, entry_id in pairs(s.line_to_id) do
-    if entry_id == id and (not min_line or line < min_line) then
-      min_line = line
-    end
-  end
-  if min_line then
-    vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
-  end
-end
-
 ---@param s table
 ---@return integer[]
 local function entry_lines(s)
@@ -729,7 +885,6 @@ local function toggle_help(s)
     "/     Filter list",
     "gg/G  Jump to first/last stack item",
     "j/k   Move cursor by stack item",
-    "J/K   Move item down/up",
     "q     Close stack view",
     "?     Toggle this help",
   }
@@ -915,26 +1070,6 @@ local function apply_keymaps(s)
     local count = vim.v.count1
     for _ = 1, count do
       move_cursor_by_stack_item(s, -1)
-    end
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "J", function()
-    local line = vim.api.nvim_win_get_cursor(s.winid)[1]
-    local id = s.line_to_id[line]
-    local stack = require("peekstack.core.stack")
-    if id and stack.move_by_id(id, 1, s.root_winid) then
-      render(s)
-      move_cursor_to_id(s, id)
-    end
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "K", function()
-    local line = vim.api.nvim_win_get_cursor(s.winid)[1]
-    local id = s.line_to_id[line]
-    local stack = require("peekstack.core.stack")
-    if id and stack.move_by_id(id, -1, s.root_winid) then
-      render(s)
-      move_cursor_to_id(s, id)
     end
   end, { buffer = s.bufnr, nowait = true, silent = true })
 

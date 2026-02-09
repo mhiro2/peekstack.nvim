@@ -532,41 +532,6 @@ function M.toggle_pin_by_id(id, winid)
   return false
 end
 
----@param id integer
----@param step integer
----@param winid? integer
----@return boolean
-function M.move_by_id(id, step, winid)
-  deps()
-  local stack = ensure_stack(winid)
-  if #stack.popups == 0 then
-    return false
-  end
-  local from_idx = nil
-  for idx, item in ipairs(stack.popups) do
-    if item.id == id then
-      from_idx = idx
-      break
-    end
-  end
-  if not from_idx then
-    return false
-  end
-  local to_idx = from_idx + step
-  if to_idx < 1 then
-    to_idx = 1
-  elseif to_idx > #stack.popups then
-    to_idx = #stack.popups
-  end
-  if from_idx == to_idx then
-    return false
-  end
-  local item = table.remove(stack.popups, from_idx)
-  table.insert(stack.popups, to_idx, item)
-  layout.reflow(stack)
-  return true
-end
-
 ---@param bufnr integer
 function M.handle_buf_wipeout(bufnr)
   deps()

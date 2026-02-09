@@ -24,7 +24,8 @@ peekstack.nvim focuses on preserving the _trail_ of your exploration.
 ### Core
 
 - 🧭 **Peek stack UI**: stack / cascade / single layouts
-- 🧱 **Stack view**: list popups, focus, pin, rename, reorder, history, preview syntax highlights
+- 🧱 **Stack view**: list popups, focus, pin, rename, history, preview syntax highlights
+- 🌳 **Tree guides**: stack entries are grouped by navigation hierarchy
 - 🔍 **Providers**: LSP / diagnostics / file / marks
 - 🚀 **Promote**: fast split/tab promotion
 - 🧷 **Inline + quick peek**: inline preview or ephemeral popups
@@ -132,7 +133,6 @@ Defaults in stack view:
 - `/` — filter
 - `gg/G` — jump to first/last stack item
 - `j/k` — move cursor by stack item (skip header/preview lines)
-- `J/K` — move item down/up
 - `?` — help
 - `q` — close
 

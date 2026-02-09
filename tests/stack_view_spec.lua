@@ -120,6 +120,197 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(lines[2]:find("• ", 1, true) ~= nil)
   end)
 
+  it("renders tree guide for linear chains", function()
+    local loc = helpers.make_location()
+    local parent = stack.push(loc, { title = "Parent" })
+    assert.is_not_nil(parent)
+    vim.api.nvim_set_current_win(parent.winid)
+    local child = stack.push(loc, { title = "Child" })
+    assert.is_not_nil(child)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local joined = table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n")
+    assert.is_true(joined:find("└ ", 1, true) ~= nil)
+  end)
+
+  it("renders tree guide when branching from an earlier visible popup", function()
+    local loc = helpers.make_location()
+    local root = stack.push(loc, { title = "Root" })
+    assert.is_not_nil(root)
+
+    vim.api.nvim_set_current_win(root.winid)
+    local first_child = stack.push(loc, { title = "First child" })
+    assert.is_not_nil(first_child)
+
+    vim.api.nvim_set_current_win(root.winid)
+    local second_child = stack.push(loc, { title = "Second child" })
+    assert.is_not_nil(second_child)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    local entry_line_by_id = {}
+    for line_nr, id in pairs(state.line_to_id) do
+      if not entry_line_by_id[id] or line_nr < entry_line_by_id[id] then
+        entry_line_by_id[id] = line_nr
+      end
+    end
+    local second_line = lines[entry_line_by_id[second_child.id]]
+    assert.is_true(second_line:find("└ ", 1, true) ~= nil)
+  end)
+
+  it("does not render tree guide when parent popup is filtered out", function()
+    local loc = helpers.make_location()
+    local parent = stack.push(loc, { title = "Parent only" })
+    assert.is_not_nil(parent)
+    vim.api.nvim_set_current_win(parent.winid)
+    local child = stack.push(loc, { title = "Child only" })
+    assert.is_not_nil(child)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    state.filter = "child"
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    local child_line = lines[2] or ""
+    assert.is_true(child_line:find("└ ", 1, true) == nil)
+  end)
+
+  it("renders nested guide for depth 2 with space for ended branch", function()
+    local loc = helpers.make_location()
+    local root = stack.push(loc, { title = "Root" })
+    assert.is_not_nil(root)
+    vim.api.nvim_set_current_win(root.winid)
+    local child = stack.push(loc, { title = "Child" })
+    assert.is_not_nil(child)
+    vim.api.nvim_set_current_win(child.winid)
+    local grandchild = stack.push(loc, { title = "Grandchild" })
+    assert.is_not_nil(grandchild)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    local entry_line_by_id = {}
+    for line_nr, id in pairs(state.line_to_id) do
+      if not entry_line_by_id[id] or line_nr < entry_line_by_id[id] then
+        entry_line_by_id[id] = line_nr
+      end
+    end
+    local grandchild_line = lines[entry_line_by_id[grandchild.id]]
+    assert.is_true(grandchild_line:find("  └ ", 1, true) ~= nil)
+  end)
+
+  it("renders continuation guide when ancestor has later siblings", function()
+    local loc = helpers.make_location()
+    local root = stack.push(loc, { title = "Root" })
+    assert.is_not_nil(root)
+
+    vim.api.nvim_set_current_win(root.winid)
+    local first = stack.push(loc, { title = "First" })
+    assert.is_not_nil(first)
+
+    vim.api.nvim_set_current_win(root.winid)
+    local second = stack.push(loc, { title = "Second" })
+    assert.is_not_nil(second)
+
+    vim.api.nvim_set_current_win(second.winid)
+    local second_child = stack.push(loc, { title = "Second child" })
+    assert.is_not_nil(second_child)
+
+    vim.api.nvim_set_current_win(root.winid)
+    local third = stack.push(loc, { title = "Third" })
+    assert.is_not_nil(third)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    local entry_line_by_id = {}
+    for line_nr, id in pairs(state.line_to_id) do
+      if not entry_line_by_id[id] or line_nr < entry_line_by_id[id] then
+        entry_line_by_id[id] = line_nr
+      end
+    end
+    local second_child_line = lines[entry_line_by_id[second_child.id]]
+    assert.is_true(second_child_line:find("│ └ ", 1, true) ~= nil)
+  end)
+
+  it("sorts items in tree order so children follow their parent", function()
+    local loc = helpers.make_location()
+    local root = stack.push(loc, { title = "Root" })
+    assert.is_not_nil(root)
+
+    vim.api.nvim_set_current_win(root.winid)
+    local child_a = stack.push(loc, { title = "ChildA" })
+    assert.is_not_nil(child_a)
+
+    -- Push another child of root (pushed after child_a, but should appear after child_a's subtree)
+    vim.api.nvim_set_current_win(root.winid)
+    local child_b = stack.push(loc, { title = "ChildB" })
+    assert.is_not_nil(child_b)
+
+    -- Push grandchild of child_a (pushed after child_b in stack order)
+    vim.api.nvim_set_current_win(child_a.winid)
+    local grandchild = stack.push(loc, { title = "Grandchild" })
+    assert.is_not_nil(grandchild)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    -- Collect display order from line_to_id (entry lines only, first occurrence per id)
+    local entry_line_by_id = {}
+    for line_nr, id in pairs(state.line_to_id) do
+      if not entry_line_by_id[id] or line_nr < entry_line_by_id[id] then
+        entry_line_by_id[id] = line_nr
+      end
+    end
+
+    -- In tree order: Root, ChildA, Grandchild, ChildB
+    -- Grandchild (child of ChildA) should appear before ChildB (sibling of ChildA)
+    assert.is_true(entry_line_by_id[grandchild.id] < entry_line_by_id[child_b.id])
+    -- ChildA should appear right after Root
+    assert.is_true(entry_line_by_id[child_a.id] < entry_line_by_id[grandchild.id])
+  end)
+
+  it("keeps entries visible when parent links are cyclic", function()
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      {
+        id = 1,
+        title = "Cycle A",
+        location = location_for("/tmp/cycle_a.lua"),
+        pinned = false,
+        parent_popup_id = 2,
+      },
+      {
+        id = 2,
+        title = "Cycle B",
+        location = location_for("/tmp/cycle_b.lua"),
+        pinned = false,
+        parent_popup_id = 1,
+      },
+    }
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local joined = table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n")
+    assert.is_true(joined:find("Cycle A", 1, true) ~= nil)
+    assert.is_true(joined:find("Cycle B", 1, true) ~= nil)
+  end)
+
   it("has U keymap bound in stack view buffer", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)
