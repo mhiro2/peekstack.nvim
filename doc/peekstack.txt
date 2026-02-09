@@ -150,6 +150,9 @@ Configure the backend with `picker.backend`:
   })
 <
 
+For external backends (`telescope`, `fzf-lua`, `snacks`), picker preview windows
+show file content around the selected location.
+
 If the chosen plugin is not installed, a warning is shown and the picker will not open.
 
 ==============================================================================
