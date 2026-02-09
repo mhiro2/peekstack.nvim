@@ -113,16 +113,34 @@ function M.current_stack(winid)
   return ensure_stack(winid)
 end
 
+---@param opts table
+---@return integer?
+local function resolve_parent_popup_id(opts)
+  if opts.parent_popup_id ~= nil then
+    return opts.parent_popup_id
+  end
+
+  local current_win = vim.api.nvim_get_current_win()
+  local owner_stack, current_popup = M.find_by_winid(current_win)
+  if owner_stack and current_popup then
+    return current_popup.id
+  end
+
+  return nil
+end
+
 ---@param location PeekstackLocation
 ---@param opts? table
 ---@return PeekstackPopupModel?
 function M.push(location, opts)
   deps()
   opts = opts or {}
+  local create_opts = vim.tbl_extend("force", opts, {})
+  create_opts.parent_popup_id = resolve_parent_popup_id(opts)
 
   -- Handle quick-peek mode (don't add to stack)
   if opts.stack == false then
-    local model = popup.create(location, vim.tbl_extend("force", opts, { ephemeral = true }))
+    local model = popup.create(location, vim.tbl_extend("force", create_opts, { ephemeral = true }))
     if not model then
       return nil
     end
@@ -135,7 +153,7 @@ function M.push(location, opts)
   end
 
   local stack = ensure_stack()
-  local model = popup.create(location, opts)
+  local model = popup.create(location, create_opts)
   if not model then
     return nil
   end
@@ -376,6 +394,7 @@ function M.reopen_by_id(id, winid)
       local reopen_opts = {
         buffer_mode = item.buffer_mode or "copy",
         origin_winid = stack.root_winid,
+        parent_popup_id = item.parent_popup_id,
       }
       if not item.title_chunks then
         reopen_opts.title = item.title

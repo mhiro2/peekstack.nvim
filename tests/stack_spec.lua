@@ -218,6 +218,46 @@ describe("stack.handle_win_closed", function()
   end)
 end)
 
+describe("stack parent popup chain", function()
+  before_each(function()
+    stack._reset()
+    config.setup({})
+  end)
+
+  after_each(function()
+    local s = stack.current_stack()
+    for i = #s.popups, 1, -1 do
+      stack.close(s.popups[i].id)
+    end
+    stack._reset()
+  end)
+
+  it("sets parent_popup_id when pushing from a popup window", function()
+    local loc = helpers.make_location()
+    local parent = stack.push(loc)
+    assert.is_not_nil(parent)
+
+    vim.api.nvim_set_current_win(parent.winid)
+    local child = stack.push(loc)
+    assert.is_not_nil(child)
+
+    assert.equals(parent.id, child.parent_popup_id)
+  end)
+
+  it("does not set parent_popup_id when pushing from a normal window", function()
+    local root_winid = vim.api.nvim_get_current_win()
+    local loc = helpers.make_location()
+    local first = stack.push(loc)
+    assert.is_not_nil(first)
+
+    vim.api.nvim_set_current_win(root_winid)
+    local second = stack.push(loc)
+    assert.is_not_nil(second)
+
+    assert.is_nil(second.parent_popup_id)
+  end)
+end)
+
 describe("stack.close focus restore", function()
   before_each(function()
     stack._reset()
@@ -347,6 +387,24 @@ describe("stack focus reopen", function()
     if vim.api.nvim_win_is_valid(old_winid) then
       vim.api.nvim_win_close(old_winid, true)
     end
+  end)
+
+  it("keeps parent_popup_id when reopening a child popup", function()
+    local loc = helpers.make_location()
+    local parent = stack.push(loc)
+    assert.is_not_nil(parent)
+
+    vim.api.nvim_set_current_win(parent.winid)
+    local child = stack.push(loc)
+    assert.is_not_nil(child)
+    assert.equals(parent.id, child.parent_popup_id)
+
+    child.winid = -1
+    local reopened = stack.reopen_by_id(child.id)
+    assert.is_not_nil(reopened)
+    assert.equals(parent.id, reopened.parent_popup_id)
+
+    stack.close(child.id)
   end)
 end)
 
