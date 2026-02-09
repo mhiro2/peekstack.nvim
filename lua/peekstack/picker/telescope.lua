@@ -13,20 +13,24 @@ function M.pick(locations, opts, cb)
     return
   end
   local finders = require("telescope.finders")
-  local sorters = require("telescope.config").values
+  local conf = require("telescope.config").values
+  local telescope_opts = opts or {}
 
-  local items = picker_util.build_items(locations, 1)
+  local items = picker_util.build_external_items(locations, 1)
   local entries = {}
   for _, item in ipairs(items) do
     table.insert(entries, {
       value = item.value,
       display = item.label,
       ordinal = item.label,
+      filename = item.file,
+      lnum = item.lnum,
+      col = item.col,
     })
   end
 
   telescope
-    .new(opts or {}, {
+    .new(telescope_opts, {
       prompt_title = "Peekstack",
       finder = finders.new_table({
         results = entries,
@@ -34,7 +38,8 @@ function M.pick(locations, opts, cb)
           return entry
         end,
       }),
-      sorter = sorters.generic_sorter(opts or {}),
+      sorter = conf.generic_sorter(telescope_opts),
+      previewer = conf.grep_previewer(telescope_opts),
       attach_mappings = function(_, map)
         map("i", "<CR>", function(bufnr)
           local selection = require("telescope.actions.state").get_selected_entry()

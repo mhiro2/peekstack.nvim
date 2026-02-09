@@ -109,6 +109,15 @@
 ---@class PeekstackPicker
 ---@field pick fun(locations: PeekstackLocation[], opts?: table, cb: fun(location: PeekstackLocation))
 
+---@class PeekstackPickerItem
+---@field label string
+---@field value PeekstackLocation
+
+---@class PeekstackPickerExternalItem: PeekstackPickerItem
+---@field file? string
+---@field lnum integer
+---@field col integer
+
 ---@class PeekstackHistoryEntry
 ---@field location PeekstackLocation
 ---@field title? string

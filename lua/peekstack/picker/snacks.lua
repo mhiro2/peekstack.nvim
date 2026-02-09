@@ -13,27 +13,27 @@ function M.pick(locations, opts, cb)
     return
   end
 
-  local raw_items = picker_util.build_items(locations, 1)
+  local raw_items = picker_util.build_external_items(locations, 1)
   local items = {}
   for _, item in ipairs(raw_items) do
     local loc = item.value
+    local start = loc.range and loc.range.start or {}
     table.insert(items, {
       text = item.label,
-      file = loc.uri,
-      row = (loc.range.start.line or 0) + 1,
-      col = loc.range.start.character or 0,
-      loc = loc,
+      file = item.file or loc.uri,
+      pos = { item.lnum, start.character or 0 },
+      peekstack_loc = loc,
     })
   end
 
   local picker_opts = vim.tbl_extend("force", opts or {}, {
     title = "Peekstack",
     items = items,
-    format = "text",
+    format = "file",
     confirm = function(picker, item)
-      if item and item.loc then
+      if item and item.peekstack_loc then
         picker:close()
-        cb(item.loc)
+        cb(item.peekstack_loc)
       end
     end,
   })

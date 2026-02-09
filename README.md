@@ -264,6 +264,8 @@ Configure via `require("peekstack").setup({ ... })`.
 peekstack uses a picker when multiple locations are returned (e.g. references). The
 default backend is `builtin`. To use an external picker, install the plugin and set
 `picker.backend` to one of: `telescope`, `fzf-lua`, `snacks`.
+When using these external backends, the picker preview window shows the selected file
+content around the target location.
 
 ```lua
 {
