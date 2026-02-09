@@ -17,13 +17,12 @@ function M.pick(locations, opts, cb)
   local items = {}
   for _, item in ipairs(raw_items) do
     local loc = item.value
+    local start = loc.range and loc.range.start or {}
     table.insert(items, {
       text = item.label,
       file = item.file or loc.uri,
-      row = item.lnum,
-      col = item.col,
-      pos = { item.lnum, item.col },
-      loc = loc,
+      pos = { item.lnum, start.character or 0 },
+      peekstack_loc = loc,
     })
   end
 
@@ -32,9 +31,9 @@ function M.pick(locations, opts, cb)
     items = items,
     format = "file",
     confirm = function(picker, item)
-      if item and item.loc then
+      if item and item.peekstack_loc then
         picker:close()
-        cb(item.loc)
+        cb(item.peekstack_loc)
       end
     end,
   })
