@@ -8,6 +8,22 @@ local M = {}
 local NS = vim.api.nvim_create_namespace("PeekstackStackView")
 local TS_HL_PRIORITY = 150
 local PREVIEW_BASE_HL_PRIORITY = 10
+local PREVIEW_LINE_MARKER = "│ "
+
+---@type table<string, boolean>
+local PREVIEW_ALLOWED_CAPTURE_PREFIX = {
+  keyword = true,
+  string = true,
+  number = true,
+  boolean = true,
+  constant = true,
+  ["function"] = true,
+  method = true,
+  constructor = true,
+  type = true,
+  comment = true,
+  character = true,
+}
 
 ---@type table<string, vim.treesitter.Query|false>
 local TS_HIGHLIGHT_QUERY_CACHE = {}
@@ -297,6 +313,10 @@ local function capture_hl_group(capture_name, lang)
   if type(capture_name) ~= "string" or capture_name == "" then
     return nil
   end
+  local capture_prefix = capture_name:match("^[^%.]+") or capture_name
+  if not PREVIEW_ALLOWED_CAPTURE_PREFIX[capture_prefix] then
+    return nil
+  end
   if lang and lang ~= "" then
     local lang_group = string.format("@%s.%s", capture_name, lang)
     if highlight_exists(lang_group) then
@@ -376,8 +396,9 @@ end
 ---@param source_bufnr integer?
 ---@param line integer
 ---@param max_width integer
+---@param preview_prefix string
 ---@return PeekstackStackViewPreviewLine?
-local function get_preview_line(source_bufnr, line, max_width)
+local function get_preview_line(source_bufnr, line, max_width, preview_prefix)
   if not source_bufnr or not vim.api.nvim_buf_is_valid(source_bufnr) then
     return nil
   end
@@ -397,7 +418,8 @@ local function get_preview_line(source_bufnr, line, max_width)
   end
 
   local text = source_text:sub(source_col_start + 1, source_col_end)
-  local available = math.max(10, max_width - 4)
+  local prefix_display_width = vim.fn.strdisplaywidth(preview_prefix)
+  local available = math.max(10, max_width - prefix_display_width)
   if vim.fn.strdisplaywidth(text) > available then
     local keep_chars = math.max(available - 3, 0)
     local kept = vim.fn.strcharpart(text, 0, keep_chars)
@@ -405,12 +427,12 @@ local function get_preview_line(source_bufnr, line, max_width)
     source_col_end = source_col_start + #kept
   end
   return {
-    line = "    " .. text,
+    line = preview_prefix .. text,
     source_bufnr = source_bufnr,
     source_line = line,
     source_col_start = source_col_start,
     source_col_end = source_col_end,
-    preview_col_start = 4,
+    preview_col_start = #preview_prefix,
   }
 end
 
@@ -539,7 +561,8 @@ local function render(s)
       and popup.location.range.start
       and popup.location.range.start.line
     if source_line then
-      local preview = get_preview_line(popup.source_bufnr or popup.bufnr, source_line, win_width)
+      local preview_prefix = string.rep(" ", vim.fn.strdisplaywidth(prefix)) .. PREVIEW_LINE_MARKER
+      local preview = get_preview_line(popup.source_bufnr or popup.bufnr, source_line, win_width, preview_prefix)
       if preview then
         table.insert(lines, preview.line)
         local preview_line_nr = #lines

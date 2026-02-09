@@ -378,6 +378,53 @@ describe("peekstack.ui.stack_view", function()
     vim.fn.delete(tmpfile)
   end)
 
+  it("aligns preview marker with stack item prefix width", function()
+    local source_bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(source_bufnr, 0, -1, false, { "local value = 42" })
+
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      {
+        id = 1,
+        title = "Alpha",
+        location = {
+          uri = "file:///tmp/alpha.lua",
+          range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+          provider = "test",
+        },
+        pinned = false,
+        source_bufnr = source_bufnr,
+        bufnr = source_bufnr,
+      },
+    }
+    s.focused_id = 1
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+    local entry_line = lines[2]
+    local preview_line = lines[3]
+    assert.is_not_nil(entry_line)
+    assert.is_not_nil(preview_line)
+
+    local label_pos = entry_line:find("Alpha", 1, true)
+    local marker_pos = preview_line:find("│", 1, true)
+    assert.is_not_nil(label_pos)
+    assert.is_not_nil(marker_pos)
+
+    local entry_prefix = entry_line:sub(1, label_pos - 1)
+    local preview_indent = preview_line:sub(1, marker_pos - 1)
+    assert.equals(vim.fn.strdisplaywidth(entry_prefix), vim.fn.strdisplaywidth(preview_indent))
+    assert.is_true(preview_line:find("│ local value = 42", 1, true) ~= nil)
+
+    if vim.api.nvim_buf_is_valid(source_bufnr) then
+      vim.api.nvim_buf_delete(source_bufnr, { force = true })
+    end
+  end)
+
   it("does not crash when source buffer is invalid for preview", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)
@@ -525,6 +572,116 @@ describe("peekstack.ui.stack_view", function()
     end
   end)
 
+  it("skips noisy treesitter captures for preview lines", function()
+    local tmpfile = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "local value = 42" }, tmpfile)
+
+    local original_get_parser = vim.treesitter.get_parser
+    local original_query_get = vim.treesitter.query.get
+    local ok, err = pcall(function()
+      vim.api.nvim_set_hl(0, "@operator.peekstack_test_ts_skip", { link = "Operator" })
+      vim.api.nvim_set_hl(0, "@keyword.peekstack_test_ts_skip", { link = "Keyword" })
+
+      local fake_keyword_node = {
+        range = function()
+          return 0, 0, 0, 5
+        end,
+      }
+      local fake_operator_node = {
+        range = function()
+          return 0, 12, 0, 13
+        end,
+      }
+      local fake_root = {
+        range = function()
+          return 0, 0, 0, 20
+        end,
+      }
+      local fake_tree = {
+        root = function()
+          return fake_root
+        end,
+        lang = function()
+          return "peekstack_test_ts_skip"
+        end,
+      }
+      local fake_query = {
+        captures = { "operator", "keyword" },
+      }
+      fake_query.iter_captures = function(_self, _root, _bufnr, _start_row, _end_row)
+        local step = 0
+        return function()
+          step = step + 1
+          if step == 1 then
+            return 1, fake_operator_node
+          end
+          if step == 2 then
+            return 2, fake_keyword_node
+          end
+          return nil
+        end
+      end
+
+      vim.treesitter.get_parser = function(_bufnr)
+        return {
+          parse = function() end,
+          trees = function()
+            return { fake_tree }
+          end,
+        }
+      end
+      vim.treesitter.query.get = function(_lang, _query_name)
+        return fake_query
+      end
+
+      local loc = helpers.make_location({
+        uri = vim.uri_from_fname(tmpfile),
+        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      })
+      local model = stack.push(loc)
+      assert.is_not_nil(model)
+
+      stack_view.open()
+      local state = stack_view._get_state()
+      stack_view._render(state)
+
+      local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+      local preview_line_nr = nil
+      for idx, line in ipairs(lines) do
+        if line:find("local value = 42", 1, true) then
+          preview_line_nr = idx
+          break
+        end
+      end
+      assert.is_not_nil(preview_line_nr)
+
+      local ns = vim.api.nvim_create_namespace("PeekstackStackView")
+      local extmarks = vim.api.nvim_buf_get_extmarks(state.bufnr, ns, 0, -1, { details = true })
+      local has_keyword = false
+      local has_operator = false
+      for _, mark in ipairs(extmarks) do
+        local row = mark[2]
+        local details = mark[4] or {}
+        if row == preview_line_nr - 1 and details.hl_group == "@keyword.peekstack_test_ts_skip" then
+          has_keyword = true
+        end
+        if row == preview_line_nr - 1 and details.hl_group == "@operator.peekstack_test_ts_skip" then
+          has_operator = true
+        end
+      end
+
+      assert.is_true(has_keyword, "keyword capture should be applied")
+      assert.is_false(has_operator, "operator capture should be skipped for preview")
+    end)
+
+    vim.treesitter.get_parser = original_get_parser
+    vim.treesitter.query.get = original_query_get
+    vim.fn.delete(tmpfile)
+    if not ok then
+      error(err)
+    end
+  end)
+
   it("falls back to default preview highlight when treesitter parser fails", function()
     local tmpfile = vim.fn.tempname() .. ".lua"
     vim.fn.writefile({ "local x = 42" }, tmpfile)
@@ -648,7 +805,7 @@ describe("peekstack.ui.stack_view", function()
       local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
       local preview_line_nr = nil
       for idx, line in ipairs(lines) do
-        if line:find("^    a", 1, false) then
+        if line:find("│ a", 1, true) then
           preview_line_nr = idx
           break
         end
