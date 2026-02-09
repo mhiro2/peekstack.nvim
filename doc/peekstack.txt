@@ -381,6 +381,8 @@ Stack view keymaps:
     `r`           Rename the selected popup
     `p`           Toggle pin (skip auto-close)
     `/`           Filter the list
+    `gg/G`        Jump to first/last stack item
+    `j/k`         Move cursor by stack item (skip header/preview lines)
     `J/K`         Move the selected item down/up
     `?`           Toggle help
     `q`           Close the stack view

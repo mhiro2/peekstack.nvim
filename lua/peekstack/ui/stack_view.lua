@@ -598,10 +598,14 @@ local function render(s)
   end
   apply_preview_treesitter_highlights(s.bufnr, preview_lines)
 
-  if s.winid and vim.api.nvim_win_is_valid(s.winid) and #visible > 0 then
-    local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
-    if cursor <= s.header_lines then
-      vim.api.nvim_win_set_cursor(s.winid, { s.header_lines + 1, 0 })
+  if s.winid and vim.api.nvim_win_is_valid(s.winid) and s.bufnr and vim.api.nvim_buf_is_valid(s.bufnr) then
+    local line_count = vim.api.nvim_buf_line_count(s.bufnr)
+    if line_count > s.header_lines then
+      local min_line = s.header_lines + 1
+      local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
+      if cursor < min_line then
+        vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
+      end
     end
   end
 end
@@ -624,6 +628,88 @@ local function move_cursor_to_id(s, id)
 end
 
 ---@param s table
+---@return integer[]
+local function entry_lines(s)
+  local id_to_line = {}
+  for line, id in pairs(s.line_to_id or {}) do
+    if line > (s.header_lines or 0) and (not id_to_line[id] or line < id_to_line[id]) then
+      id_to_line[id] = line
+    end
+  end
+  local lines = {}
+  for _, line in pairs(id_to_line) do
+    table.insert(lines, line)
+  end
+  table.sort(lines)
+  return lines
+end
+
+---@param s table
+local function ensure_non_header_cursor(s)
+  if not (s.winid and vim.api.nvim_win_is_valid(s.winid) and s.bufnr and vim.api.nvim_buf_is_valid(s.bufnr)) then
+    return
+  end
+  local line_count = vim.api.nvim_buf_line_count(s.bufnr)
+  if line_count <= 0 then
+    return
+  end
+  local min_line = math.min((s.header_lines or 0) + 1, line_count)
+  local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
+  if cursor < min_line then
+    vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
+  end
+end
+
+---@param s table
+---@param step integer
+local function move_cursor_by_stack_item(s, step)
+  if not (s.winid and vim.api.nvim_win_is_valid(s.winid)) then
+    return
+  end
+  local lines = entry_lines(s)
+  if #lines == 0 then
+    ensure_non_header_cursor(s)
+    return
+  end
+
+  local cursor_line = vim.api.nvim_win_get_cursor(s.winid)[1]
+  if cursor_line <= (s.header_lines or 0) then
+    vim.api.nvim_win_set_cursor(s.winid, { lines[1], 0 })
+    return
+  end
+
+  local current_id = s.line_to_id[cursor_line]
+  local base_line = cursor_line
+  if current_id then
+    for line, id in pairs(s.line_to_id) do
+      if id == current_id and line < base_line then
+        base_line = line
+      end
+    end
+  end
+
+  local target_line = base_line
+  if step > 0 then
+    for _, line in ipairs(lines) do
+      if line > base_line then
+        target_line = line
+        break
+      end
+    end
+  else
+    for idx = #lines, 1, -1 do
+      local line = lines[idx]
+      if line < base_line then
+        target_line = line
+        break
+      end
+    end
+  end
+
+  vim.api.nvim_win_set_cursor(s.winid, { target_line, 0 })
+end
+
+---@param s table
 local function toggle_help(s)
   if s.help_winid and vim.api.nvim_win_is_valid(s.help_winid) then
     close_help(s)
@@ -641,6 +727,8 @@ local function toggle_help(s)
     "r     Rename selected popup",
     "p     Toggle pin (skip auto-close)",
     "/     Filter list",
+    "gg/G  Jump to first/last stack item",
+    "j/k   Move cursor by stack item",
     "J/K   Move item down/up",
     "q     Close stack view",
     "?     Toggle this help",
@@ -796,6 +884,38 @@ local function apply_keymaps(s)
       render(s)
       refocus_and_resume(s)
     end)
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "gg", function()
+    local lines = entry_lines(s)
+    if #lines == 0 then
+      ensure_non_header_cursor(s)
+      return
+    end
+    vim.api.nvim_win_set_cursor(s.winid, { lines[1], 0 })
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "G", function()
+    local lines = entry_lines(s)
+    if #lines == 0 then
+      ensure_non_header_cursor(s)
+      return
+    end
+    vim.api.nvim_win_set_cursor(s.winid, { lines[#lines], 0 })
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "j", function()
+    local count = vim.v.count1
+    for _ = 1, count do
+      move_cursor_by_stack_item(s, 1)
+    end
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "k", function()
+    local count = vim.v.count1
+    for _ = 1, count do
+      move_cursor_by_stack_item(s, -1)
+    end
   end, { buffer = s.bufnr, nowait = true, silent = true })
 
   vim.keymap.set("n", "J", function()
@@ -992,6 +1112,13 @@ function M.open()
         end
         s.autoclose_group = nil
       end)
+    end,
+  })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = au_group,
+    buffer = s.bufnr,
+    callback = function()
+      ensure_non_header_cursor(s)
     end,
   })
 

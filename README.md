@@ -130,6 +130,8 @@ Defaults in stack view:
 - `r` — rename
 - `p` — pin
 - `/` — filter
+- `gg/G` — jump to first/last stack item
+- `j/k` — move cursor by stack item (skip header/preview lines)
 - `J/K` — move item down/up
 - `?` — help
 - `q` — close

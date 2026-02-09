@@ -164,6 +164,112 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(found, "H keymap should be bound in stack view")
   end)
 
+  it("moves cursor by stack item with j/k", function()
+    local tmpfile1 = vim.fn.tempname() .. ".lua"
+    local tmpfile2 = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "local first = 1" }, tmpfile1)
+    vim.fn.writefile({ "local second = 2" }, tmpfile2)
+
+    local loc1 = helpers.make_location({
+      uri = vim.uri_from_fname(tmpfile1),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+    })
+    local loc2 = helpers.make_location({
+      uri = vim.uri_from_fname(tmpfile2),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+    })
+
+    local m1 = stack.push(loc1)
+    local m2 = stack.push(loc2)
+    assert.is_not_nil(m1)
+    assert.is_not_nil(m2)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+    vim.api.nvim_set_current_win(state.winid)
+
+    local min_by_id = {}
+    local max_by_id = {}
+    for line, id in pairs(state.line_to_id) do
+      if not min_by_id[id] or line < min_by_id[id] then
+        min_by_id[id] = line
+      end
+      if not max_by_id[id] or line > max_by_id[id] then
+        max_by_id[id] = line
+      end
+    end
+
+    assert.is_not_nil(min_by_id[m1.id])
+    assert.is_not_nil(min_by_id[m2.id])
+    assert.is_not_nil(max_by_id[m2.id])
+
+    local entry_lines = { min_by_id[m1.id], min_by_id[m2.id] }
+    table.sort(entry_lines)
+    local last_entry_line = entry_lines[#entry_lines]
+    local prev_entry_line = entry_lines[#entry_lines - 1]
+    assert.is_not_nil(prev_entry_line)
+
+    local start_id = nil
+    if min_by_id[m1.id] == last_entry_line then
+      start_id = m1.id
+    else
+      start_id = m2.id
+    end
+    assert.is_not_nil(start_id)
+    assert.is_true(max_by_id[start_id] >= last_entry_line)
+
+    vim.api.nvim_win_set_cursor(state.winid, { max_by_id[start_id], 0 })
+    vim.api.nvim_feedkeys("k", "mx", false)
+    vim.wait(50, function()
+      return vim.api.nvim_win_get_cursor(state.winid)[1] == prev_entry_line
+    end)
+    assert.equals(prev_entry_line, vim.api.nvim_win_get_cursor(state.winid)[1])
+
+    vim.api.nvim_feedkeys("j", "mx", false)
+    vim.wait(50, function()
+      return vim.api.nvim_win_get_cursor(state.winid)[1] == last_entry_line
+    end)
+    assert.equals(last_entry_line, vim.api.nvim_win_get_cursor(state.winid)[1])
+
+    vim.fn.delete(tmpfile1)
+    vim.fn.delete(tmpfile2)
+  end)
+
+  it("does not allow cursor on stack header line", function()
+    local tmpfile = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "local header_guard = true" }, tmpfile)
+
+    local loc = helpers.make_location({
+      uri = vim.uri_from_fname(tmpfile),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+    })
+    local model = stack.push(loc)
+    assert.is_not_nil(model)
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+    vim.api.nvim_set_current_win(state.winid)
+
+    vim.api.nvim_feedkeys("gg", "mx", false)
+    vim.wait(50, function()
+      return vim.api.nvim_win_get_cursor(state.winid)[1] > state.header_lines
+    end)
+    assert.is_true(vim.api.nvim_win_get_cursor(state.winid)[1] > state.header_lines)
+
+    local first_entry_line = nil
+    for line, _ in pairs(state.line_to_id) do
+      if line > state.header_lines and (not first_entry_line or line < first_entry_line) then
+        first_entry_line = line
+      end
+    end
+    assert.is_not_nil(first_entry_line)
+    assert.equals(first_entry_line, vim.api.nvim_win_get_cursor(state.winid)[1])
+
+    vim.fn.delete(tmpfile)
+  end)
+
   it("does not error when render is called after close", function()
     stack_view.open()
     local state = stack_view._get_state()
