@@ -161,6 +161,7 @@ Commands are registered after `setup()` is called.
     Open the stack view panel listing all active popups.
     The focused popup is highlighted with a `▶` marker.
     Each entry shows a preview line of the source code below it.
+    Preview lines use Tree-sitter based syntax highlights when available.
 
 :PeekstackSaveSession                        *:PeekstackSaveSession*
     Save the current popup stack to disk (requires persist.enabled = true).
@@ -409,7 +410,7 @@ Stack view highlights:
     PeekstackStackViewIcon         Provider icon (links to Special)
     PeekstackStackViewLine         Line number (links to LineNr)
     PeekstackStackViewFocused      Focused entry marker (links to Type)
-    PeekstackStackViewPreview      Preview line text (links to Comment)
+    PeekstackStackViewPreview      Preview line base text (links to Comment)
     PeekstackStackViewFilter       Filter header (links to Search)
     PeekstackStackViewHeader       Stack header (links to Title)
     PeekstackStackViewEmpty        Empty state text (links to Comment)
