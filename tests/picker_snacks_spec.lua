@@ -1,54 +1,69 @@
 describe("peekstack.picker.snacks", function()
-  local config = require("peekstack.config")
+  local picker = require("peekstack.picker.snacks")
+  local original_snacks = nil
+  local original_notify = nil
 
   before_each(function()
-    config.setup({
-      picker = { backend = "snacks" },
-    })
+    original_snacks = package.loaded["snacks.picker"]
+    original_notify = vim.notify
   end)
 
-  it("should warn when snacks.nvim is not available", function()
-    -- Test by checking the module behavior when snacks is not installed
-    -- The pick function should handle the missing dependency gracefully
-    local location = require("peekstack.core.location")
-
-    local test_loc = {
-      uri = "file:///path/to/test.lua",
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
-      provider = "test_provider",
-    }
-
-    -- Just verify the location module works correctly
-    local display_text = location.display_text(test_loc, 1)
-    assert.is_not_nil(display_text)
-    assert.is_true(type(display_text) == "string")
-
-    -- The snacks picker itself will warn when snacks is not available
-    -- but we can't easily test that in isolation without mocking
+  after_each(function()
+    package.loaded["snacks.picker"] = original_snacks
+    vim.notify = original_notify
   end)
 
-  it("should format locations correctly", function()
-    local location = require("peekstack.core.location")
+  it("warns when snacks.nvim is not available", function()
+    package.loaded["snacks.picker"] = nil
+    local warned = false
+    vim.notify = function(msg)
+      if msg == "snacks.nvim not available" then
+        warned = true
+      end
+    end
 
-    local test_loc = {
-      uri = "file:///path/to/test.lua",
-      range = { start = { line = 5, character = 10 }, ["end"] = { line = 5, character = 20 } },
-      provider = "test_provider",
-    }
+    picker.pick({}, nil, function() end)
 
-    local display_text = location.display_text(test_loc, 1)
-    assert.is_not_nil(display_text)
-    assert.is_true(type(display_text) == "string")
+    assert.is_true(warned)
   end)
 
-  it("should be registered as a known backend", function()
-    local known_backends = {
-      "builtin",
-      "telescope",
-      "fzf-lua",
-      "snacks",
+  it("passes file format items and confirms selected location", function()
+    local picked = nil
+    local closed = false
+    local captured = nil
+    package.loaded["snacks.picker"] = {
+      pick = function(opts)
+        captured = opts
+        opts.confirm({
+          close = function()
+            closed = true
+          end,
+        }, opts.items[2])
+      end,
     }
 
-    assert.is_true(vim.list_contains(known_backends, "snacks"))
+    local loc1 = {
+      uri = "file:///tmp/a.lua",
+      range = { start = { line = 3, character = 4 }, ["end"] = { line = 3, character = 4 } },
+      provider = "test",
+    }
+    local loc2 = {
+      uri = "file:///tmp/b.lua",
+      range = { start = { line = 7, character = 2 }, ["end"] = { line = 7, character = 2 } },
+      provider = "test",
+    }
+
+    picker.pick({ loc1, loc2 }, nil, function(choice)
+      picked = choice
+    end)
+
+    assert.equals("Peekstack", captured.title)
+    assert.equals("file", captured.format)
+    assert.equals("/tmp/a.lua", captured.items[1].file)
+    assert.equals(4, captured.items[1].row)
+    assert.equals(5, captured.items[1].col)
+    assert.same({ 4, 5 }, captured.items[1].pos)
+    assert.are.same(loc2, picked)
+    assert.is_true(closed)
   end)
 end)

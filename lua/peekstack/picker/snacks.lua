@@ -13,15 +13,16 @@ function M.pick(locations, opts, cb)
     return
   end
 
-  local raw_items = picker_util.build_items(locations, 1)
+  local raw_items = picker_util.build_external_items(locations, 1)
   local items = {}
   for _, item in ipairs(raw_items) do
     local loc = item.value
     table.insert(items, {
       text = item.label,
-      file = loc.uri,
-      row = (loc.range.start.line or 0) + 1,
-      col = loc.range.start.character or 0,
+      file = item.file or loc.uri,
+      row = item.lnum,
+      col = item.col,
+      pos = { item.lnum, item.col },
       loc = loc,
     })
   end
@@ -29,7 +30,7 @@ function M.pick(locations, opts, cb)
   local picker_opts = vim.tbl_extend("force", opts or {}, {
     title = "Peekstack",
     items = items,
-    format = "text",
+    format = "file",
     confirm = function(picker, item)
       if item and item.loc then
         picker:close()
