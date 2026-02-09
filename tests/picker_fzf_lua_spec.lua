@@ -4,12 +4,16 @@ describe("peekstack.picker.fzf_lua", function()
   it("should select the correct item when labels collide", function()
     local original = package.loaded["fzf-lua"]
     local picked = nil
+    local captured_opts = nil
 
     package.loaded["fzf-lua"] = {
       fzf_exec = function(source, opts)
+        captured_opts = opts
         local lines = source()
-        assert.is_true(lines[1]:match("^1\t") ~= nil)
-        assert.is_true(lines[2]:match("^2\t") ~= nil)
+        assert.is_true(lines[1]:match("^/tmp/same.lua:1:1:") ~= nil)
+        assert.is_true(lines[2]:match("^/tmp/same.lua:1:1:") ~= nil)
+        assert.is_true(lines[1]:match("\t1$") ~= nil)
+        assert.is_true(lines[2]:match("\t2$") ~= nil)
         opts.actions["default"]({ lines[2] })
       end,
     }
@@ -30,6 +34,8 @@ describe("peekstack.picker.fzf_lua", function()
     end)
 
     assert.are.same(loc2, picked)
+    assert.equals("builtin", captured_opts.previewer)
+    assert.equals("Peekstack> ", captured_opts.prompt)
 
     package.loaded["fzf-lua"] = original
   end)
