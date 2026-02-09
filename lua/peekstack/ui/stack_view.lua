@@ -6,6 +6,27 @@ local str = require("peekstack.util.str")
 local M = {}
 
 local NS = vim.api.nvim_create_namespace("PeekstackStackView")
+local TS_HL_PRIORITY = 150
+local PREVIEW_BASE_HL_PRIORITY = 10
+local PREVIEW_LINE_MARKER = "│ "
+
+---@type table<string, boolean>
+local PREVIEW_ALLOWED_CAPTURE_PREFIX = {
+  keyword = true,
+  string = true,
+  number = true,
+  boolean = true,
+  constant = true,
+  ["function"] = true,
+  method = true,
+  constructor = true,
+  type = true,
+  comment = true,
+  character = true,
+}
+
+---@type table<string, vim.treesitter.Query|false>
+local TS_HIGHLIGHT_QUERY_CACHE = {}
 
 ---Map title highlight groups to their stack view equivalents
 ---@type table<string, string>
@@ -192,28 +213,227 @@ end
 ---@field col_end integer
 ---@field hl_group string
 
+---@class PeekstackStackViewPreviewLine
+---@field line string
+---@field source_bufnr integer
+---@field source_line integer
+---@field source_col_start integer
+---@field source_col_end integer
+---@field preview_col_start integer
+
+---@param lang string
+---@return vim.treesitter.Query?
+local function get_treesitter_highlight_query(lang)
+  local cached = TS_HIGHLIGHT_QUERY_CACHE[lang]
+  if cached ~= nil then
+    return cached or nil
+  end
+  local ok, query = pcall(vim.treesitter.query.get, lang, "highlights")
+  if not ok or not query then
+    TS_HIGHLIGHT_QUERY_CACHE[lang] = false
+    return nil
+  end
+  TS_HIGHLIGHT_QUERY_CACHE[lang] = query
+  return query
+end
+
+---@param bufnr integer
+---@param line integer
+---@return TSNode?, string?
+local function treesitter_root_for_line(bufnr, line)
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+  if not ok or not parser then
+    return nil, nil
+  end
+  local ok_parse = pcall(function()
+    parser:parse()
+  end)
+  if not ok_parse then
+    return nil, nil
+  end
+  local trees = parser:trees()
+  if not trees or vim.tbl_isempty(trees) then
+    return nil, nil
+  end
+
+  local root = nil
+  local lang = nil
+  local smallest_range = math.huge
+  for _, tree in pairs(trees) do
+    local candidate = tree:root()
+    if candidate then
+      local sr, _, er, _ = candidate:range()
+      if line >= sr and line <= er then
+        local range_size = er - sr
+        if range_size < smallest_range then
+          smallest_range = range_size
+          root = candidate
+          local ok_lang, tree_lang = pcall(function()
+            return tree:lang()
+          end)
+          if ok_lang and type(tree_lang) == "string" and tree_lang ~= "" then
+            lang = tree_lang
+          else
+            lang = nil
+          end
+        end
+      end
+    end
+  end
+  if not root then
+    return nil, nil
+  end
+  if not lang then
+    local ft = vim.bo[bufnr].filetype
+    if ft ~= "" then
+      local ok_map, mapped = pcall(vim.treesitter.language.get_lang, ft)
+      if ok_map and type(mapped) == "string" and mapped ~= "" then
+        lang = mapped
+      else
+        lang = ft
+      end
+    end
+  end
+  return root, lang
+end
+
+---@param name string
+---@return boolean
+local function highlight_exists(name)
+  if name == "" then
+    return false
+  end
+  return vim.fn.hlexists(name) == 1
+end
+
+---@param capture_name string?
+---@param lang string?
+---@return string?
+local function capture_hl_group(capture_name, lang)
+  if type(capture_name) ~= "string" or capture_name == "" then
+    return nil
+  end
+  local capture_prefix = capture_name:match("^[^%.]+") or capture_name
+  if not PREVIEW_ALLOWED_CAPTURE_PREFIX[capture_prefix] then
+    return nil
+  end
+  if lang and lang ~= "" then
+    local lang_group = string.format("@%s.%s", capture_name, lang)
+    if highlight_exists(lang_group) then
+      return lang_group
+    end
+  end
+  local base_group = "@" .. capture_name
+  if highlight_exists(base_group) then
+    return base_group
+  end
+  return nil
+end
+
+---@param target_bufnr integer
+---@param preview_line_nr integer
+---@param preview PeekstackStackViewPreviewLine
+local function apply_preview_treesitter_highlight(target_bufnr, preview_line_nr, preview)
+  local source_bufnr = preview.source_bufnr
+  if not source_bufnr or not vim.api.nvim_buf_is_valid(source_bufnr) then
+    return
+  end
+
+  local source_line = preview.source_line
+  local source_start = preview.source_col_start
+  local source_end = preview.source_col_end
+  if source_end <= source_start then
+    return
+  end
+
+  local root, lang = treesitter_root_for_line(source_bufnr, source_line)
+  if not root or not lang then
+    return
+  end
+
+  local query = get_treesitter_highlight_query(lang)
+  if not query then
+    return
+  end
+
+  local ok_iter = pcall(function()
+    for capture_id, node in query:iter_captures(root, source_bufnr, source_line, source_line + 1) do
+      local hl_group = capture_hl_group(query.captures[capture_id], lang)
+      if hl_group then
+        local sr, sc, er, ec = node:range()
+        if source_line >= sr and source_line <= er then
+          local node_start = (sr == source_line) and sc or 0
+          local node_end = (er == source_line) and ec or source_end
+          local start_col = math.max(node_start, source_start)
+          local end_col = math.min(node_end, source_end)
+          if end_col > start_col then
+            local view_start = preview.preview_col_start + (start_col - source_start)
+            local view_end = preview.preview_col_start + (end_col - source_start)
+            vim.api.nvim_buf_set_extmark(target_bufnr, NS, preview_line_nr - 1, view_start, {
+              end_col = view_end,
+              hl_group = hl_group,
+              priority = TS_HL_PRIORITY,
+            })
+          end
+        end
+      end
+    end
+  end)
+  if not ok_iter then
+    return
+  end
+end
+
+---@param target_bufnr integer
+---@param previews table<integer, PeekstackStackViewPreviewLine>
+local function apply_preview_treesitter_highlights(target_bufnr, previews)
+  for preview_line_nr, preview in pairs(previews) do
+    apply_preview_treesitter_highlight(target_bufnr, preview_line_nr, preview)
+  end
+end
+
 --- Get a trimmed preview line from a source buffer
 ---@param source_bufnr integer?
 ---@param line integer
 ---@param max_width integer
----@return string
-local function get_preview_line(source_bufnr, line, max_width)
+---@param preview_prefix string
+---@return PeekstackStackViewPreviewLine?
+local function get_preview_line(source_bufnr, line, max_width, preview_prefix)
   if not source_bufnr or not vim.api.nvim_buf_is_valid(source_bufnr) then
-    return ""
+    return nil
   end
   local ok, buf_lines = pcall(vim.api.nvim_buf_get_lines, source_bufnr, line, line + 1, false)
   if not ok or not buf_lines or #buf_lines == 0 then
-    return ""
+    return nil
   end
-  local text = vim.trim(buf_lines[1] or "")
-  if text == "" then
-    return ""
+  local source_text = buf_lines[1] or ""
+  if source_text == "" then
+    return nil
   end
-  local available = math.max(10, max_width - 4)
+
+  local source_col_start = #(source_text:match("^%s*") or "")
+  local source_col_end = #source_text - #(source_text:match("%s*$") or "")
+  if source_col_end <= source_col_start then
+    return nil
+  end
+
+  local text = source_text:sub(source_col_start + 1, source_col_end)
+  local prefix_display_width = vim.fn.strdisplaywidth(preview_prefix)
+  local available = math.max(10, max_width - prefix_display_width)
   if vim.fn.strdisplaywidth(text) > available then
-    text = vim.fn.strcharpart(text, 0, available - 3) .. "..."
+    local keep_chars = math.max(available - 3, 0)
+    local kept = vim.fn.strcharpart(text, 0, keep_chars)
+    text = kept .. "..."
+    source_col_end = source_col_start + #kept
   end
-  return "    " .. text
+  return {
+    line = preview_prefix .. text,
+    source_bufnr = source_bufnr,
+    source_line = line,
+    source_col_start = source_col_start,
+    source_col_end = source_col_end,
+    preview_col_start = #preview_prefix,
+  }
 end
 
 ---Render the stack view list
@@ -232,6 +452,8 @@ local function render(s)
   local lines = {}
   ---@type PeekstackStackViewHighlight[][]
   local highlights = {}
+  ---@type table<integer, PeekstackStackViewPreviewLine>
+  local preview_lines = {}
   s.line_to_id = {}
   s.header_lines = 0
 
@@ -339,13 +561,15 @@ local function render(s)
       and popup.location.range.start
       and popup.location.range.start.line
     if source_line then
-      local preview = get_preview_line(popup.source_bufnr or popup.bufnr, source_line, win_width)
-      if preview ~= "" then
-        table.insert(lines, preview)
+      local preview_prefix = string.rep(" ", vim.fn.strdisplaywidth(prefix)) .. PREVIEW_LINE_MARKER
+      local preview = get_preview_line(popup.source_bufnr or popup.bufnr, source_line, win_width, preview_prefix)
+      if preview then
+        table.insert(lines, preview.line)
         local preview_line_nr = #lines
         table.insert(highlights, {
-          { col_start = 0, col_end = #preview, hl_group = "PeekstackStackViewPreview" },
+          { col_start = 0, col_end = #preview.line, hl_group = "PeekstackStackViewPreview" },
         })
+        preview_lines[preview_line_nr] = preview
         s.line_to_id[preview_line_nr] = popup.id
       end
     end
@@ -358,17 +582,30 @@ local function render(s)
   vim.api.nvim_buf_clear_namespace(s.bufnr, NS, 0, -1)
   for line_idx, line_hls in ipairs(highlights) do
     for _, hl in ipairs(line_hls) do
-      vim.api.nvim_buf_set_extmark(s.bufnr, NS, line_idx - 1, hl.col_start, {
+      local opts = {
         end_col = hl.col_end,
         hl_group = hl.hl_group,
+      }
+      if hl.hl_group == "PeekstackStackViewPreview" then
+        opts.priority = PREVIEW_BASE_HL_PRIORITY
+      end
+      vim.api.nvim_buf_set_extmark(s.bufnr, NS, line_idx - 1, hl.col_start, {
+        end_col = opts.end_col,
+        hl_group = opts.hl_group,
+        priority = opts.priority,
       })
     end
   end
+  apply_preview_treesitter_highlights(s.bufnr, preview_lines)
 
-  if s.winid and vim.api.nvim_win_is_valid(s.winid) and #visible > 0 then
-    local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
-    if cursor <= s.header_lines then
-      vim.api.nvim_win_set_cursor(s.winid, { s.header_lines + 1, 0 })
+  if s.winid and vim.api.nvim_win_is_valid(s.winid) and s.bufnr and vim.api.nvim_buf_is_valid(s.bufnr) then
+    local line_count = vim.api.nvim_buf_line_count(s.bufnr)
+    if line_count > s.header_lines then
+      local min_line = s.header_lines + 1
+      local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
+      if cursor < min_line then
+        vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
+      end
     end
   end
 end
@@ -391,6 +628,88 @@ local function move_cursor_to_id(s, id)
 end
 
 ---@param s table
+---@return integer[]
+local function entry_lines(s)
+  local id_to_line = {}
+  for line, id in pairs(s.line_to_id or {}) do
+    if line > (s.header_lines or 0) and (not id_to_line[id] or line < id_to_line[id]) then
+      id_to_line[id] = line
+    end
+  end
+  local lines = {}
+  for _, line in pairs(id_to_line) do
+    table.insert(lines, line)
+  end
+  table.sort(lines)
+  return lines
+end
+
+---@param s table
+local function ensure_non_header_cursor(s)
+  if not (s.winid and vim.api.nvim_win_is_valid(s.winid) and s.bufnr and vim.api.nvim_buf_is_valid(s.bufnr)) then
+    return
+  end
+  local line_count = vim.api.nvim_buf_line_count(s.bufnr)
+  if line_count <= 0 then
+    return
+  end
+  local min_line = math.min((s.header_lines or 0) + 1, line_count)
+  local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
+  if cursor < min_line then
+    vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
+  end
+end
+
+---@param s table
+---@param step integer
+local function move_cursor_by_stack_item(s, step)
+  if not (s.winid and vim.api.nvim_win_is_valid(s.winid)) then
+    return
+  end
+  local lines = entry_lines(s)
+  if #lines == 0 then
+    ensure_non_header_cursor(s)
+    return
+  end
+
+  local cursor_line = vim.api.nvim_win_get_cursor(s.winid)[1]
+  if cursor_line <= (s.header_lines or 0) then
+    vim.api.nvim_win_set_cursor(s.winid, { lines[1], 0 })
+    return
+  end
+
+  local current_id = s.line_to_id[cursor_line]
+  local base_line = cursor_line
+  if current_id then
+    for line, id in pairs(s.line_to_id) do
+      if id == current_id and line < base_line then
+        base_line = line
+      end
+    end
+  end
+
+  local target_line = base_line
+  if step > 0 then
+    for _, line in ipairs(lines) do
+      if line > base_line then
+        target_line = line
+        break
+      end
+    end
+  else
+    for idx = #lines, 1, -1 do
+      local line = lines[idx]
+      if line < base_line then
+        target_line = line
+        break
+      end
+    end
+  end
+
+  vim.api.nvim_win_set_cursor(s.winid, { target_line, 0 })
+end
+
+---@param s table
 local function toggle_help(s)
   if s.help_winid and vim.api.nvim_win_is_valid(s.help_winid) then
     close_help(s)
@@ -408,6 +727,8 @@ local function toggle_help(s)
     "r     Rename selected popup",
     "p     Toggle pin (skip auto-close)",
     "/     Filter list",
+    "gg/G  Jump to first/last stack item",
+    "j/k   Move cursor by stack item",
     "J/K   Move item down/up",
     "q     Close stack view",
     "?     Toggle this help",
@@ -563,6 +884,38 @@ local function apply_keymaps(s)
       render(s)
       refocus_and_resume(s)
     end)
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "gg", function()
+    local lines = entry_lines(s)
+    if #lines == 0 then
+      ensure_non_header_cursor(s)
+      return
+    end
+    vim.api.nvim_win_set_cursor(s.winid, { lines[1], 0 })
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "G", function()
+    local lines = entry_lines(s)
+    if #lines == 0 then
+      ensure_non_header_cursor(s)
+      return
+    end
+    vim.api.nvim_win_set_cursor(s.winid, { lines[#lines], 0 })
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "j", function()
+    local count = vim.v.count1
+    for _ = 1, count do
+      move_cursor_by_stack_item(s, 1)
+    end
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "k", function()
+    local count = vim.v.count1
+    for _ = 1, count do
+      move_cursor_by_stack_item(s, -1)
+    end
   end, { buffer = s.bufnr, nowait = true, silent = true })
 
   vim.keymap.set("n", "J", function()
@@ -759,6 +1112,13 @@ function M.open()
         end
         s.autoclose_group = nil
       end)
+    end,
+  })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = au_group,
+    buffer = s.bufnr,
+    callback = function()
+      ensure_non_header_cursor(s)
     end,
   })
 

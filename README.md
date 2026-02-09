@@ -24,7 +24,7 @@ peekstack.nvim focuses on preserving the _trail_ of your exploration.
 ### Core
 
 - 🧭 **Peek stack UI**: stack / cascade / single layouts
-- 🧱 **Stack view**: list popups, focus, pin, rename, reorder, history
+- 🧱 **Stack view**: list popups, focus, pin, rename, reorder, history, preview syntax highlights
 - 🔍 **Providers**: LSP / diagnostics / file / marks
 - 🚀 **Promote**: fast split/tab promotion
 - 🧷 **Inline + quick peek**: inline preview or ephemeral popups
@@ -42,7 +42,7 @@ peekstack.nvim focuses on preserving the _trail_ of your exploration.
 - Neovim ≥ 0.10
 - `rg` (only if you use `grep.search`)
 - Optional: `telescope.nvim` / `fzf-lua` / `snacks.nvim` (if you switch picker backends)
-- Optional: Tree-sitter parsers (if you enable `ui.title.context`; Neovim bundles the runtime, but parsers are separate)
+- Optional: Tree-sitter parsers (for `ui.title.context` and stack view preview syntax highlighting; Neovim bundles the runtime, but parsers are separate)
 
 ## 🚀 Installation
 
@@ -130,6 +130,8 @@ Defaults in stack view:
 - `r` — rename
 - `p` — pin
 - `/` — filter
+- `gg/G` — jump to first/last stack item
+- `j/k` — move cursor by stack item (skip header/preview lines)
 - `J/K` — move item down/up
 - `?` — help
 - `q` — close
