@@ -6,6 +6,10 @@ local str = require("peekstack.util.str")
 local M = {}
 
 local NS = vim.api.nvim_create_namespace("PeekstackStackView")
+local TS_HL_PRIORITY = 150
+
+---@type table<string, vim.treesitter.Query|false>
+local TS_HIGHLIGHT_QUERY_CACHE = {}
 
 ---Map title highlight groups to their stack view equivalents
 ---@type table<string, string>
@@ -192,28 +196,221 @@ end
 ---@field col_end integer
 ---@field hl_group string
 
+---@class PeekstackStackViewPreviewLine
+---@field line string
+---@field source_bufnr integer
+---@field source_line integer
+---@field source_col_start integer
+---@field source_col_end integer
+---@field preview_col_start integer
+
+---@param lang string
+---@return vim.treesitter.Query?
+local function get_treesitter_highlight_query(lang)
+  local cached = TS_HIGHLIGHT_QUERY_CACHE[lang]
+  if cached ~= nil then
+    return cached or nil
+  end
+  local ok, query = pcall(vim.treesitter.query.get, lang, "highlights")
+  if not ok or not query then
+    TS_HIGHLIGHT_QUERY_CACHE[lang] = false
+    return nil
+  end
+  TS_HIGHLIGHT_QUERY_CACHE[lang] = query
+  return query
+end
+
+---@param bufnr integer
+---@param line integer
+---@return TSNode?, string?
+local function treesitter_root_for_line(bufnr, line)
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+  if not ok or not parser then
+    return nil, nil
+  end
+  local ok_parse = pcall(function()
+    parser:parse()
+  end)
+  if not ok_parse then
+    return nil, nil
+  end
+  local trees = parser:trees()
+  if not trees or vim.tbl_isempty(trees) then
+    return nil, nil
+  end
+
+  local root = nil
+  local lang = nil
+  local smallest_range = math.huge
+  for _, tree in pairs(trees) do
+    local candidate = tree:root()
+    if candidate then
+      local sr, _, er, _ = candidate:range()
+      if line >= sr and line <= er then
+        local range_size = er - sr
+        if range_size < smallest_range then
+          smallest_range = range_size
+          root = candidate
+          local ok_lang, tree_lang = pcall(function()
+            return tree:lang()
+          end)
+          if ok_lang and type(tree_lang) == "string" and tree_lang ~= "" then
+            lang = tree_lang
+          else
+            lang = nil
+          end
+        end
+      end
+    end
+  end
+  if not root then
+    return nil, nil
+  end
+  if not lang then
+    local ft = vim.bo[bufnr].filetype
+    if ft ~= "" then
+      local ok_map, mapped = pcall(vim.treesitter.language.get_lang, ft)
+      if ok_map and type(mapped) == "string" and mapped ~= "" then
+        lang = mapped
+      else
+        lang = ft
+      end
+    end
+  end
+  return root, lang
+end
+
+---@param name string
+---@return boolean
+local function highlight_exists(name)
+  if name == "" then
+    return false
+  end
+  return vim.fn.hlexists(name) == 1
+end
+
+---@param capture_name string?
+---@param lang string?
+---@return string?
+local function capture_hl_group(capture_name, lang)
+  if type(capture_name) ~= "string" or capture_name == "" then
+    return nil
+  end
+  if lang and lang ~= "" then
+    local lang_group = string.format("@%s.%s", capture_name, lang)
+    if highlight_exists(lang_group) then
+      return lang_group
+    end
+  end
+  local base_group = "@" .. capture_name
+  if highlight_exists(base_group) then
+    return base_group
+  end
+  return nil
+end
+
+---@param target_bufnr integer
+---@param preview_line_nr integer
+---@param preview PeekstackStackViewPreviewLine
+local function apply_preview_treesitter_highlight(target_bufnr, preview_line_nr, preview)
+  local source_bufnr = preview.source_bufnr
+  if not source_bufnr or not vim.api.nvim_buf_is_valid(source_bufnr) then
+    return
+  end
+
+  local source_line = preview.source_line
+  local source_start = preview.source_col_start
+  local source_end = preview.source_col_end
+  if source_end <= source_start then
+    return
+  end
+
+  local root, lang = treesitter_root_for_line(source_bufnr, source_line)
+  if not root or not lang then
+    return
+  end
+
+  local query = get_treesitter_highlight_query(lang)
+  if not query then
+    return
+  end
+
+  local ok_iter = pcall(function()
+    for capture_id, node in query:iter_captures(root, source_bufnr, source_line, source_line + 1) do
+      local hl_group = capture_hl_group(query.captures[capture_id], lang)
+      if hl_group then
+        local sr, sc, er, ec = node:range()
+        if source_line >= sr and source_line <= er then
+          local node_start = (sr == source_line) and sc or 0
+          local node_end = (er == source_line) and ec or source_end
+          local start_col = math.max(node_start, source_start)
+          local end_col = math.min(node_end, source_end)
+          if end_col > start_col then
+            local view_start = preview.preview_col_start + (start_col - source_start)
+            local view_end = preview.preview_col_start + (end_col - source_start)
+            vim.api.nvim_buf_set_extmark(target_bufnr, NS, preview_line_nr - 1, view_start, {
+              end_col = view_end,
+              hl_group = hl_group,
+              priority = TS_HL_PRIORITY,
+            })
+          end
+        end
+      end
+    end
+  end)
+  if not ok_iter then
+    return
+  end
+end
+
+---@param target_bufnr integer
+---@param previews table<integer, PeekstackStackViewPreviewLine>
+local function apply_preview_treesitter_highlights(target_bufnr, previews)
+  for preview_line_nr, preview in pairs(previews) do
+    apply_preview_treesitter_highlight(target_bufnr, preview_line_nr, preview)
+  end
+end
+
 --- Get a trimmed preview line from a source buffer
 ---@param source_bufnr integer?
 ---@param line integer
 ---@param max_width integer
----@return string
+---@return PeekstackStackViewPreviewLine?
 local function get_preview_line(source_bufnr, line, max_width)
   if not source_bufnr or not vim.api.nvim_buf_is_valid(source_bufnr) then
-    return ""
+    return nil
   end
   local ok, buf_lines = pcall(vim.api.nvim_buf_get_lines, source_bufnr, line, line + 1, false)
   if not ok or not buf_lines or #buf_lines == 0 then
-    return ""
+    return nil
   end
-  local text = vim.trim(buf_lines[1] or "")
-  if text == "" then
-    return ""
+  local source_text = buf_lines[1] or ""
+  if source_text == "" then
+    return nil
   end
+
+  local source_col_start = #(source_text:match("^%s*") or "")
+  local source_col_end = #source_text - #(source_text:match("%s*$") or "")
+  if source_col_end <= source_col_start then
+    return nil
+  end
+
+  local text = source_text:sub(source_col_start + 1, source_col_end)
   local available = math.max(10, max_width - 4)
   if vim.fn.strdisplaywidth(text) > available then
-    text = vim.fn.strcharpart(text, 0, available - 3) .. "..."
+    local keep_chars = math.max(available - 3, 0)
+    local kept = vim.fn.strcharpart(text, 0, keep_chars)
+    text = kept .. "..."
+    source_col_end = source_col_start + #kept
   end
-  return "    " .. text
+  return {
+    line = "    " .. text,
+    source_bufnr = source_bufnr,
+    source_line = line,
+    source_col_start = source_col_start,
+    source_col_end = source_col_end,
+    preview_col_start = 4,
+  }
 end
 
 ---Render the stack view list
@@ -232,6 +429,8 @@ local function render(s)
   local lines = {}
   ---@type PeekstackStackViewHighlight[][]
   local highlights = {}
+  ---@type table<integer, PeekstackStackViewPreviewLine>
+  local preview_lines = {}
   s.line_to_id = {}
   s.header_lines = 0
 
@@ -340,12 +539,13 @@ local function render(s)
       and popup.location.range.start.line
     if source_line then
       local preview = get_preview_line(popup.source_bufnr or popup.bufnr, source_line, win_width)
-      if preview ~= "" then
-        table.insert(lines, preview)
+      if preview then
+        table.insert(lines, preview.line)
         local preview_line_nr = #lines
         table.insert(highlights, {
-          { col_start = 0, col_end = #preview, hl_group = "PeekstackStackViewPreview" },
+          { col_start = 0, col_end = #preview.line, hl_group = "PeekstackStackViewPreview" },
         })
+        preview_lines[preview_line_nr] = preview
         s.line_to_id[preview_line_nr] = popup.id
       end
     end
@@ -364,6 +564,7 @@ local function render(s)
       })
     end
   end
+  apply_preview_treesitter_highlights(s.bufnr, preview_lines)
 
   if s.winid and vim.api.nvim_win_is_valid(s.winid) and #visible > 0 then
     local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
