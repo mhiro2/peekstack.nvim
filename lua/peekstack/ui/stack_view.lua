@@ -7,6 +7,7 @@ local M = {}
 
 local NS = vim.api.nvim_create_namespace("PeekstackStackView")
 local TS_HL_PRIORITY = 150
+local PREVIEW_BASE_HL_PRIORITY = 10
 
 ---@type table<string, vim.treesitter.Query|false>
 local TS_HIGHLIGHT_QUERY_CACHE = {}
@@ -558,9 +559,17 @@ local function render(s)
   vim.api.nvim_buf_clear_namespace(s.bufnr, NS, 0, -1)
   for line_idx, line_hls in ipairs(highlights) do
     for _, hl in ipairs(line_hls) do
-      vim.api.nvim_buf_set_extmark(s.bufnr, NS, line_idx - 1, hl.col_start, {
+      local opts = {
         end_col = hl.col_end,
         hl_group = hl.hl_group,
+      }
+      if hl.hl_group == "PeekstackStackViewPreview" then
+        opts.priority = PREVIEW_BASE_HL_PRIORITY
+      end
+      vim.api.nvim_buf_set_extmark(s.bufnr, NS, line_idx - 1, hl.col_start, {
+        end_col = opts.end_col,
+        hl_group = opts.hl_group,
+        priority = opts.priority,
       })
     end
   end
