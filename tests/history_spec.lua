@@ -41,6 +41,23 @@ describe("stack history", function()
     assert.equals("source", hist[1].buffer_mode)
   end)
 
+  it("saves parent_popup_id for chained popups", function()
+    local loc = helpers.make_location()
+    local parent = stack.push(loc)
+    assert.is_not_nil(parent)
+    vim.api.nvim_set_current_win(parent.winid)
+
+    local child = stack.push(loc)
+    assert.is_not_nil(child)
+    assert.equals(parent.id, child.parent_popup_id)
+
+    stack.close(child.id)
+
+    local hist = stack.history_list()
+    assert.equals(1, #hist)
+    assert.equals(parent.id, hist[1].parent_popup_id)
+  end)
+
   it("saves restore_index in history", function()
     local loc = helpers.make_location()
     local m1 = stack.push(loc)
@@ -66,6 +83,25 @@ describe("stack history", function()
     assert.is_not_nil(restored)
     assert.equals("source", restored.buffer_mode)
     stack.close(restored.id)
+  end)
+
+  it("restore_last preserves parent_popup_id when parent still exists", function()
+    local loc = helpers.make_location()
+    local parent = stack.push(loc)
+    assert.is_not_nil(parent)
+    vim.api.nvim_set_current_win(parent.winid)
+
+    local child = stack.push(loc)
+    assert.is_not_nil(child)
+    assert.equals(parent.id, child.parent_popup_id)
+
+    stack.close(child.id)
+    local restored = stack.restore_last()
+    assert.is_not_nil(restored)
+    assert.equals(parent.id, restored.parent_popup_id)
+
+    stack.close(restored.id)
+    stack.close(parent.id)
   end)
 
   it("restore_all restores all history entries", function()
@@ -181,6 +217,7 @@ describe("history.build_entry", function()
       buffer_mode = "source",
       source_bufnr = 42,
       created_at = 1000,
+      parent_popup_id = 99,
     }
 
     local entry = history.build_entry(item, 3)
@@ -193,6 +230,7 @@ describe("history.build_entry", function()
     assert.equals(42, entry.source_bufnr)
     assert.equals(1000, entry.created_at)
     assert.equals(3, entry.restore_index)
+    assert.equals(99, entry.parent_popup_id)
     assert.is_not_nil(entry.closed_at)
   end)
 

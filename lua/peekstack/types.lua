@@ -45,6 +45,7 @@
 ---@field origin { winid: integer, bufnr: integer, row: integer, col: integer }
 ---@field origin_bufnr integer
 ---@field origin_is_popup boolean
+---@field parent_popup_id? integer
 ---@field title string
 ---@field title_chunks? PeekstackTitleChunk[]
 ---@field pinned boolean
@@ -128,6 +129,7 @@
 ---@field created_at integer
 ---@field closed_at integer
 ---@field restore_index? integer
+---@field parent_popup_id? integer
 
 ---@class PeekstackProviderContext
 ---@field winid integer

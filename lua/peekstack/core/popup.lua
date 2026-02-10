@@ -100,7 +100,7 @@ local function capture_origin_from_win(winid)
 end
 
 ---@param location PeekstackLocation
----@param opts? { buffer_mode?: "copy"|"source", title?: string|PeekstackTitleChunk[], editable?: boolean, ephemeral?: boolean, origin_winid?: integer }
+---@param opts? { buffer_mode?: "copy"|"source", title?: string|PeekstackTitleChunk[], editable?: boolean, ephemeral?: boolean, origin_winid?: integer, parent_popup_id?: integer }
 ---@return PeekstackPopupModel?
 function M.create(location, opts)
   opts = opts or {}
@@ -211,6 +211,7 @@ function M.create(location, opts)
     },
     origin_bufnr = origin.bufnr,
     origin_is_popup = origin_is_popup,
+    parent_popup_id = opts.parent_popup_id,
     title = title,
     title_chunks = title_chunks,
     pinned = false,
