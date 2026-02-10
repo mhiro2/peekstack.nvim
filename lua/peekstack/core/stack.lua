@@ -135,7 +135,7 @@ end
 function M.push(location, opts)
   deps()
   opts = opts or {}
-  local create_opts = vim.tbl_extend("force", opts, {})
+  local create_opts = vim.tbl_extend("force", {}, opts)
   create_opts.parent_popup_id = resolve_parent_popup_id(opts)
 
   -- Handle quick-peek mode (don't add to stack)
