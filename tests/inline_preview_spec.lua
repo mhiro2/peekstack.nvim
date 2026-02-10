@@ -4,6 +4,7 @@ describe("peekstack.ui.inline_preview", function()
   local temp_file = nil
 
   before_each(function()
+    inline_preview._reset_for_test()
     -- Setup config with inline preview enabled
     config.setup({
       ui = {
@@ -20,6 +21,7 @@ describe("peekstack.ui.inline_preview", function()
   end)
 
   after_each(function()
+    inline_preview._reset_for_test()
     if temp_file then
       vim.fn.delete(temp_file)
     end
@@ -118,5 +120,32 @@ describe("peekstack.ui.inline_preview", function()
 
     -- Should not error when disabled
     inline_preview.open(location)
+  end)
+
+  it("should cache namespace id", function()
+    local location = {
+      uri = vim.uri_from_fname(temp_file),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+    }
+
+    local original_get_namespaces = vim.api.nvim_get_namespaces
+    local get_namespaces_calls = 0
+    local ok, err = pcall(function()
+      vim.api.nvim_get_namespaces = function(...)
+        get_namespaces_calls = get_namespaces_calls + 1
+        return original_get_namespaces(...)
+      end
+
+      inline_preview.open(location)
+      inline_preview.close()
+      inline_preview.open(location)
+      inline_preview.close()
+    end)
+    vim.api.nvim_get_namespaces = original_get_namespaces
+    if not ok then
+      error(err)
+    end
+
+    assert.equals(1, get_namespaces_calls)
   end)
 end)

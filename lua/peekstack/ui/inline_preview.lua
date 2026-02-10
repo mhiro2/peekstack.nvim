@@ -2,6 +2,8 @@ local config = require("peekstack.config")
 local fs = require("peekstack.util.fs")
 
 local NS_NAME = "PeekstackInlinePreviewNS"
+---@type integer?
+local namespace_id = nil
 
 ---@type PeekstackInlinePreviewState?
 local state = nil
@@ -13,10 +15,14 @@ local M = {}
 ---Get or create the inline preview namespace
 ---@return integer
 local function get_namespace()
-  if not vim.api.nvim_get_namespaces()[NS_NAME] then
-    vim.api.nvim_create_namespace(NS_NAME)
+  if namespace_id then
+    return namespace_id
   end
-  return vim.api.nvim_get_namespaces()[NS_NAME]
+  namespace_id = vim.api.nvim_get_namespaces()[NS_NAME]
+  if not namespace_id then
+    namespace_id = vim.api.nvim_create_namespace(NS_NAME)
+  end
+  return namespace_id
 end
 
 ---Check if inline preview is currently open
@@ -226,6 +232,14 @@ function M.setup_close_events()
       once = true,
     })
   end
+end
+
+---Reset inline preview internals (for testing).
+function M._reset_for_test()
+  M.close()
+  state = nil
+  request_id = 0
+  namespace_id = nil
 end
 
 return M
