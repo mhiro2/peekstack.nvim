@@ -262,6 +262,7 @@ function M.setup(opts)
   local config = require("peekstack.config")
   local events = require("peekstack.core.events")
   local commands = require("peekstack.commands")
+  local stack_view = require("peekstack.ui.stack_view")
   local persist_auto = require("peekstack.persist.auto")
 
   providers = {}
@@ -271,6 +272,7 @@ function M.setup(opts)
   set_hl()
   events.setup()
   commands.setup()
+  stack_view.setup()
 
   local cfg = config.get()
 

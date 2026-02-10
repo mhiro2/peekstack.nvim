@@ -7,6 +7,8 @@ local M = {}
 ---@type uv.uv_timer_t?
 local reflow_timer = nil
 local REFLOW_DEBOUNCE_MS = 80
+---@type table<integer, boolean>
+local popup_cursor_buffers = {}
 
 local function reset_reflow_timer()
   local store = timer_util.get_store()
@@ -31,6 +33,27 @@ local function debounced_reflow()
   end)
 end
 
+---@param group integer
+---@param bufnr integer
+local function ensure_popup_cursor_tracking(group, bufnr)
+  if popup_cursor_buffers[bufnr] then
+    return
+  end
+  popup_cursor_buffers[bufnr] = true
+
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = group,
+    buffer = bufnr,
+    callback = function()
+      local winid = vim.api.nvim_get_current_win()
+      if vim.w[winid].peekstack_popup_id == nil then
+        return
+      end
+      stack.touch(winid)
+    end,
+  })
+end
+
 ---Close all ephemeral popups across all stacks and reflow
 local function close_ephemeral_popups()
   stack.close_ephemerals()
@@ -46,6 +69,7 @@ end
 
 function M.setup()
   reset_reflow_timer()
+  popup_cursor_buffers = {}
   local group = vim.api.nvim_create_augroup("PeekstackEvents", { clear = true })
 
   vim.api.nvim_create_autocmd("WinClosed", {
@@ -63,6 +87,7 @@ function M.setup()
     callback = function(args)
       stack.handle_buf_wipeout(args.buf)
       stack.handle_origin_wipeout(args.buf)
+      popup_cursor_buffers[args.buf] = nil
     end,
   })
 
@@ -71,23 +96,14 @@ function M.setup()
     callback = debounced_reflow,
   })
 
-  vim.api.nvim_create_autocmd("CursorMoved", {
-    group = group,
-    callback = function()
-      local winid = vim.api.nvim_get_current_win()
-      if vim.w[winid].peekstack_popup_id == nil then
-        return
-      end
-      if is_floating_window(winid) then
-        stack.touch(winid)
-      end
-    end,
-  })
-
   vim.api.nvim_create_autocmd("WinEnter", {
     group = group,
     callback = function()
       local winid = vim.api.nvim_get_current_win()
+      if vim.w[winid].peekstack_popup_id ~= nil then
+        local bufnr = vim.api.nvim_win_get_buf(winid)
+        ensure_popup_cursor_tracking(group, bufnr)
+      end
       if is_floating_window(winid) then
         stack.touch(winid)
         local layout = require("peekstack.core.layout")
@@ -98,6 +114,11 @@ function M.setup()
       end
     end,
   })
+
+  local current_winid = vim.api.nvim_get_current_win()
+  if vim.w[current_winid].peekstack_popup_id ~= nil then
+    ensure_popup_cursor_tracking(group, vim.api.nvim_win_get_buf(current_winid))
+  end
 
   local cfg = config.get()
   local close_events = cfg.ui.quick_peek and cfg.ui.quick_peek.close_events

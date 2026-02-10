@@ -52,6 +52,8 @@ local TITLE_HL_TO_SV = {
 
 ---@type table<integer, PeekstackStackViewState>
 local states = {}
+---@type integer?
+local tab_cleanup_group = nil
 
 ---@param s PeekstackStackViewState
 local function cleanup_state(s)
@@ -79,10 +81,14 @@ local function cleanup_invalid_states()
   end
 end
 
-do
-  local group = vim.api.nvim_create_augroup("PeekstackStackViewTabCleanup", { clear = true })
+---Setup stack view autocmds.
+function M.setup()
+  if tab_cleanup_group then
+    return
+  end
+  tab_cleanup_group = vim.api.nvim_create_augroup("PeekstackStackViewTabCleanup", { clear = true })
   vim.api.nvim_create_autocmd("TabClosed", {
-    group = group,
+    group = tab_cleanup_group,
     callback = function()
       cleanup_invalid_states()
     end,
@@ -1202,6 +1208,7 @@ end
 
 ---Open the stack view
 function M.open()
+  M.setup()
   local s = get_state()
   if is_open(s) then
     vim.api.nvim_set_current_win(s.winid)
