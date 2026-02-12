@@ -28,10 +28,16 @@ local KNOWN_STACK_VIEW_POSITIONS = { "left", "right", "bottom" }
 ---@param path string
 ---@param expected_type string
 ---@param value any
-local function validate_type(path, expected_type, value)
+---@param default any
+---@return any
+local function validate_type(path, expected_type, value, default)
   if type(value) ~= expected_type then
-    notify.warn(string.format("%s must be a %s, got %s", path, expected_type, type(value)))
+    notify.warn(
+      string.format("%s must be a %s, got %s. Falling back to %s", path, expected_type, type(value), tostring(default))
+    )
+    return default
   end
+  return value
 end
 
 ---@param path string
@@ -246,7 +252,8 @@ local function validate(cfg)
   end
 
   if cfg.ui and cfg.ui.popup and cfg.ui.popup.editable ~= nil then
-    validate_type("ui.popup.editable", "boolean", cfg.ui.popup.editable)
+    cfg.ui.popup.editable =
+      validate_type("ui.popup.editable", "boolean", cfg.ui.popup.editable, M.defaults.ui.popup.editable)
   end
 
   if cfg.ui and cfg.ui.path then
@@ -297,10 +304,20 @@ local function validate(cfg)
   if cfg.ui and cfg.ui.popup and cfg.ui.popup.source then
     local source = cfg.ui.popup.source
     if source.prevent_auto_close_if_modified ~= nil then
-      validate_type("ui.popup.source.prevent_auto_close_if_modified", "boolean", source.prevent_auto_close_if_modified)
+      source.prevent_auto_close_if_modified = validate_type(
+        "ui.popup.source.prevent_auto_close_if_modified",
+        "boolean",
+        source.prevent_auto_close_if_modified,
+        M.defaults.ui.popup.source.prevent_auto_close_if_modified
+      )
     end
     if source.confirm_on_close ~= nil then
-      validate_type("ui.popup.source.confirm_on_close", "boolean", source.confirm_on_close)
+      source.confirm_on_close = validate_type(
+        "ui.popup.source.confirm_on_close",
+        "boolean",
+        source.confirm_on_close,
+        M.defaults.ui.popup.source.confirm_on_close
+      )
     end
   end
 
@@ -328,7 +345,12 @@ local function validate(cfg)
   if cfg.ui and cfg.ui.inline_preview then
     local inline_preview = cfg.ui.inline_preview
     if inline_preview.enabled ~= nil then
-      validate_type("ui.inline_preview.enabled", "boolean", inline_preview.enabled)
+      inline_preview.enabled = validate_type(
+        "ui.inline_preview.enabled",
+        "boolean",
+        inline_preview.enabled,
+        M.defaults.ui.inline_preview.enabled
+      )
     end
     if inline_preview.max_lines ~= nil then
       inline_preview.max_lines = validate_number_range(
@@ -339,7 +361,12 @@ local function validate(cfg)
       )
     end
     if inline_preview.hl_group ~= nil then
-      validate_type("ui.inline_preview.hl_group", "string", inline_preview.hl_group)
+      inline_preview.hl_group = validate_type(
+        "ui.inline_preview.hl_group",
+        "string",
+        inline_preview.hl_group,
+        M.defaults.ui.inline_preview.hl_group
+      )
     end
     if inline_preview.close_events ~= nil then
       validate_event_list("ui.inline_preview.close_events", inline_preview.close_events)
@@ -361,7 +388,8 @@ local function validate(cfg)
     elseif type(cfg.ui.title.icons) == "table" then
       local icons = cfg.ui.title.icons
       if icons.enabled ~= nil then
-        validate_type("ui.title.icons.enabled", "boolean", icons.enabled)
+        icons.enabled =
+          validate_type("ui.title.icons.enabled", "boolean", icons.enabled, M.defaults.ui.title.icons.enabled)
       end
       if icons.map ~= nil and type(icons.map) ~= "table" then
         notify.warn("ui.title.icons.map must be a table, got " .. type(icons.map) .. ". Falling back to defaults")
@@ -450,10 +478,16 @@ local function validate(cfg)
         validate_enum("providers.marks.scope", marks.scope, KNOWN_MARK_SCOPES, M.defaults.providers.marks.scope)
     end
     if marks.include ~= nil then
-      validate_type("providers.marks.include", "string", marks.include)
+      marks.include =
+        validate_type("providers.marks.include", "string", marks.include, M.defaults.providers.marks.include)
     end
     if marks.include_special ~= nil then
-      validate_type("providers.marks.include_special", "boolean", marks.include_special)
+      marks.include_special = validate_type(
+        "providers.marks.include_special",
+        "boolean",
+        marks.include_special,
+        M.defaults.providers.marks.include_special
+      )
     end
   end
 
@@ -465,10 +499,20 @@ local function validate(cfg)
   if cfg.persist and cfg.persist.session then
     local session = cfg.persist.session
     if session.default_name ~= nil then
-      validate_type("persist.session.default_name", "string", session.default_name)
+      session.default_name = validate_type(
+        "persist.session.default_name",
+        "string",
+        session.default_name,
+        M.defaults.persist.session.default_name
+      )
     end
     if session.prompt_if_missing ~= nil then
-      validate_type("persist.session.prompt_if_missing", "boolean", session.prompt_if_missing)
+      session.prompt_if_missing = validate_type(
+        "persist.session.prompt_if_missing",
+        "boolean",
+        session.prompt_if_missing,
+        M.defaults.persist.session.prompt_if_missing
+      )
     end
   end
 
@@ -478,25 +522,37 @@ local function validate(cfg)
     else
       local auto = cfg.persist.auto
       if auto.enabled ~= nil then
-        validate_type("persist.auto.enabled", "boolean", auto.enabled)
+        auto.enabled = validate_type("persist.auto.enabled", "boolean", auto.enabled, M.defaults.persist.auto.enabled)
       end
       if auto.session_name ~= nil then
-        validate_type("persist.auto.session_name", "string", auto.session_name)
+        auto.session_name =
+          validate_type("persist.auto.session_name", "string", auto.session_name, M.defaults.persist.auto.session_name)
       end
       if auto.restore ~= nil then
-        validate_type("persist.auto.restore", "boolean", auto.restore)
+        auto.restore = validate_type("persist.auto.restore", "boolean", auto.restore, M.defaults.persist.auto.restore)
       end
       if auto.save ~= nil then
-        validate_type("persist.auto.save", "boolean", auto.save)
+        auto.save = validate_type("persist.auto.save", "boolean", auto.save, M.defaults.persist.auto.save)
       end
       if auto.restore_if_empty ~= nil then
-        validate_type("persist.auto.restore_if_empty", "boolean", auto.restore_if_empty)
+        auto.restore_if_empty = validate_type(
+          "persist.auto.restore_if_empty",
+          "boolean",
+          auto.restore_if_empty,
+          M.defaults.persist.auto.restore_if_empty
+        )
       end
       if auto.debounce_ms ~= nil then
-        validate_type("persist.auto.debounce_ms", "number", auto.debounce_ms)
+        auto.debounce_ms =
+          validate_type("persist.auto.debounce_ms", "number", auto.debounce_ms, M.defaults.persist.auto.debounce_ms)
       end
       if auto.save_on_leave ~= nil then
-        validate_type("persist.auto.save_on_leave", "boolean", auto.save_on_leave)
+        auto.save_on_leave = validate_type(
+          "persist.auto.save_on_leave",
+          "boolean",
+          auto.save_on_leave,
+          M.defaults.persist.auto.save_on_leave
+        )
       end
     end
   end
