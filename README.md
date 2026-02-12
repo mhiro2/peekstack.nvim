@@ -177,6 +177,9 @@ Configure via `require("peekstack").setup({ ... })`.
       base = "repo", -- "repo" | "cwd" | "absolute"
       max_width = 80,
     },
+    stack_view = {
+      position = "right", -- "left" | "right" | "bottom"
+    },
     inline_preview = {
       enabled = true,
       max_lines = 10,

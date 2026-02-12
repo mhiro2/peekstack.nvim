@@ -182,9 +182,14 @@ function M.setup()
         "lsp.implementation",
         "lsp.references",
         "lsp.type_definition",
+        "lsp.declaration",
         "diagnostics.under_cursor",
+        "diagnostics.in_buffer",
         "file.under_cursor",
         "grep.search",
+        "marks.buffer",
+        "marks.global",
+        "marks.all",
       }
     end,
   })

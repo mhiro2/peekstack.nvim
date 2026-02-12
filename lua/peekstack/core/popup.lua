@@ -132,6 +132,10 @@ function M.create(location, opts)
   end
 
   local source_bufnr = vim.fn.bufadd(fname)
+  if source_bufnr == 0 then
+    vim.notify("Failed to add buffer: " .. fname, vim.log.levels.WARN)
+    return nil
+  end
   local ok_load = pcall(vim.fn.bufload, source_bufnr)
   if not ok_load then
     vim.notify("Failed to load buffer: " .. fname, vim.log.levels.WARN)

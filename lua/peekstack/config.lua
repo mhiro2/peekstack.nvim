@@ -22,6 +22,9 @@ local KNOWN_MARK_SCOPES = { "buffer", "global", "all" }
 ---@type string[]
 local KNOWN_PATH_BASES = { "repo", "cwd", "absolute" }
 
+---@type string[]
+local KNOWN_STACK_VIEW_POSITIONS = { "left", "right", "bottom" }
+
 ---@param path string
 ---@param expected_type string
 ---@param value any
@@ -102,6 +105,9 @@ M.defaults = {
     path = {
       base = "repo",
       max_width = 80,
+    },
+    stack_view = {
+      position = "right",
     },
     inline_preview = {
       enabled = true,
@@ -254,6 +260,25 @@ local function validate(cfg)
       elseif path.max_width < 0 then
         notify.warn(string.format("ui.path.max_width must be >= 0, got %s", path.max_width))
         path.max_width = M.defaults.ui.path.max_width
+      end
+    end
+  end
+
+  if cfg.ui and cfg.ui.stack_view ~= nil then
+    if type(cfg.ui.stack_view) ~= "table" then
+      notify.warn(
+        string.format("ui.stack_view must be a table, got %s. Falling back to defaults", type(cfg.ui.stack_view))
+      )
+      cfg.ui.stack_view = vim.deepcopy(M.defaults.ui.stack_view)
+    else
+      local stack_view = cfg.ui.stack_view
+      if stack_view.position ~= nil then
+        stack_view.position = validate_enum(
+          "ui.stack_view.position",
+          stack_view.position,
+          KNOWN_STACK_VIEW_POSITIONS,
+          M.defaults.ui.stack_view.position
+        )
       end
     end
   end

@@ -116,6 +116,11 @@ describe("config", function()
       assert.equals(80, path.max_width)
     end)
 
+    it("has stack view defaults", function()
+      local stack_view = config.defaults.ui.stack_view
+      assert.equals("right", stack_view.position)
+    end)
+
     it("has persist auto defaults", function()
       local auto = config.defaults.persist.auto
       assert.is_false(auto.enabled)
@@ -223,6 +228,18 @@ describe("config", function()
       assert.is_true(has_message("ui.path.max_width"))
       assert.equals("repo", cfg.ui.path.base)
       assert.equals(80, cfg.ui.path.max_width)
+    end)
+
+    it("falls back on invalid stack view position", function()
+      local cfg = config.setup({
+        ui = {
+          stack_view = {
+            position = "center",
+          },
+        },
+      })
+      assert.is_true(has_message("ui.stack_view.position"))
+      assert.equals("right", cfg.ui.stack_view.position)
     end)
 
     it("warns on invalid persist session config", function()
