@@ -22,7 +22,6 @@ local function update_cache(data)
 end
 
 ---Check if persistence is enabled, notify if not
----@return boolean
 ---@param silent? boolean
 ---@return boolean
 local function ensure_enabled(silent)

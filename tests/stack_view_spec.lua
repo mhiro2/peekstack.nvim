@@ -105,6 +105,43 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(winhighlight:find("CursorLine:PeekstackStackViewCursorLine", 1, true) ~= nil)
   end)
 
+  it("opens stack view on the left when configured", function()
+    config.setup({
+      ui = {
+        stack_view = {
+          position = "left",
+        },
+      },
+    })
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    local win_cfg = vim.api.nvim_win_get_config(state.winid)
+
+    assert.equals("editor", win_cfg.relative)
+    assert.equals(0, win_cfg.col)
+    assert.equals(0, win_cfg.row)
+  end)
+
+  it("opens stack view at the bottom when configured", function()
+    config.setup({
+      ui = {
+        stack_view = {
+          position = "bottom",
+        },
+      },
+    })
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    local win_cfg = vim.api.nvim_win_get_config(state.winid)
+
+    assert.equals("editor", win_cfg.relative)
+    assert.equals(0, win_cfg.col)
+    assert.equals(vim.o.columns, win_cfg.width)
+    assert.is_true(win_cfg.row > 0)
+  end)
+
   it("renders pin badge for pinned items", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)
@@ -859,6 +896,94 @@ describe("peekstack.ui.stack_view", function()
         end
       end
       assert.is_true(found, "treesitter highlight should be applied to preview line")
+    end)
+
+    vim.treesitter.get_parser = original_get_parser
+    vim.treesitter.query.get = original_query_get
+    vim.fn.delete(tmpfile)
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("reuses a parser per source buffer for preview highlights", function()
+    local tmpfile = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "local first = 1", "local second = 2" }, tmpfile)
+
+    local original_get_parser = vim.treesitter.get_parser
+    local original_query_get = vim.treesitter.query.get
+
+    local parser_calls = 0
+    local parse_calls = 0
+
+    local ok, err = pcall(function()
+      vim.api.nvim_set_hl(0, "@keyword.peekstack_test_cache", { link = "Keyword" })
+
+      local fake_node = {
+        range = function()
+          return 0, 0, 0, 5
+        end,
+      }
+      local fake_root = {
+        range = function()
+          return 0, 0, 10, 20
+        end,
+      }
+      local fake_tree = {
+        root = function()
+          return fake_root
+        end,
+        lang = function()
+          return "peekstack_test_cache"
+        end,
+      }
+      local fake_query = {
+        captures = { "keyword" },
+      }
+      fake_query.iter_captures = function(_self, _root, _bufnr, _start_row, _end_row)
+        local emitted = false
+        return function()
+          if emitted then
+            return nil
+          end
+          emitted = true
+          return 1, fake_node
+        end
+      end
+
+      vim.treesitter.get_parser = function(_bufnr)
+        parser_calls = parser_calls + 1
+        return {
+          parse = function()
+            parse_calls = parse_calls + 1
+          end,
+          trees = function()
+            return { fake_tree }
+          end,
+        }
+      end
+      vim.treesitter.query.get = function(_lang, _query_name)
+        return fake_query
+      end
+
+      local loc1 = helpers.make_location({
+        uri = vim.uri_from_fname(tmpfile),
+        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      })
+      local loc2 = helpers.make_location({
+        uri = vim.uri_from_fname(tmpfile),
+        range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 0 } },
+      })
+
+      local m1 = stack.push(loc1)
+      local m2 = stack.push(loc2)
+      assert.is_not_nil(m1)
+      assert.is_not_nil(m2)
+
+      stack_view.open()
+
+      assert.equals(1, parser_calls)
+      assert.equals(1, parse_calls)
     end)
 
     vim.treesitter.get_parser = original_get_parser

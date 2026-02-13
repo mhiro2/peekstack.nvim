@@ -328,14 +328,16 @@ function M.setup(opts)
   persist_auto.setup()
 end
 
----@return table
+---Proxy table for `peekstack.core.stack`.
+---@type table
 M.stack = setmetatable({}, {
   __index = function(_, k)
     return require("peekstack.core.stack")[k]
   end,
 })
 
----@return table
+---Proxy table for `peekstack.persist`.
+---@type table
 M.persist = setmetatable({}, {
   __index = function(_, k)
     return require("peekstack.persist")[k]

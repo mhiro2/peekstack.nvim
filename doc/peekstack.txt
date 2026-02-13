@@ -54,6 +54,9 @@ With options:
         base = "repo", -- "repo" | "cwd" | "absolute"
         max_width = 80,
       },
+      stack_view = {
+        position = "right", -- "left" | "right" | "bottom"
+      },
       inline_preview = {
         enabled = true,
         max_lines = 10,
@@ -162,6 +165,8 @@ Commands are registered after `setup()` is called.
 
 :PeekstackStack                              *:PeekstackStack*
     Open the stack view panel listing all active popups.
+    Position is configurable via `ui.stack_view.position`
+    (`left` / `right` / `bottom`).
     The focused popup is highlighted with a `▶` marker.
     Tree guides are shown for nested popup depth:
       `├` / `└` for sibling relation under the same parent.
@@ -341,6 +346,15 @@ BUFFER MODES                                           *peekstack-buffer-modes*
     "source" use the real source buffer (useful for editing)
              `ui.popup.source.confirm_on_close` prompts on close if modified
              `ui.popup.source.prevent_auto_close_if_modified` blocks auto-close
+
+==============================================================================
+STACK VIEW                                             *peekstack-stack-view*
+
+`ui.stack_view.position` controls where the stack view panel opens:
+
+    "right"  (default) right-side panel
+    "left"             left-side panel
+    "bottom"           bottom panel across full editor width
 
 ==============================================================================
 EVENTS                                                   *peekstack-events*

@@ -116,6 +116,11 @@ describe("config", function()
       assert.equals(80, path.max_width)
     end)
 
+    it("has stack view defaults", function()
+      local stack_view = config.defaults.ui.stack_view
+      assert.equals("right", stack_view.position)
+    end)
+
     it("has persist auto defaults", function()
       local auto = config.defaults.persist.auto
       assert.is_false(auto.enabled)
@@ -196,7 +201,9 @@ describe("config", function()
       assert.is_true(has_message("ui.inline_preview.max_lines"))
       assert.is_true(has_message("ui.inline_preview.hl_group"))
       assert.is_true(has_message("ui.inline_preview.close_events"))
+      assert.equals(config.defaults.ui.inline_preview.enabled, cfg.ui.inline_preview.enabled)
       assert.equals(config.defaults.ui.inline_preview.max_lines, cfg.ui.inline_preview.max_lines)
+      assert.equals(config.defaults.ui.inline_preview.hl_group, cfg.ui.inline_preview.hl_group)
     end)
 
     it("warns on invalid quick peek config", function()
@@ -225,8 +232,20 @@ describe("config", function()
       assert.equals(80, cfg.ui.path.max_width)
     end)
 
+    it("falls back on invalid stack view position", function()
+      local cfg = config.setup({
+        ui = {
+          stack_view = {
+            position = "center",
+          },
+        },
+      })
+      assert.is_true(has_message("ui.stack_view.position"))
+      assert.equals("right", cfg.ui.stack_view.position)
+    end)
+
     it("warns on invalid persist session config", function()
-      config.setup({
+      local cfg = config.setup({
         persist = {
           session = {
             default_name = 1,
@@ -236,10 +255,12 @@ describe("config", function()
       })
       assert.is_true(has_message("persist.session.default_name"))
       assert.is_true(has_message("persist.session.prompt_if_missing"))
+      assert.equals(config.defaults.persist.session.default_name, cfg.persist.session.default_name)
+      assert.equals(config.defaults.persist.session.prompt_if_missing, cfg.persist.session.prompt_if_missing)
     end)
 
     it("warns on invalid persist auto config", function()
-      config.setup({
+      local cfg = config.setup({
         persist = {
           auto = {
             enabled = "yes",
@@ -259,6 +280,13 @@ describe("config", function()
       assert.is_true(has_message("persist.auto.restore_if_empty"))
       assert.is_true(has_message("persist.auto.debounce_ms"))
       assert.is_true(has_message("persist.auto.save_on_leave"))
+      assert.equals(config.defaults.persist.auto.enabled, cfg.persist.auto.enabled)
+      assert.equals(config.defaults.persist.auto.session_name, cfg.persist.auto.session_name)
+      assert.equals(config.defaults.persist.auto.restore, cfg.persist.auto.restore)
+      assert.equals(config.defaults.persist.auto.save, cfg.persist.auto.save)
+      assert.equals(config.defaults.persist.auto.restore_if_empty, cfg.persist.auto.restore_if_empty)
+      assert.equals(config.defaults.persist.auto.debounce_ms, cfg.persist.auto.debounce_ms)
+      assert.equals(config.defaults.persist.auto.save_on_leave, cfg.persist.auto.save_on_leave)
     end)
 
     it("falls back on invalid buffer_mode", function()
@@ -277,7 +305,7 @@ describe("config", function()
     end)
 
     it("warns on invalid source config types", function()
-      config.setup({
+      local cfg = config.setup({
         ui = {
           popup = {
             source = {
@@ -289,6 +317,36 @@ describe("config", function()
       })
       assert.is_true(has_message("ui.popup.source.prevent_auto_close_if_modified"))
       assert.is_true(has_message("ui.popup.source.confirm_on_close"))
+      assert.equals(
+        config.defaults.ui.popup.source.prevent_auto_close_if_modified,
+        cfg.ui.popup.source.prevent_auto_close_if_modified
+      )
+      assert.equals(config.defaults.ui.popup.source.confirm_on_close, cfg.ui.popup.source.confirm_on_close)
+    end)
+
+    it("falls back on invalid validate_type targets", function()
+      local cfg = config.setup({
+        ui = {
+          popup = {
+            editable = "yes",
+          },
+          title = {
+            icons = {
+              enabled = "yes",
+            },
+          },
+        },
+        providers = {
+          marks = {
+            include = 1,
+            include_special = "no",
+          },
+        },
+      })
+      assert.equals(config.defaults.ui.popup.editable, cfg.ui.popup.editable)
+      assert.equals(config.defaults.ui.title.icons.enabled, cfg.ui.title.icons.enabled)
+      assert.equals(config.defaults.providers.marks.include, cfg.providers.marks.include)
+      assert.equals(config.defaults.providers.marks.include_special, cfg.providers.marks.include_special)
     end)
 
     it("falls back on invalid history config types", function()

@@ -142,6 +142,19 @@
 ---@field root_winid integer
 ---@field from_popup boolean
 
+---@class PeekstackStackViewState
+---@field bufnr integer?
+---@field winid integer?
+---@field root_winid integer?
+---@field line_to_id table<integer, integer>
+---@field filter string?
+---@field header_lines integer
+---@field help_bufnr integer?
+---@field help_winid integer?
+---@field help_augroup integer?
+---@field autoclose_group integer?
+---@field autoclose_suspended integer
+
 -- Config type definitions
 
 ---@class PeekstackConfigLayoutOffset
@@ -183,6 +196,9 @@
 ---@class PeekstackConfigPath
 ---@field base "repo"|"cwd"|"absolute"
 ---@field max_width integer
+
+---@class PeekstackConfigStackView
+---@field position "left"|"right"|"bottom"
 
 ---@class PeekstackConfigInlinePreview
 ---@field enabled boolean
@@ -233,6 +249,7 @@
 ---@field layout PeekstackConfigLayout
 ---@field title PeekstackConfigTitle
 ---@field path PeekstackConfigPath
+---@field stack_view PeekstackConfigStackView
 ---@field inline_preview PeekstackConfigInlinePreview
 ---@field quick_peek PeekstackConfigQuickPeek
 ---@field popup PeekstackConfigPopup

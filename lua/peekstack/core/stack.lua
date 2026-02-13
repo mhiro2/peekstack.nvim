@@ -180,9 +180,6 @@ function M.current(winid)
   return stack.popups[#stack.popups]
 end
 
----@param id integer
----@param winid? integer
----@return boolean
 ---@param stack PeekstackStackModel
 ---@param idx integer
 ---@param item PeekstackPopupModel
