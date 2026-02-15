@@ -272,6 +272,8 @@ default backend is `builtin`. To use an external picker, install the plugin and 
 `picker.backend` to one of: `telescope`, `fzf-lua`, `snacks`.
 When using these external backends, the picker preview window shows the selected file
 content around the target location.
+Candidate labels are shown in a readable unified format:
+`<text> - <path>:<line>:<col>` (or `<path>:<line>:<col>` when text is empty).
 
 ```lua
 {
