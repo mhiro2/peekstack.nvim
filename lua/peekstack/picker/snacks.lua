@@ -2,18 +2,6 @@ local picker_util = require("peekstack.util.picker")
 
 local M = {}
 
----@param chunks table
----@param path string
-local function append_path_chunks(chunks, path)
-  local dir, base = path:match("^(.*[/\\])(.+)$")
-  if dir and base then
-    chunks[#chunks + 1] = { dir, "SnacksPickerDir" }
-    chunks[#chunks + 1] = { base, "SnacksPickerFile" }
-    return
-  end
-  chunks[#chunks + 1] = { path, "SnacksPickerFile" }
-end
-
 ---@param item table
 ---@return table
 local function format_item(item)
@@ -28,7 +16,7 @@ local function format_item(item)
   if type(path) ~= "string" or path == "" then
     path = item.text or ""
   end
-  append_path_chunks(chunks, path)
+  picker_util.append_path_chunks(chunks, path, "SnacksPickerDir", "SnacksPickerFile")
 
   if type(item.display_lnum) == "number" and item.display_lnum > 0 then
     chunks[#chunks + 1] = { ":", "SnacksPickerDelim" }

@@ -4,6 +4,25 @@ local fs = require("peekstack.util.fs")
 
 local M = {}
 
+---@param chunks table
+---@param path string
+---@param dir_hl? string
+---@param file_hl? string
+function M.append_path_chunks(chunks, path, dir_hl, file_hl)
+  local file_group = file_hl or "Directory"
+  local dir, base = path:match("^(.*[/\\])(.+)$")
+  if dir and base then
+    if type(dir_hl) == "string" and dir_hl ~= "" then
+      chunks[#chunks + 1] = { dir, dir_hl }
+    else
+      chunks[#chunks + 1] = { dir, file_group }
+    end
+    chunks[#chunks + 1] = { base, file_group }
+    return
+  end
+  chunks[#chunks + 1] = { path, file_group }
+end
+
 ---@param text? string
 ---@return string
 local function normalize_label_text(text)

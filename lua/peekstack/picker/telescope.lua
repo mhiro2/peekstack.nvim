@@ -12,18 +12,6 @@ local function hl(primary, fallback)
   return fallback
 end
 
----@param chunks table
----@param path string
-local function append_path_chunks(chunks, path)
-  local dir, base = path:match("^(.*[/\\])(.+)$")
-  if dir and base then
-    chunks[#chunks + 1] = { dir, hl("TelescopeResultsComment", "Comment") }
-    chunks[#chunks + 1] = { base, hl("TelescopeResultsIdentifier", "Directory") }
-    return
-  end
-  chunks[#chunks + 1] = { path, hl("TelescopeResultsIdentifier", "Directory") }
-end
-
 ---@param displayer fun(chunks: table): string
 ---@param item PeekstackPickerExternalItem
 ---@return string
@@ -35,7 +23,12 @@ local function display_entry(displayer, item)
   end
 
   local path = item.path or item.label
-  append_path_chunks(chunks, path)
+  picker_util.append_path_chunks(
+    chunks,
+    path,
+    hl("TelescopeResultsComment", "Comment"),
+    hl("TelescopeResultsIdentifier", "Directory")
+  )
 
   if type(item.display_lnum) == "number" and item.display_lnum > 0 then
     chunks[#chunks + 1] = { ":", hl("TelescopeResultsComment", "Comment") }

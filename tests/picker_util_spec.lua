@@ -80,4 +80,14 @@ describe("peekstack.util.picker", function()
     local items = picker_util.build_external_items({ location }, 1)
     assert.equals("errMsgFailedToStartServer - /tmp/sample.lua:10:3", items[1].label)
   end)
+
+  it("appends split path chunks with given highlight groups", function()
+    local chunks = {}
+    picker_util.append_path_chunks(chunks, "/tmp/sample.lua", "DirHl", "FileHl")
+
+    assert.same({
+      { "/tmp/", "DirHl" },
+      { "sample.lua", "FileHl" },
+    }, chunks)
+  end)
 end)
