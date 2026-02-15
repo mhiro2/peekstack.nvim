@@ -155,6 +155,10 @@ Configure the backend with `picker.backend`:
 
 For external backends (`telescope`, `fzf-lua`, `snacks`), picker preview windows
 show file content around the selected location.
+Picker labels use a unified readable format:
+    <text> - <path>:<line>:<col>
+or, when text is empty:
+    <path>:<line>:<col>
 
 If the chosen plugin is not installed, a warning is shown and the picker will not open.
 

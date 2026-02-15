@@ -18,10 +18,18 @@ function M.pick(locations, opts, cb)
     item.index = idx
   end
 
+  local user_opts = opts or {}
+  local fzf_opts = vim.tbl_extend("force", user_opts.fzf_opts or {}, {
+    ["--delimiter"] = "\t",
+    ["--with-nth"] = "2",
+    ["--nth"] = "2",
+  })
+
   ---@type table
-  local exec_opts = vim.tbl_extend("force", opts or {}, {
+  local exec_opts = vim.tbl_deep_extend("force", user_opts, {
     prompt = "Peekstack> ",
     previewer = "builtin",
+    fzf_opts = fzf_opts,
     actions = {
       ["default"] = function(selected)
         if not selected or not selected[1] then
@@ -41,7 +49,8 @@ function M.pick(locations, opts, cb)
     for _, item in ipairs(items) do
       local file = item.file or ""
       local label = item.label:gsub("[%r\n\t]", " ")
-      table.insert(lines, string.format("%s:%d:%d:%s\t%d", file, item.lnum, item.col, label, item.index))
+      local loc = string.format("%s:%d:%d", file, item.lnum, item.col)
+      table.insert(lines, string.format("%s\t%s\t%d", loc, label, item.index))
     end
     return lines
   end, exec_opts)

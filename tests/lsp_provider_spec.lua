@@ -87,7 +87,7 @@ describe("peekstack.providers.lsp", function()
     assert.equals(vim.uri_from_bufnr(ctx.bufnr), received[1].uri)
     assert.equals(1, received[1].range.start.line)
     assert.equals(2, received[1].range.start.character)
-    assert.equals("Parent - class", received[1].text)
+    assert.equals("Parent", received[1].text)
     assert.equals(5, received[1].kind)
     assert.equals("lsp.symbols_document", received[1].provider)
 

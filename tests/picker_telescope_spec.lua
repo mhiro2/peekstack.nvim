@@ -16,6 +16,7 @@ describe("peekstack.picker.telescope", function()
   before_each(function()
     save_module("telescope.pickers")
     save_module("telescope.finders")
+    save_module("telescope.pickers.entry_display")
     save_module("telescope.config")
     save_module("telescope.actions")
     save_module("telescope.actions.state")
@@ -44,6 +45,18 @@ describe("peekstack.picker.telescope", function()
       new_table = function(opts)
         captured.finder = opts
         return opts
+      end,
+    }
+    package.loaded["telescope.pickers.entry_display"] = {
+      create = function(_opts)
+        return function(chunks)
+          captured.display_chunks = chunks
+          local texts = {}
+          for _, chunk in ipairs(chunks) do
+            texts[#texts + 1] = chunk[1]
+          end
+          return table.concat(texts)
+        end
       end,
     }
     package.loaded["telescope.actions"] = {
@@ -76,6 +89,7 @@ describe("peekstack.picker.telescope", function()
     local loc1 = {
       uri = "file:///tmp/a.lua",
       range = { start = { line = 1, character = 2 }, ["end"] = { line = 1, character = 2 } },
+      text = "Alpha",
       provider = "test",
     }
     local loc2 = {
@@ -90,6 +104,18 @@ describe("peekstack.picker.telescope", function()
 
     assert.equals("sorter", captured.spec.sorter)
     assert.equals("previewer", captured.spec.previewer)
+    assert.equals("Alpha - /tmp/a.lua:2:3", captured.finder.results[1].display())
+    assert.same({
+      { "Alpha", "Function" },
+      { " - ", "Comment" },
+      { "/tmp/", "Comment" },
+      { "a.lua", "Directory" },
+      { ":", "Comment" },
+      { "2", "Number" },
+      { ":", "Comment" },
+      { "3", "Number" },
+    }, captured.display_chunks)
+    assert.equals("Alpha - /tmp/a.lua:2:3 /tmp/a.lua", captured.finder.results[1].ordinal)
     assert.equals("/tmp/a.lua", captured.finder.results[1].filename)
     assert.equals(2, captured.finder.results[1].lnum)
     assert.equals(3, captured.finder.results[1].col)

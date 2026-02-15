@@ -17,16 +17,11 @@ local function append_document_symbol(symbol, uri, provider, out)
   local start_pos = range and range.start
   local end_pos = range and range["end"]
   if start_pos and end_pos then
-    local text = symbol.name
-    if type(text) ~= "string" then
-      text = nil
-    end
-    if type(symbol.detail) == "string" and symbol.detail ~= "" then
-      if text and text ~= "" then
-        text = string.format("%s - %s", text, symbol.detail)
-      else
-        text = symbol.detail
-      end
+    local text
+    if type(symbol.name) == "string" and symbol.name ~= "" then
+      text = symbol.name
+    elseif type(symbol.detail) == "string" and symbol.detail ~= "" then
+      text = symbol.detail
     end
 
     table.insert(out, {

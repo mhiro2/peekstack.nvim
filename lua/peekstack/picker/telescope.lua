@@ -2,6 +2,47 @@ local picker_util = require("peekstack.util.picker")
 
 local M = {}
 
+---@param primary string
+---@param fallback string
+---@return string
+local function hl(primary, fallback)
+  if vim.fn.hlexists(primary) == 1 then
+    return primary
+  end
+  return fallback
+end
+
+---@param displayer fun(chunks: table): string
+---@param item PeekstackPickerExternalItem
+---@return string
+local function display_entry(displayer, item)
+  local chunks = {}
+  if type(item.symbol) == "string" and item.symbol ~= "" then
+    chunks[#chunks + 1] = { item.symbol, hl("TelescopeResultsIdentifier", "Function") }
+    chunks[#chunks + 1] = { " - ", hl("TelescopeResultsComment", "Comment") }
+  end
+
+  local path = item.path or item.label
+  picker_util.append_path_chunks(
+    chunks,
+    path,
+    hl("TelescopeResultsComment", "Comment"),
+    hl("TelescopeResultsIdentifier", "Directory")
+  )
+
+  if type(item.display_lnum) == "number" and item.display_lnum > 0 then
+    chunks[#chunks + 1] = { ":", hl("TelescopeResultsComment", "Comment") }
+    chunks[#chunks + 1] = { tostring(item.display_lnum), hl("TelescopeResultsNumber", "Number") }
+  end
+
+  if type(item.display_col) == "number" and item.display_col > 0 then
+    chunks[#chunks + 1] = { ":", hl("TelescopeResultsComment", "Comment") }
+    chunks[#chunks + 1] = { tostring(item.display_col), hl("TelescopeResultsNumber", "Number") }
+  end
+
+  return displayer(chunks)
+end
+
 ---Pick a location using Telescope
 ---@param locations PeekstackLocation[]
 ---@param opts? table
@@ -13,16 +54,25 @@ function M.pick(locations, opts, cb)
     return
   end
   local finders = require("telescope.finders")
+  local entry_display = require("telescope.pickers.entry_display")
   local conf = require("telescope.config").values
   local telescope_opts = opts or {}
+  local displayer = entry_display.create({
+    separator = "",
+    items = {
+      { remaining = true },
+    },
+  })
 
   local items = picker_util.build_external_items(locations, 1)
   local entries = {}
   for _, item in ipairs(items) do
     table.insert(entries, {
       value = item.value,
-      display = item.label,
-      ordinal = item.label,
+      display = function()
+        return display_entry(displayer, item)
+      end,
+      ordinal = string.format("%s %s", item.label, item.file or ""),
       filename = item.file,
       lnum = item.lnum,
       col = item.col,
