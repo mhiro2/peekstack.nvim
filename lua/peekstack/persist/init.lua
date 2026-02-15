@@ -195,10 +195,19 @@ function M.restore(name, opts)
 end
 
 ---List all saved sessions
----@param opts? { on_done?: fun(sessions: table<string, PeekstackSession>) }
+---@param opts? { on_done?: fun(sessions: table<string, PeekstackSession>), silent?: boolean }
 ---@return table<string, PeekstackSession>
 function M.list_sessions(opts)
   local on_done = opts and opts.on_done or nil
+  local silent = opts and opts.silent
+  if silent == nil then
+    -- Synchronous list calls are mostly used for command completion.
+    -- Keep them silent to avoid notification spam when persist is disabled.
+    silent = on_done == nil
+  end
+  if not ensure_enabled(silent) then
+    return {}
+  end
   if on_done then
     store.read(SCOPE, {
       on_done = function(read_data)
