@@ -118,6 +118,10 @@
 ---@field file? string
 ---@field lnum integer
 ---@field col integer
+---@field symbol? string
+---@field path? string
+---@field display_lnum? integer
+---@field display_col? integer
 
 ---@class PeekstackHistoryEntry
 ---@field location PeekstackLocation
