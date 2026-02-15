@@ -215,6 +215,7 @@ LSP:
     lsp.references
     lsp.type_definition
     lsp.declaration
+    lsp.symbols_document
 
 Diagnostics:
     diagnostics.under_cursor   diagnostics at the cursor line (message shown above the preview)
@@ -255,6 +256,7 @@ The main module exposes the following API:
 `require("peekstack").peek.references(opts)`
 `require("peekstack").peek.type_definition(opts)`
 `require("peekstack").peek.declaration(opts)`
+`require("peekstack").peek.symbols_document(opts)`
 `require("peekstack").peek.diagnostics_cursor(opts)`
 `require("peekstack").peek.diagnostics_buffer(opts)`
 `require("peekstack").peek.file_under_cursor(opts)`
@@ -270,6 +272,7 @@ Built-in provider names:
     lsp.references
     lsp.type_definition
     lsp.declaration
+    lsp.symbols_document
     diagnostics.under_cursor
     diagnostics.in_buffer
     file.under_cursor

@@ -201,6 +201,7 @@ end
 ---@field references fun(opts?: table)
 ---@field type_definition fun(opts?: table)
 ---@field declaration fun(opts?: table)
+---@field symbols_document fun(opts?: table)
 ---@field diagnostics_cursor fun(opts?: table)
 ---@field diagnostics_buffer fun(opts?: table)
 ---@field file_under_cursor fun(opts?: table)
@@ -229,6 +230,9 @@ M.peek = setmetatable({
   end,
   declaration = function(opts)
     return peek_by_provider("lsp.declaration", opts)
+  end,
+  symbols_document = function(opts)
+    return peek_by_provider("lsp.symbols_document", opts)
   end,
   diagnostics_cursor = function(opts)
     return peek_by_provider("diagnostics.under_cursor", opts)
@@ -301,6 +305,7 @@ function M.setup(opts)
       "references",
       "type_definition",
       "declaration",
+      "symbols_document",
     })
   end
 

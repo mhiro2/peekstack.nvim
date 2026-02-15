@@ -140,6 +140,7 @@ describe("peekstack.commands", function()
     local names = vim.fn.getcompletion("PeekstackQuickPeek ", "cmdline")
 
     assert.is_true(vim.list_contains(names, "lsp.declaration"))
+    assert.is_true(vim.list_contains(names, "lsp.symbols_document"))
     assert.is_true(vim.list_contains(names, "diagnostics.in_buffer"))
     assert.is_true(vim.list_contains(names, "marks.buffer"))
     assert.is_true(vim.list_contains(names, "marks.global"))

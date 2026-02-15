@@ -89,4 +89,20 @@ describe("same location filter", function()
     local stack_list = stack.list()
     assert.equals(1, #stack_list)
   end)
+
+  it("filters same position for lsp.symbols_document provider", function()
+    set_cursor(1, 0)
+    local loc_same = helpers.make_location({
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+    })
+
+    peekstack.register_provider("lsp.symbols_document", function(_ctx, cb)
+      cb({ loc_same })
+    end)
+
+    peekstack.peek("lsp.symbols_document", {})
+
+    local stack_list = stack.list()
+    assert.equals(0, #stack_list)
+  end)
 end)

@@ -89,10 +89,13 @@ require("peekstack").peek.definition({ mode = "inline" })
 
 -- Quick peek (temporary, no stack)
 require("peekstack").peek.references({ mode = "quick" })
+
+-- Document symbols in current buffer
+require("peekstack").peek.symbols_document()
 ```
 
 Built-in provider names:
-`lsp.definition`, `lsp.implementation`, `lsp.references`, `lsp.type_definition`, `lsp.declaration`,
+`lsp.definition`, `lsp.implementation`, `lsp.references`, `lsp.type_definition`, `lsp.declaration`, `lsp.symbols_document`,
 `diagnostics.under_cursor`, `diagnostics.in_buffer`, `file.under_cursor`, `grep.search`, `marks.buffer`,
 `marks.global`, `marks.all` (marks require their provider enabled; `grep.search` requires `rg`).
 
