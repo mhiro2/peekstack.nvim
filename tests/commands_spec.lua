@@ -1,21 +1,29 @@
 describe("peekstack.commands", function()
   local commands = require("peekstack.commands")
+  local config = require("peekstack.config")
   local persist = require("peekstack.persist")
   local original_list_sessions = nil
   local original_select = nil
+  local original_notify = nil
 
   before_each(function()
+    config.setup({})
     commands._reset()
     original_list_sessions = persist.list_sessions
     original_select = vim.ui.select
+    original_notify = vim.notify
   end)
 
   after_each(function()
+    config.setup({})
     if original_list_sessions then
       persist.list_sessions = original_list_sessions
     end
     if original_select then
       vim.ui.select = original_select
+    end
+    if original_notify then
+      vim.notify = original_notify
     end
     commands._reset()
   end)
@@ -67,6 +75,20 @@ describe("peekstack.commands", function()
 
     assert.equals("Select a session", prompts[1])
     assert.equals("broken: 1 items (updated: unknown)", prompts[2])
+  end)
+
+  it("notifies when list sessions is invoked while persist is disabled", function()
+    config.setup({ persist = { enabled = false } })
+
+    local messages = {}
+    vim.notify = function(msg)
+      table.insert(messages, msg)
+    end
+
+    commands.setup()
+    vim.api.nvim_cmd({ cmd = "PeekstackListSessions" }, {})
+
+    assert.is_true(vim.list_contains(messages, "peekstack.persist is disabled"))
   end)
 
   it("includes extended providers in quick peek completion", function()

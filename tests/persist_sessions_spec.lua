@@ -187,12 +187,28 @@ describe("peekstack.persist.sessions", function()
 
   it("should notify when persist is disabled", function()
     config.setup({ persist = { enabled = false } })
+    local original_notify = vim.notify
+    local messages = {}
+    vim.notify = function(msg)
+      table.insert(messages, msg)
+    end
 
     -- These should not error when persist is disabled
     persist.save_current("test")
     persist.restore("test")
+    local sessions = persist.list_sessions()
+    assert.same({}, sessions)
+    local callback_called = false
+    persist.list_sessions({
+      on_done = function()
+        callback_called = true
+      end,
+    })
+    assert.is_false(callback_called)
     persist.delete_session("test")
     persist.rename_session("a", "b")
+    assert.is_true(vim.list_contains(messages, "peekstack.persist is disabled"))
+    vim.notify = original_notify
   end)
 
   it("should handle non-existent sessions gracefully", function()
