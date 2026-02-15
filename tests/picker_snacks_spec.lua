@@ -27,7 +27,7 @@ describe("peekstack.picker.snacks", function()
     assert.is_true(warned)
   end)
 
-  it("passes file format items and confirms selected location", function()
+  it("passes text format items and confirms selected location", function()
     local picked = nil
     local closed = false
     local captured = nil
@@ -45,6 +45,7 @@ describe("peekstack.picker.snacks", function()
     local loc1 = {
       uri = "file:///tmp/a.lua",
       range = { start = { line = 3, character = 4 }, ["end"] = { line = 3, character = 4 } },
+      text = "Alpha",
       provider = "test",
     }
     local loc2 = {
@@ -58,9 +59,24 @@ describe("peekstack.picker.snacks", function()
     end)
 
     assert.equals("Peekstack", captured.title)
-    assert.equals("file", captured.format)
+    assert.equals("function", type(captured.format))
     assert.equals("/tmp/a.lua", captured.items[1].file)
     assert.same({ 4, 4 }, captured.items[1].pos)
+    assert.equals("Alpha - /tmp/a.lua:4:5", captured.items[1].text)
+    assert.equals("Alpha", captured.items[1].symbol)
+    assert.equals("/tmp/a.lua", captured.items[1].path)
+    assert.equals(4, captured.items[1].display_lnum)
+    assert.equals(5, captured.items[1].display_col)
+    assert.same({
+      { "Alpha", "SnacksPickerLabel" },
+      { " - ", "SnacksPickerDelim" },
+      { "/tmp/", "SnacksPickerDir" },
+      { "a.lua", "SnacksPickerFile" },
+      { ":", "SnacksPickerDelim" },
+      { "4", "SnacksPickerRow" },
+      { ":", "SnacksPickerDelim" },
+      { "5", "SnacksPickerCol" },
+    }, captured.format(captured.items[1]))
     assert.is_nil(captured.items[1].loc)
     assert.are.same(loc1, captured.items[1].peekstack_loc)
     assert.are.same(loc2, picked)
