@@ -183,6 +183,7 @@ function M.setup()
         "lsp.references",
         "lsp.type_definition",
         "lsp.declaration",
+        "lsp.symbols_document",
         "diagnostics.under_cursor",
         "diagnostics.in_buffer",
         "file.under_cursor",
