@@ -32,7 +32,7 @@ local function session_updated_at_text(session)
   if type(updated_at) ~= "number" then
     return "unknown"
   end
-  return os.date("%Y-%m-%d %H:%M:%S", updated_at)
+  return vim.fn.strftime("%Y-%m-%d %H:%M:%S", updated_at)
 end
 
 ---@return string[]
