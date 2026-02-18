@@ -212,6 +212,14 @@ local function validate_event_list(path, value)
   end
 end
 
+---@alias PeekstackConfigFieldValidator fun(path: string, value: any, default: any): any
+
+---@class PeekstackConfigFieldRule
+---@field key string
+---@field validate PeekstackConfigFieldValidator
+---@field assign? boolean
+---@field require_truthy? boolean
+
 ---@param path string
 ---@param value any
 ---@param known string[]
@@ -227,332 +235,365 @@ local function validate_enum(path, value, known, default)
   return value
 end
 
+---@param expected_type string
+---@return PeekstackConfigFieldValidator
+local function field_type(expected_type)
+  return function(path, value, default)
+    return validate_type(path, expected_type, value, default)
+  end
+end
+
+---@param known string[]
+---@return PeekstackConfigFieldValidator
+local function field_enum(known)
+  return function(path, value, default)
+    return validate_enum(path, value, known, default)
+  end
+end
+
+---@param opts { min: number?, max: number? }
+---@return PeekstackConfigFieldValidator
+local function field_number_range(opts)
+  return function(path, value, default)
+    return validate_number_range(path, value, default, opts)
+  end
+end
+
+---@return PeekstackConfigFieldValidator
+local function field_ratio()
+  return function(path, value, default)
+    return validate_ratio(path, value, default)
+  end
+end
+
+---@return PeekstackConfigFieldValidator
+local function field_event_list()
+  return function(path, value, _default)
+    validate_event_list(path, value)
+    return value
+  end
+end
+
+---@param path string
+---@param value any
+---@param default number
+---@return number
+local function validate_non_negative_number(path, value, default)
+  if type(value) ~= "number" then
+    notify.warn(string.format("%s must be a number, got %s", path, type(value)))
+    return value
+  end
+  if value < 0 then
+    notify.warn(string.format("%s must be >= 0, got %s", path, value))
+    return default
+  end
+  return value
+end
+
+---@param value any
+---@return table?
+local function as_table(value)
+  if type(value) == "table" then
+    return value
+  end
+  return nil
+end
+
+---@param parent table
+---@param key string
+---@param path string
+---@param defaults table
+---@param opts? { fallback: boolean?, message: string? }
+---@return table?
+local function ensure_table_field(parent, key, path, defaults, opts)
+  local value = parent[key]
+  if value == nil then
+    return nil
+  end
+  if type(value) == "table" then
+    return value
+  end
+
+  if opts and opts.message then
+    notify.warn(opts.message)
+  else
+    notify.warn(string.format("%s must be a table, got %s. Falling back to defaults", path, type(value)))
+  end
+
+  if opts and opts.fallback == false then
+    return nil
+  end
+  parent[key] = vim.deepcopy(defaults)
+  return parent[key]
+end
+
+---@param section table
+---@param path string
+---@param defaults table
+---@param rules PeekstackConfigFieldRule[]
+local function apply_rules(section, path, defaults, rules)
+  for _, rule in ipairs(rules) do
+    local value = section[rule.key]
+    local should_apply = value ~= nil
+    if rule.require_truthy then
+      should_apply = not not value
+    end
+    if should_apply then
+      local validated = rule.validate(path .. "." .. rule.key, value, defaults[rule.key])
+      if rule.assign ~= false then
+        section[rule.key] = validated
+      end
+    end
+  end
+end
+
+---@type PeekstackConfigFieldRule[]
+local UI_PATH_RULES = {
+  { key = "base", validate = field_enum(KNOWN_PATH_BASES), require_truthy = true },
+  { key = "max_width", validate = validate_non_negative_number },
+}
+
+---@type PeekstackConfigFieldRule[]
+local STACK_VIEW_RULES = {
+  { key = "position", validate = field_enum(KNOWN_STACK_VIEW_POSITIONS) },
+}
+
+---@type PeekstackConfigFieldRule[]
+local POPUP_RULES = {
+  { key = "editable", validate = field_type("boolean") },
+  { key = "buffer_mode", validate = field_enum(KNOWN_BUFFER_MODES), require_truthy = true },
+}
+
+---@type PeekstackConfigFieldRule[]
+local POPUP_SOURCE_RULES = {
+  { key = "prevent_auto_close_if_modified", validate = field_type("boolean") },
+  { key = "confirm_on_close", validate = field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local POPUP_HISTORY_RULES = {
+  { key = "max_items", validate = field_number_range({ min = 1 }) },
+  { key = "restore_position", validate = field_enum(KNOWN_RESTORE_POSITIONS), require_truthy = true },
+}
+
+---@type PeekstackConfigFieldRule[]
+local INLINE_PREVIEW_RULES = {
+  { key = "enabled", validate = field_type("boolean") },
+  { key = "max_lines", validate = field_number_range({ min = 1 }) },
+  { key = "hl_group", validate = field_type("string") },
+  { key = "close_events", validate = field_event_list() },
+}
+
+---@type PeekstackConfigFieldRule[]
+local QUICK_PEEK_RULES = {
+  { key = "close_events", validate = field_event_list() },
+}
+
+---@type PeekstackConfigFieldRule[]
+local TITLE_ICON_RULES = {
+  { key = "enabled", validate = field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local PICKER_RULES = {
+  { key = "backend", validate = field_enum(KNOWN_BACKENDS), require_truthy = true },
+}
+
+---@type PeekstackConfigFieldRule[]
+local LAYOUT_RULES = {
+  { key = "style", validate = field_enum(KNOWN_LAYOUT_STYLES), require_truthy = true },
+  { key = "max_ratio", validate = field_ratio() },
+}
+
+---@type PeekstackConfigFieldRule[]
+local LAYOUT_MIN_SIZE_RULES = {
+  { key = "w", validate = field_number_range({ min = 1 }) },
+  { key = "h", validate = field_number_range({ min = 1 }) },
+}
+
+---@type PeekstackConfigFieldRule[]
+local LAYOUT_SHRINK_RULES = {
+  { key = "w", validate = field_number_range({ min = 0 }) },
+  { key = "h", validate = field_number_range({ min = 0 }) },
+}
+
+---@type PeekstackConfigFieldRule[]
+local LAYOUT_OFFSET_RULES = {
+  { key = "row", validate = field_number_range({ min = 0 }) },
+  { key = "col", validate = field_number_range({ min = 0 }) },
+}
+
+---@type PeekstackConfigFieldRule[]
+local MARKS_RULES = {
+  { key = "scope", validate = field_enum(KNOWN_MARK_SCOPES), require_truthy = true },
+  { key = "include", validate = field_type("string") },
+  { key = "include_special", validate = field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local PERSIST_RULES = {
+  { key = "max_items", validate = field_number_range({ min = 1 }) },
+}
+
+---@type PeekstackConfigFieldRule[]
+local PERSIST_SESSION_RULES = {
+  { key = "default_name", validate = field_type("string") },
+  { key = "prompt_if_missing", validate = field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local PERSIST_AUTO_RULES = {
+  { key = "enabled", validate = field_type("boolean") },
+  { key = "session_name", validate = field_type("string") },
+  { key = "restore", validate = field_type("boolean") },
+  { key = "save", validate = field_type("boolean") },
+  { key = "restore_if_empty", validate = field_type("boolean") },
+  { key = "debounce_ms", validate = field_type("number") },
+  { key = "save_on_leave", validate = field_type("boolean") },
+}
+
+---@param cfg table
+local function validate_ui_keys(cfg)
+  local ui = as_table(cfg.ui)
+  if not ui or ui.keys == nil then
+    return
+  end
+
+  local keys = ensure_table_field(ui, "keys", "ui.keys", M.defaults.ui.keys)
+  if not keys then
+    return
+  end
+
+  local defaults = M.defaults.ui.keys
+  for name, val in pairs(keys) do
+    if type(val) ~= "string" then
+      notify.warn(
+        string.format("ui.keys.%s must be a string, got %s. Falling back to %s", name, type(val), tostring(defaults[name]))
+      )
+      keys[name] = defaults[name]
+    end
+  end
+end
+
 ---@param cfg table
 local function validate(cfg)
-  if cfg.ui and cfg.ui.keys ~= nil then
-    if type(cfg.ui.keys) ~= "table" then
-      notify.warn(string.format("ui.keys must be a table, got %s. Falling back to defaults", type(cfg.ui.keys)))
-      cfg.ui.keys = vim.deepcopy(M.defaults.ui.keys)
-    else
-      local defaults = M.defaults.ui.keys
-      for name, val in pairs(cfg.ui.keys) do
-        if type(val) ~= "string" then
-          notify.warn(
-            string.format(
-              "ui.keys.%s must be a string, got %s. Falling back to %s",
-              name,
-              type(val),
-              tostring(defaults[name])
-            )
-          )
-          cfg.ui.keys[name] = defaults[name]
+  validate_ui_keys(cfg)
+
+  local ui = as_table(cfg.ui)
+  if ui then
+    local popup = as_table(ui.popup)
+    if popup then
+      apply_rules(popup, "ui.popup", M.defaults.ui.popup, POPUP_RULES)
+
+      local source = as_table(popup.source)
+      if source then
+        apply_rules(source, "ui.popup.source", M.defaults.ui.popup.source, POPUP_SOURCE_RULES)
+      end
+
+      local history = as_table(popup.history)
+      if history then
+        apply_rules(history, "ui.popup.history", M.defaults.ui.popup.history, POPUP_HISTORY_RULES)
+      end
+    end
+
+    local path = as_table(ui.path)
+    if path then
+      apply_rules(path, "ui.path", M.defaults.ui.path, UI_PATH_RULES)
+    end
+
+    if ui.stack_view ~= nil then
+      local stack_view = ensure_table_field(ui, "stack_view", "ui.stack_view", M.defaults.ui.stack_view)
+      if stack_view then
+        apply_rules(stack_view, "ui.stack_view", M.defaults.ui.stack_view, STACK_VIEW_RULES)
+      end
+    end
+
+    local inline_preview = as_table(ui.inline_preview)
+    if inline_preview then
+      apply_rules(inline_preview, "ui.inline_preview", M.defaults.ui.inline_preview, INLINE_PREVIEW_RULES)
+    end
+
+    local quick_peek = as_table(ui.quick_peek)
+    if quick_peek then
+      apply_rules(quick_peek, "ui.quick_peek", M.defaults.ui.quick_peek, QUICK_PEEK_RULES)
+    end
+
+    local title = as_table(ui.title)
+    if title then
+      if title.icons ~= nil and type(title.icons) ~= "table" then
+        notify.warn("ui.title.icons must be a table, got " .. type(title.icons) .. ". Falling back to defaults")
+        title.icons = vim.deepcopy(M.defaults.ui.title.icons)
+      elseif type(title.icons) == "table" then
+        local icons = title.icons
+        apply_rules(icons, "ui.title.icons", M.defaults.ui.title.icons, TITLE_ICON_RULES)
+        if icons.map ~= nil and type(icons.map) ~= "table" then
+          notify.warn("ui.title.icons.map must be a table, got " .. type(icons.map) .. ". Falling back to defaults")
+          icons.map = vim.deepcopy(M.defaults.ui.title.icons.map)
+        end
+      end
+    end
+
+    if ui.layout ~= nil then
+      local layout = ensure_table_field(ui, "layout", "ui.layout", M.defaults.ui.layout)
+      if layout then
+        apply_rules(layout, "ui.layout", M.defaults.ui.layout, LAYOUT_RULES)
+
+        if layout.min_size ~= nil then
+          local min_size = ensure_table_field(layout, "min_size", "ui.layout.min_size", M.defaults.ui.layout.min_size)
+          if min_size then
+            apply_rules(min_size, "ui.layout.min_size", M.defaults.ui.layout.min_size, LAYOUT_MIN_SIZE_RULES)
+          end
+        end
+
+        if layout.shrink ~= nil then
+          local shrink = ensure_table_field(layout, "shrink", "ui.layout.shrink", M.defaults.ui.layout.shrink)
+          if shrink then
+            apply_rules(shrink, "ui.layout.shrink", M.defaults.ui.layout.shrink, LAYOUT_SHRINK_RULES)
+          end
+        end
+
+        if layout.offset ~= nil then
+          local offset = ensure_table_field(layout, "offset", "ui.layout.offset", M.defaults.ui.layout.offset)
+          if offset then
+            apply_rules(offset, "ui.layout.offset", M.defaults.ui.layout.offset, LAYOUT_OFFSET_RULES)
+          end
         end
       end
     end
   end
 
-  if cfg.ui and cfg.ui.popup and cfg.ui.popup.editable ~= nil then
-    cfg.ui.popup.editable =
-      validate_type("ui.popup.editable", "boolean", cfg.ui.popup.editable, M.defaults.ui.popup.editable)
+  local picker = as_table(cfg.picker)
+  if picker then
+    apply_rules(picker, "picker", M.defaults.picker, PICKER_RULES)
   end
 
-  if cfg.ui and cfg.ui.path then
-    local path = cfg.ui.path
-    if path.base then
-      path.base = validate_enum("ui.path.base", path.base, KNOWN_PATH_BASES, M.defaults.ui.path.base)
-    end
-    if path.max_width ~= nil then
-      if type(path.max_width) ~= "number" then
-        notify.warn(string.format("ui.path.max_width must be a number, got %s", type(path.max_width)))
-      elseif path.max_width < 0 then
-        notify.warn(string.format("ui.path.max_width must be >= 0, got %s", path.max_width))
-        path.max_width = M.defaults.ui.path.max_width
-      end
+  local providers = as_table(cfg.providers)
+  if providers then
+    local marks = as_table(providers.marks)
+    if marks then
+      apply_rules(marks, "providers.marks", M.defaults.providers.marks, MARKS_RULES)
     end
   end
 
-  if cfg.ui and cfg.ui.stack_view ~= nil then
-    if type(cfg.ui.stack_view) ~= "table" then
-      notify.warn(
-        string.format("ui.stack_view must be a table, got %s. Falling back to defaults", type(cfg.ui.stack_view))
+  local persist = as_table(cfg.persist)
+  if persist then
+    apply_rules(persist, "persist", M.defaults.persist, PERSIST_RULES)
+
+    local session = as_table(persist.session)
+    if session then
+      apply_rules(session, "persist.session", M.defaults.persist.session, PERSIST_SESSION_RULES)
+    end
+
+    if persist.auto ~= nil then
+      local auto = ensure_table_field(
+        persist,
+        "auto",
+        "persist.auto",
+        M.defaults.persist.auto,
+        { fallback = false, message = "persist.auto must be a table" }
       )
-      cfg.ui.stack_view = vim.deepcopy(M.defaults.ui.stack_view)
-    else
-      local stack_view = cfg.ui.stack_view
-      if stack_view.position ~= nil then
-        stack_view.position = validate_enum(
-          "ui.stack_view.position",
-          stack_view.position,
-          KNOWN_STACK_VIEW_POSITIONS,
-          M.defaults.ui.stack_view.position
-        )
-      end
-    end
-  end
-
-  -- Validate buffer_mode
-  if cfg.ui and cfg.ui.popup and cfg.ui.popup.buffer_mode then
-    cfg.ui.popup.buffer_mode = validate_enum(
-      "ui.popup.buffer_mode",
-      cfg.ui.popup.buffer_mode,
-      KNOWN_BUFFER_MODES,
-      M.defaults.ui.popup.buffer_mode
-    )
-  end
-
-  -- Validate source mode settings
-  if cfg.ui and cfg.ui.popup and cfg.ui.popup.source then
-    local source = cfg.ui.popup.source
-    if source.prevent_auto_close_if_modified ~= nil then
-      source.prevent_auto_close_if_modified = validate_type(
-        "ui.popup.source.prevent_auto_close_if_modified",
-        "boolean",
-        source.prevent_auto_close_if_modified,
-        M.defaults.ui.popup.source.prevent_auto_close_if_modified
-      )
-    end
-    if source.confirm_on_close ~= nil then
-      source.confirm_on_close = validate_type(
-        "ui.popup.source.confirm_on_close",
-        "boolean",
-        source.confirm_on_close,
-        M.defaults.ui.popup.source.confirm_on_close
-      )
-    end
-  end
-
-  -- Validate history settings
-  if cfg.ui and cfg.ui.popup and cfg.ui.popup.history then
-    local history = cfg.ui.popup.history
-    if history.max_items ~= nil then
-      history.max_items = validate_number_range(
-        "ui.popup.history.max_items",
-        history.max_items,
-        M.defaults.ui.popup.history.max_items,
-        { min = 1 }
-      )
-    end
-    if history.restore_position then
-      history.restore_position = validate_enum(
-        "ui.popup.history.restore_position",
-        history.restore_position,
-        KNOWN_RESTORE_POSITIONS,
-        M.defaults.ui.popup.history.restore_position
-      )
-    end
-  end
-
-  if cfg.ui and cfg.ui.inline_preview then
-    local inline_preview = cfg.ui.inline_preview
-    if inline_preview.enabled ~= nil then
-      inline_preview.enabled = validate_type(
-        "ui.inline_preview.enabled",
-        "boolean",
-        inline_preview.enabled,
-        M.defaults.ui.inline_preview.enabled
-      )
-    end
-    if inline_preview.max_lines ~= nil then
-      inline_preview.max_lines = validate_number_range(
-        "ui.inline_preview.max_lines",
-        inline_preview.max_lines,
-        M.defaults.ui.inline_preview.max_lines,
-        { min = 1 }
-      )
-    end
-    if inline_preview.hl_group ~= nil then
-      inline_preview.hl_group = validate_type(
-        "ui.inline_preview.hl_group",
-        "string",
-        inline_preview.hl_group,
-        M.defaults.ui.inline_preview.hl_group
-      )
-    end
-    if inline_preview.close_events ~= nil then
-      validate_event_list("ui.inline_preview.close_events", inline_preview.close_events)
-    end
-  end
-
-  if cfg.ui and cfg.ui.quick_peek then
-    local quick_peek = cfg.ui.quick_peek
-    if quick_peek.close_events ~= nil then
-      validate_event_list("ui.quick_peek.close_events", quick_peek.close_events)
-    end
-  end
-
-  -- Validate ui.title.icons
-  if cfg.ui and cfg.ui.title then
-    if cfg.ui.title.icons ~= nil and type(cfg.ui.title.icons) ~= "table" then
-      notify.warn("ui.title.icons must be a table, got " .. type(cfg.ui.title.icons) .. ". Falling back to defaults")
-      cfg.ui.title.icons = vim.deepcopy(M.defaults.ui.title.icons)
-    elseif type(cfg.ui.title.icons) == "table" then
-      local icons = cfg.ui.title.icons
-      if icons.enabled ~= nil then
-        icons.enabled =
-          validate_type("ui.title.icons.enabled", "boolean", icons.enabled, M.defaults.ui.title.icons.enabled)
-      end
-      if icons.map ~= nil and type(icons.map) ~= "table" then
-        notify.warn("ui.title.icons.map must be a table, got " .. type(icons.map) .. ". Falling back to defaults")
-        icons.map = vim.deepcopy(M.defaults.ui.title.icons.map)
-      end
-    end
-  end
-
-  -- Validate picker backend (fallback to default on invalid value)
-  if cfg.picker and cfg.picker.backend then
-    cfg.picker.backend = validate_enum("picker.backend", cfg.picker.backend, KNOWN_BACKENDS, M.defaults.picker.backend)
-  end
-
-  -- Validate layout style (fallback to default on invalid value)
-  if cfg.ui and cfg.ui.layout ~= nil then
-    if type(cfg.ui.layout) ~= "table" then
-      notify.warn(string.format("ui.layout must be a table, got %s. Falling back to defaults", type(cfg.ui.layout)))
-      cfg.ui.layout = vim.deepcopy(M.defaults.ui.layout)
-    else
-      local layout = cfg.ui.layout
-      if layout.style then
-        layout.style = validate_enum("ui.layout.style", layout.style, KNOWN_LAYOUT_STYLES, M.defaults.ui.layout.style)
-      end
-      if layout.max_ratio ~= nil then
-        layout.max_ratio = validate_ratio("ui.layout.max_ratio", layout.max_ratio, M.defaults.ui.layout.max_ratio)
-      end
-      if layout.min_size ~= nil then
-        if type(layout.min_size) ~= "table" then
-          notify.warn(
-            string.format("ui.layout.min_size must be a table, got %s. Falling back to defaults", type(layout.min_size))
-          )
-          layout.min_size = vim.deepcopy(M.defaults.ui.layout.min_size)
-        else
-          layout.min_size.w =
-            validate_number_range("ui.layout.min_size.w", layout.min_size.w, M.defaults.ui.layout.min_size.w, {
-              min = 1,
-            })
-          layout.min_size.h =
-            validate_number_range("ui.layout.min_size.h", layout.min_size.h, M.defaults.ui.layout.min_size.h, {
-              min = 1,
-            })
-        end
-      end
-      if layout.shrink ~= nil then
-        if type(layout.shrink) ~= "table" then
-          notify.warn(
-            string.format("ui.layout.shrink must be a table, got %s. Falling back to defaults", type(layout.shrink))
-          )
-          layout.shrink = vim.deepcopy(M.defaults.ui.layout.shrink)
-        else
-          layout.shrink.w =
-            validate_number_range("ui.layout.shrink.w", layout.shrink.w, M.defaults.ui.layout.shrink.w, { min = 0 })
-          layout.shrink.h =
-            validate_number_range("ui.layout.shrink.h", layout.shrink.h, M.defaults.ui.layout.shrink.h, { min = 0 })
-        end
-      end
-      if layout.offset ~= nil then
-        if type(layout.offset) ~= "table" then
-          notify.warn(
-            string.format("ui.layout.offset must be a table, got %s. Falling back to defaults", type(layout.offset))
-          )
-          layout.offset = vim.deepcopy(M.defaults.ui.layout.offset)
-        else
-          layout.offset.row = validate_number_range(
-            "ui.layout.offset.row",
-            layout.offset.row,
-            M.defaults.ui.layout.offset.row,
-            { min = 0 }
-          )
-          layout.offset.col = validate_number_range(
-            "ui.layout.offset.col",
-            layout.offset.col,
-            M.defaults.ui.layout.offset.col,
-            { min = 0 }
-          )
-        end
-      end
-    end
-  end
-
-  -- Validate marks provider settings
-  if cfg.providers and cfg.providers.marks then
-    local marks = cfg.providers.marks
-    if marks.scope then
-      marks.scope =
-        validate_enum("providers.marks.scope", marks.scope, KNOWN_MARK_SCOPES, M.defaults.providers.marks.scope)
-    end
-    if marks.include ~= nil then
-      marks.include =
-        validate_type("providers.marks.include", "string", marks.include, M.defaults.providers.marks.include)
-    end
-    if marks.include_special ~= nil then
-      marks.include_special = validate_type(
-        "providers.marks.include_special",
-        "boolean",
-        marks.include_special,
-        M.defaults.providers.marks.include_special
-      )
-    end
-  end
-
-  if cfg.persist and cfg.persist.max_items ~= nil then
-    cfg.persist.max_items =
-      validate_number_range("persist.max_items", cfg.persist.max_items, M.defaults.persist.max_items, { min = 1 })
-  end
-
-  if cfg.persist and cfg.persist.session then
-    local session = cfg.persist.session
-    if session.default_name ~= nil then
-      session.default_name = validate_type(
-        "persist.session.default_name",
-        "string",
-        session.default_name,
-        M.defaults.persist.session.default_name
-      )
-    end
-    if session.prompt_if_missing ~= nil then
-      session.prompt_if_missing = validate_type(
-        "persist.session.prompt_if_missing",
-        "boolean",
-        session.prompt_if_missing,
-        M.defaults.persist.session.prompt_if_missing
-      )
-    end
-  end
-
-  if cfg.persist and cfg.persist.auto ~= nil then
-    if type(cfg.persist.auto) ~= "table" then
-      notify.warn("persist.auto must be a table")
-    else
-      local auto = cfg.persist.auto
-      if auto.enabled ~= nil then
-        auto.enabled = validate_type("persist.auto.enabled", "boolean", auto.enabled, M.defaults.persist.auto.enabled)
-      end
-      if auto.session_name ~= nil then
-        auto.session_name =
-          validate_type("persist.auto.session_name", "string", auto.session_name, M.defaults.persist.auto.session_name)
-      end
-      if auto.restore ~= nil then
-        auto.restore = validate_type("persist.auto.restore", "boolean", auto.restore, M.defaults.persist.auto.restore)
-      end
-      if auto.save ~= nil then
-        auto.save = validate_type("persist.auto.save", "boolean", auto.save, M.defaults.persist.auto.save)
-      end
-      if auto.restore_if_empty ~= nil then
-        auto.restore_if_empty = validate_type(
-          "persist.auto.restore_if_empty",
-          "boolean",
-          auto.restore_if_empty,
-          M.defaults.persist.auto.restore_if_empty
-        )
-      end
-      if auto.debounce_ms ~= nil then
-        auto.debounce_ms =
-          validate_type("persist.auto.debounce_ms", "number", auto.debounce_ms, M.defaults.persist.auto.debounce_ms)
-      end
-      if auto.save_on_leave ~= nil then
-        auto.save_on_leave = validate_type(
-          "persist.auto.save_on_leave",
-          "boolean",
-          auto.save_on_leave,
-          M.defaults.persist.auto.save_on_leave
-        )
+      if auto then
+        apply_rules(auto, "persist.auto", M.defaults.persist.auto, PERSIST_AUTO_RULES)
       end
     end
   end
