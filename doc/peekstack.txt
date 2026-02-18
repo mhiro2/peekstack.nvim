@@ -163,6 +163,97 @@ or, when text is empty:
 If the chosen plugin is not installed, a warning is shown and the picker will not open.
 
 ==============================================================================
+EXTENSIONS                                             *peekstack-extensions*
+
+Extensions push results from external picker plugins onto the peekstack stack.
+Unlike picker backends (which peekstack opens internally), extensions hook into
+your picker workflow so selected items become peekstack popups.
+
+Supported pickers: telescope, fzf-lua, snacks.nvim.
+
+Each extension provides:
+    `push_file(opts)`            Open file picker → push to stack
+    `push_grep(opts)`            Open grep picker → push to stack
+    `push_lsp_references(opts)`  Open LSP references picker → push to stack
+    `actions.push`               Generic action for custom picker configs
+
+SNACKS.NVIM ~
+                                              *peekstack-extensions-snacks*
+>lua
+  local snacks = require("peekstack.extensions.snacks")
+  vim.keymap.set("n", "<leader>pf", snacks.push_file)
+  vim.keymap.set("n", "<leader>pg", snacks.push_grep)
+  vim.keymap.set("n", "<leader>pr", snacks.push_lsp_references)
+<
+
+Custom action:
+>lua
+  require("snacks.picker").grep({
+    confirm = function(picker, item)
+      require("peekstack.extensions.snacks").actions.push(picker, item, {
+        provider = "my_grep",
+      })
+    end,
+  })
+<
+
+FZF-LUA ~
+                                              *peekstack-extensions-fzf-lua*
+>lua
+  local fzf = require("peekstack.extensions.fzf_lua")
+  vim.keymap.set("n", "<leader>pf", fzf.push_file)
+  vim.keymap.set("n", "<leader>pg", fzf.push_grep)
+  vim.keymap.set("n", "<leader>pr", fzf.push_lsp_references)
+<
+
+Custom action:
+>lua
+  require("fzf-lua").live_grep({
+    actions = {
+      ["default"] = function(selected)
+        require("peekstack.extensions.fzf_lua").actions.push(selected, {
+          provider = "my_grep",
+        })
+      end,
+    },
+  })
+<
+
+TELESCOPE ~
+                                              *peekstack-extensions-telescope*
+
+Telescope uses the standard extension mechanism:
+>lua
+  vim.keymap.set("n", "<leader>pf", "<cmd>Telescope peekstack push_file<cr>")
+  vim.keymap.set("n", "<leader>pg", "<cmd>Telescope peekstack push_grep<cr>")
+  vim.keymap.set("n", "<leader>pr", "<cmd>Telescope peekstack push_lsp_references<cr>")
+<
+
+Custom action:
+>lua
+  require("telescope.builtin").live_grep({
+    attach_mappings = function(_, map)
+      local push = require("telescope").extensions.peekstack.actions.push
+      map("i", "<CR>", function(bufnr) push(bufnr, { provider = "my_grep" }) end)
+      map("n", "<CR>", function(bufnr) push(bufnr, { provider = "my_grep" }) end)
+      return true
+    end,
+  })
+<
+
+GENERIC PUSH ~
+                                              *peekstack-extensions-push-entry*
+
+For picker-agnostic integration:
+>lua
+  require("peekstack").extensions.push_entry({
+    filename = "/path/to/file.lua",
+    lnum = 42,  -- 1-based
+    col = 5,    -- 1-based
+  }, { provider = "my_source" })
+<
+
+==============================================================================
 COMMANDS                                                   *peekstack-cmds*
 
 Commands are registered after `setup()` is called.
