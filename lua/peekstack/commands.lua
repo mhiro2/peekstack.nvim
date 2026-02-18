@@ -177,21 +177,7 @@ function M.setup()
   end, {
     nargs = "?",
     complete = function()
-      return {
-        "lsp.definition",
-        "lsp.implementation",
-        "lsp.references",
-        "lsp.type_definition",
-        "lsp.declaration",
-        "lsp.symbols_document",
-        "diagnostics.under_cursor",
-        "diagnostics.in_buffer",
-        "file.under_cursor",
-        "grep.search",
-        "marks.buffer",
-        "marks.global",
-        "marks.all",
-      }
+      return require("peekstack").list_providers()
     end,
   })
 end

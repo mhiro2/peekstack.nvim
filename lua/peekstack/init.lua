@@ -43,6 +43,13 @@ function M.register_provider(name, fn)
   providers[name] = fn
 end
 
+---@return string[]
+function M.list_providers()
+  local names = vim.tbl_keys(providers)
+  table.sort(names)
+  return names
+end
+
 ---@param name string
 ---@param fn PeekstackPicker
 function M.register_picker(name, fn)

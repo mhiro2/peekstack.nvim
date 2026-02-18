@@ -1,6 +1,7 @@
 describe("peekstack.commands", function()
   local commands = require("peekstack.commands")
   local config = require("peekstack.config")
+  local peekstack = require("peekstack")
   local persist = require("peekstack.persist")
   local original_list_sessions = nil
   local original_select = nil
@@ -135,15 +136,37 @@ describe("peekstack.commands", function()
     assert.equals("alpha: 0 items (updated: formatted-time)", prompts[2])
   end)
 
-  it("includes extended providers in quick peek completion", function()
-    commands.setup()
+  it("uses registered providers for quick peek completion", function()
+    peekstack.setup({})
     local names = vim.fn.getcompletion("PeekstackQuickPeek ", "cmdline")
 
     assert.is_true(vim.list_contains(names, "lsp.declaration"))
     assert.is_true(vim.list_contains(names, "lsp.symbols_document"))
     assert.is_true(vim.list_contains(names, "diagnostics.in_buffer"))
+    assert.is_false(vim.list_contains(names, "marks.buffer"))
+    assert.is_false(vim.list_contains(names, "marks.global"))
+    assert.is_false(vim.list_contains(names, "marks.all"))
+  end)
+
+  it("reflects provider registration changes in quick peek completion", function()
+    peekstack.setup({
+      providers = {
+        marks = {
+          enable = true,
+        },
+      },
+    })
+
+    local names = vim.fn.getcompletion("PeekstackQuickPeek ", "cmdline")
     assert.is_true(vim.list_contains(names, "marks.buffer"))
     assert.is_true(vim.list_contains(names, "marks.global"))
     assert.is_true(vim.list_contains(names, "marks.all"))
+
+    peekstack.register_provider("custom.test", function(_ctx, cb)
+      cb({})
+    end)
+
+    names = vim.fn.getcompletion("PeekstackQuickPeek ", "cmdline")
+    assert.is_true(vim.list_contains(names, "custom.test"))
   end)
 end)
