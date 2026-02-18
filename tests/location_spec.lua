@@ -191,4 +191,80 @@ describe("location", function()
       assert(vim.uv.fs_rmdir(tmpdir))
     end)
   end)
+
+  describe("is_same_position cache", function()
+    ---@param path string
+    ---@return PeekstackLocation
+    local function location_for(path)
+      return {
+        uri = vim.uri_from_fname(path),
+        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      }
+    end
+
+    after_each(function()
+      location._reset()
+    end)
+
+    it("clears cached realpath entries via _reset", function()
+      local original_fs_realpath = vim.uv.fs_realpath
+      local calls = 0
+
+      local ok, err = pcall(function()
+        vim.uv.fs_realpath = function(path)
+          calls = calls + 1
+          return path
+        end
+
+        local path = "/tmp/peekstack-location-reset.lua"
+        local loc = location_for(path)
+
+        assert.is_true(location.is_same_position(loc, loc.uri, 0, 0))
+        assert.is_true(location.is_same_position(loc, loc.uri, 0, 0))
+        assert.equals(1, calls)
+
+        location._reset()
+
+        assert.is_true(location.is_same_position(loc, loc.uri, 0, 0))
+        assert.equals(2, calls)
+      end)
+
+      vim.uv.fs_realpath = original_fs_realpath
+      if not ok then
+        error(err)
+      end
+    end)
+
+    it("evicts least recently used realpath entries when cache exceeds the limit", function()
+      local original_fs_realpath = vim.uv.fs_realpath
+      local calls = 0
+
+      local ok, err = pcall(function()
+        vim.uv.fs_realpath = function(path)
+          calls = calls + 1
+          return path
+        end
+
+        local limit = location._realpath_cache_limit()
+        local oldest = location_for("/tmp/peekstack-location-lru-0.lua")
+
+        assert.is_true(location.is_same_position(oldest, oldest.uri, 0, 0))
+        assert.equals(1, calls)
+
+        for idx = 1, limit do
+          local loc = location_for(string.format("/tmp/peekstack-location-lru-%d.lua", idx))
+          assert.is_true(location.is_same_position(loc, loc.uri, 0, 0))
+        end
+        assert.equals(limit + 1, calls)
+
+        assert.is_true(location.is_same_position(oldest, oldest.uri, 0, 0))
+        assert.equals(limit + 2, calls)
+      end)
+
+      vim.uv.fs_realpath = original_fs_realpath
+      if not ok then
+        error(err)
+      end
+    end)
+  end)
 end)
