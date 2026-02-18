@@ -67,9 +67,9 @@ local function unindex_popup(model)
   end
 
   -- Guard against tests mutating id/winid directly.
-  for id, entry in pairs(popup_by_id) do
+  for popup_id, entry in pairs(popup_by_id) do
     if entry.popup == model then
-      popup_by_id[id] = nil
+      popup_by_id[popup_id] = nil
     end
   end
   for wid, entry in pairs(popup_by_winid) do

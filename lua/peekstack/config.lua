@@ -468,7 +468,12 @@ local function validate_ui_keys(cfg)
   for name, val in pairs(keys) do
     if type(val) ~= "string" then
       notify.warn(
-        string.format("ui.keys.%s must be a string, got %s. Falling back to %s", name, type(val), tostring(defaults[name]))
+        string.format(
+          "ui.keys.%s must be a string, got %s. Falling back to %s",
+          name,
+          type(val),
+          tostring(defaults[name])
+        )
       )
       keys[name] = defaults[name]
     end
