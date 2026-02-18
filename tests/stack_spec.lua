@@ -326,6 +326,62 @@ describe("stack.close_by_id", function()
   end)
 end)
 
+describe("stack lookup indexes", function()
+  before_each(function()
+    stack._reset()
+    config.setup({})
+  end)
+
+  after_each(function()
+    local s = stack.current_stack()
+    for i = #s.popups, 1, -1 do
+      stack.close(s.popups[i].id)
+    end
+    stack._reset()
+  end)
+
+  it("finds stack popups by id and winid", function()
+    local loc = helpers.make_location()
+    local model = stack.push(loc)
+    assert.is_not_nil(model)
+
+    local by_id = stack.find_by_id(model.id)
+    assert.is_not_nil(by_id)
+    assert.equals(model.id, by_id.id)
+
+    local owner, by_winid = stack.find_by_winid(model.winid)
+    assert.is_not_nil(owner)
+    assert.is_not_nil(by_winid)
+    assert.equals(model.id, by_winid.id)
+  end)
+
+  it("returns ephemeral popups for winid lookup", function()
+    local loc = helpers.make_location()
+    local ephemeral = stack.push(loc, { stack = false })
+    assert.is_not_nil(ephemeral)
+
+    local owner, by_winid = stack.find_by_winid(ephemeral.winid)
+    assert.is_nil(owner)
+    assert.is_not_nil(by_winid)
+    assert.equals(ephemeral.id, by_winid.id)
+  end)
+
+  it("clears id and winid lookups when a popup is closed", function()
+    local loc = helpers.make_location()
+    local model = stack.push(loc)
+    assert.is_not_nil(model)
+    local winid = model.winid
+    local id = model.id
+
+    assert.is_true(stack.close(id))
+    assert.is_nil(stack.find_by_id(id))
+
+    local owner, by_winid = stack.find_by_winid(winid)
+    assert.is_nil(owner)
+    assert.is_nil(by_winid)
+  end)
+end)
+
 describe("stack focus reopen", function()
   before_each(function()
     stack._reset()
