@@ -356,4 +356,12 @@ M.persist = setmetatable({}, {
   end,
 })
 
+---Proxy table for `peekstack.extensions`.
+---@type table
+M.extensions = setmetatable({}, {
+  __index = function(_, k)
+    return require("peekstack.extensions")[k]
+  end,
+})
+
 return M
