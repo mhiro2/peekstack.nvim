@@ -281,7 +281,7 @@ end
 local function validate_non_negative_number(path, value, default)
   if type(value) ~= "number" then
     notify.warn(string.format("%s must be a number, got %s", path, type(value)))
-    return value
+    return default
   end
   if value < 0 then
     notify.warn(string.format("%s must be >= 0, got %s", path, value))
