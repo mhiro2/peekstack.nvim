@@ -291,6 +291,25 @@ Candidate labels are shown in a readable unified format:
 
 If the chosen plugin is not installed, a warning is shown and the picker will not open.
 
+## 🔌 Extensions (push from external pickers)
+
+Push results from external pickers (telescope / fzf-lua / snacks.nvim) directly
+onto the peekstack stack. Each extension provides `push_file`, `push_grep`,
+`push_lsp_references`, and a generic `actions.push` for custom configurations.
+
+```lua
+-- snacks.nvim
+vim.keymap.set("n", "<leader>pf", require("peekstack.extensions.snacks").push_file)
+
+-- fzf-lua
+vim.keymap.set("n", "<leader>pf", require("peekstack.extensions.fzf_lua").push_file)
+
+-- telescope
+vim.keymap.set("n", "<leader>pf", "<cmd>Telescope peekstack push_file<cr>")
+```
+
+See `:help peekstack-extensions` for the full API and custom action examples.
+
 ## 💾 Persist sessions
 
 When `persist.enabled = true`, `PeekstackSaveSession` uses `persist.session.default_name`
