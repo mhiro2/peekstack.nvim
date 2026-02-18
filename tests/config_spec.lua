@@ -232,6 +232,18 @@ describe("config", function()
       assert.equals(80, cfg.ui.path.max_width)
     end)
 
+    it("falls back when ui.path.max_width has invalid type", function()
+      local cfg = config.setup({
+        ui = {
+          path = {
+            max_width = "wide",
+          },
+        },
+      })
+      assert.is_true(has_message("ui.path.max_width must be a number"))
+      assert.equals(config.defaults.ui.path.max_width, cfg.ui.path.max_width)
+    end)
+
     it("falls back on invalid stack view position", function()
       local cfg = config.setup({
         ui = {

@@ -2,18 +2,121 @@ local fs = require("peekstack.util.fs")
 local str = require("peekstack.util.str")
 
 local M = {}
+
+local REALPATH_CACHE_MAX = 512
+
+---@type table<string, string>
 local realpath_cache = {}
+---@type table<string, { prev: string?, next: string? }>
+local realpath_cache_nodes = {}
+---@type string?
+local realpath_cache_head = nil
+---@type string?
+local realpath_cache_tail = nil
+local realpath_cache_size = 0
+
+---@param key string
+local function cache_detach(key)
+  local node = realpath_cache_nodes[key]
+  if not node then
+    return
+  end
+
+  local prev = node.prev
+  local next = node.next
+
+  if prev then
+    realpath_cache_nodes[prev].next = next
+  else
+    realpath_cache_head = next
+  end
+
+  if next then
+    realpath_cache_nodes[next].prev = prev
+  else
+    realpath_cache_tail = prev
+  end
+
+  node.prev = nil
+  node.next = nil
+end
+
+---@param key string
+local function cache_append_tail(key)
+  if not realpath_cache_nodes[key] then
+    realpath_cache_nodes[key] = {}
+  end
+
+  local node = realpath_cache_nodes[key]
+  node.prev = realpath_cache_tail
+  node.next = nil
+
+  if realpath_cache_tail then
+    realpath_cache_nodes[realpath_cache_tail].next = key
+  else
+    realpath_cache_head = key
+  end
+  realpath_cache_tail = key
+end
+
+---@param key string
+---@param is_new boolean
+local function cache_touch(key, is_new)
+  if not is_new and realpath_cache_tail == key then
+    return
+  end
+
+  if not is_new then
+    cache_detach(key)
+  else
+    realpath_cache_size = realpath_cache_size + 1
+  end
+  cache_append_tail(key)
+end
+
+local function cache_evict_if_needed()
+  while realpath_cache_size > REALPATH_CACHE_MAX do
+    local evict_key = realpath_cache_head
+    if not evict_key then
+      break
+    end
+    cache_detach(evict_key)
+    realpath_cache_nodes[evict_key] = nil
+    realpath_cache[evict_key] = nil
+    realpath_cache_size = realpath_cache_size - 1
+  end
+end
+
+local function cache_clear()
+  realpath_cache = {}
+  realpath_cache_nodes = {}
+  realpath_cache_head = nil
+  realpath_cache_tail = nil
+  realpath_cache_size = 0
+end
 
 ---@param fname string
 ---@param cache? table<string, string>
 ---@return string
 local function resolve_realpath(fname, cache)
-  local store = cache or realpath_cache
-  if store[fname] then
-    return store[fname]
+  if cache then
+    if cache[fname] then
+      return cache[fname]
+    end
+    local resolved = vim.uv.fs_realpath(fname) or fname
+    cache[fname] = resolved
+    return resolved
   end
+
+  if realpath_cache[fname] then
+    cache_touch(fname, false)
+    return realpath_cache[fname]
+  end
+
   local resolved = vim.uv.fs_realpath(fname) or fname
-  store[fname] = resolved
+  realpath_cache[fname] = resolved
+  cache_touch(fname, true)
+  cache_evict_if_needed()
   return resolved
 end
 
@@ -203,6 +306,16 @@ function M.is_same_position(location, uri, line, character, opts)
     return false
   end
   return true
+end
+
+---Reset internal caches (for testing).
+function M._reset()
+  cache_clear()
+end
+
+---@return integer
+function M._realpath_cache_limit()
+  return REALPATH_CACHE_MAX
 end
 
 return M

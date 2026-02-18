@@ -28,6 +28,128 @@ local stacks = {}
 local ephemerals = {}
 ---@type table<integer, boolean>
 local stack_view_wins = {}
+---@class PeekstackPopupLookupEntry
+---@field popup PeekstackPopupModel
+---@field root_winid integer?
+---@type table<integer, PeekstackPopupLookupEntry>
+local popup_by_id = {}
+---@type table<integer, PeekstackPopupLookupEntry>
+local popup_by_winid = {}
+
+---@param model PeekstackPopupModel
+local function unindex_popup(model)
+  if not model then
+    return
+  end
+
+  local removed = false
+
+  local id = model.id
+  if id ~= nil then
+    local entry_by_id = popup_by_id[id]
+    if entry_by_id and entry_by_id.popup == model then
+      popup_by_id[id] = nil
+      removed = true
+    end
+  end
+
+  local winid = model.winid
+  if winid ~= nil then
+    local entry_by_winid = popup_by_winid[winid]
+    if entry_by_winid and entry_by_winid.popup == model then
+      popup_by_winid[winid] = nil
+      removed = true
+    end
+  end
+
+  if removed then
+    return
+  end
+
+  -- Guard against tests mutating id/winid directly.
+  for popup_id, entry in pairs(popup_by_id) do
+    if entry.popup == model then
+      popup_by_id[popup_id] = nil
+    end
+  end
+  for wid, entry in pairs(popup_by_winid) do
+    if entry.popup == model then
+      popup_by_winid[wid] = nil
+    end
+  end
+end
+
+---@param model PeekstackPopupModel
+---@param root_winid integer?
+local function index_popup(model, root_winid)
+  unindex_popup(model)
+
+  local entry = {
+    popup = model,
+    root_winid = root_winid,
+  }
+  if model.id ~= nil then
+    popup_by_id[model.id] = entry
+  end
+  if model.winid ~= nil then
+    popup_by_winid[model.winid] = entry
+  end
+end
+
+---@param id integer
+---@return PeekstackPopupLookupEntry?
+local function lookup_by_id(id)
+  local entry = popup_by_id[id]
+  if entry and entry.popup and entry.popup.id == id then
+    return entry
+  end
+  popup_by_id[id] = nil
+
+  for root_winid, stack in pairs(stacks) do
+    for _, item in ipairs(stack.popups) do
+      if item.id == id then
+        index_popup(item, root_winid)
+        return popup_by_id[id]
+      end
+    end
+  end
+
+  local ephemeral = ephemerals[id]
+  if ephemeral then
+    index_popup(ephemeral, nil)
+    return popup_by_id[id]
+  end
+
+  return nil
+end
+
+---@param winid integer
+---@return PeekstackPopupLookupEntry?
+local function lookup_by_winid(winid)
+  local entry = popup_by_winid[winid]
+  if entry and entry.popup and entry.popup.winid == winid then
+    return entry
+  end
+  popup_by_winid[winid] = nil
+
+  for root_winid, stack in pairs(stacks) do
+    for _, item in ipairs(stack.popups) do
+      if item.winid == winid then
+        index_popup(item, root_winid)
+        return popup_by_winid[winid]
+      end
+    end
+  end
+
+  for _, item in pairs(ephemerals) do
+    if item.winid == winid then
+      index_popup(item, nil)
+      return popup_by_winid[winid]
+    end
+  end
+
+  return nil
+end
 
 ---@param winid integer
 function M._register_stack_view_win(winid)
@@ -37,10 +159,15 @@ end
 ---@param model PeekstackPopupModel
 local function register_ephemeral(model)
   ephemerals[model.id] = model
+  index_popup(model, nil)
 end
 
 ---@param id integer
 local function unregister_ephemeral(id)
+  local model = ephemerals[id]
+  if model then
+    unindex_popup(model)
+  end
   ephemerals[id] = nil
 end
 
@@ -50,10 +177,9 @@ local function find_ephemeral(id)
   if ephemerals[id] then
     return id, ephemerals[id]
   end
-  for eid, model in pairs(ephemerals) do
-    if model.winid == id then
-      return eid, model
-    end
+  local entry = lookup_by_winid(id)
+  if entry and entry.root_winid == nil then
+    return entry.popup.id, entry.popup
   end
   return nil
 end
@@ -72,14 +198,10 @@ local function get_root_winid(winid)
   if ok_root and type(root_winid) == "number" and vim.api.nvim_win_is_valid(root_winid) then
     return root_winid
   end
-  -- Current window is floating – look for the origin window stored in the
-  -- popup model that owns this float.
-  for _, stack in pairs(stacks) do
-    for _, item in ipairs(stack.popups) do
-      if item.winid == wid then
-        return stack.root_winid
-      end
-    end
+  -- Current window is floating – resolve the owner stack from the popup index.
+  local owner = lookup_by_winid(wid)
+  if owner and owner.root_winid and vim.api.nvim_win_is_valid(owner.root_winid) then
+    return owner.root_winid
   end
   -- Fallback: pick the first non-floating window in the current tabpage.
   for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -158,6 +280,7 @@ function M.push(location, opts)
     return nil
   end
   table.insert(stack.popups, model)
+  index_popup(model, stack.root_winid)
   stack.focused_id = model.id
   layout.reflow(stack)
 
@@ -189,6 +312,7 @@ local function close_stack_item(stack, idx, item)
   -- Remove from popups BEFORE closing the window to prevent
   -- WinClosed autocmd from re-entering and processing the same popup.
   table.remove(stack.popups, idx)
+  unindex_popup(item)
 
   feedback.highlight_origin(item.origin)
   popup.close(item)
@@ -240,6 +364,19 @@ function M.close_by_id(id, winid)
     return true
   end
 
+  local indexed = lookup_by_id(id)
+  if indexed and indexed.root_winid then
+    local owner_stack = stacks[indexed.root_winid]
+    if owner_stack then
+      for idx, item in ipairs(owner_stack.popups) do
+        if item.id == id then
+          close_stack_item(owner_stack, idx, item)
+          return true
+        end
+      end
+    end
+  end
+
   local stack = ensure_stack(winid)
   for idx, item in ipairs(stack.popups) do
     if item.id == id then
@@ -257,6 +394,19 @@ function M.close(id, winid)
   deps()
   if M.close_by_id(id, winid) then
     return true
+  end
+
+  local indexed = lookup_by_winid(id)
+  if indexed and indexed.root_winid then
+    local owner_stack = stacks[indexed.root_winid]
+    if owner_stack then
+      for idx, item in ipairs(owner_stack.popups) do
+        if item.winid == id then
+          close_stack_item(owner_stack, idx, item)
+          return true
+        end
+      end
+    end
   end
 
   local stack = ensure_stack(winid)
@@ -320,33 +470,25 @@ end
 ---@param winid integer
 ---@return PeekstackStackModel?, PeekstackPopupModel?
 function M.find_by_winid(winid)
-  for _, stack in pairs(stacks) do
-    for _, item in ipairs(stack.popups) do
-      if item.winid == winid then
-        return stack, item
-      end
+  local entry = lookup_by_winid(winid)
+  if not entry then
+    return nil
+  end
+  if entry.root_winid then
+    local stack = stacks[entry.root_winid]
+    if stack then
+      return stack, entry.popup
     end
   end
-  for _, item in pairs(ephemerals) do
-    if item.winid == winid then
-      return nil, item
-    end
-  end
-  return nil
+  return nil, entry.popup
 end
 
 ---@param id integer
 ---@return PeekstackPopupModel?
 function M.find_by_id(id)
-  for _, stack in pairs(stacks) do
-    for _, item in ipairs(stack.popups) do
-      if item.id == id then
-        return item
-      end
-    end
-  end
-  if ephemerals[id] then
-    return ephemerals[id]
+  local entry = lookup_by_id(id)
+  if entry then
+    return entry.popup
   end
   return nil
 end
@@ -404,7 +546,9 @@ function M.reopen_by_id(id, winid)
       model.pinned = item.pinned or false
       vim.b[model.bufnr].peekstack_popup_id = model.id
       vim.w[model.winid].peekstack_popup_id = model.id
+      unindex_popup(item)
       stack.popups[idx] = model
+      index_popup(model, stack.root_winid)
       layout.reflow(stack)
       return model
     end
@@ -464,6 +608,7 @@ function M.handle_win_closed(winid)
         emit_popup_event("PeekstackClose", item, root_winid)
         history.push_entry(stack, history.build_entry(item, idx))
         table.remove(stack.popups, idx)
+        unindex_popup(item)
         popup.close(item)
       end
       stacks[root_winid] = nil
@@ -479,6 +624,7 @@ function M.handle_win_closed(winid)
           emit_popup_event("PeekstackClose", item, root_winid)
           feedback.highlight_origin(item.origin)
           table.remove(stack.popups, idx)
+          unindex_popup(item)
           popup.close(item)
           removed = true
         end
@@ -541,6 +687,7 @@ function M.handle_buf_wipeout(bufnr)
     for idx = #stack.popups, 1, -1 do
       local item = stack.popups[idx]
       if item.bufnr == bufnr then
+        unindex_popup(item)
         table.remove(stack.popups, idx)
       end
     end
@@ -551,13 +698,9 @@ end
 ---Update last_active_at for a popup (when user interacts with it)
 ---@param winid integer
 function M.touch(winid)
-  for _, stack in pairs(stacks) do
-    for _, item in ipairs(stack.popups) do
-      if item.winid == winid then
-        item.last_active_at = vim.uv.now()
-        return
-      end
-    end
+  local owner_stack, popup_model = M.find_by_winid(winid)
+  if owner_stack and popup_model then
+    popup_model.last_active_at = vim.uv.now()
   end
 end
 
@@ -621,6 +764,7 @@ function M.handle_origin_wipeout(bufnr)
       local item = stack.popups[idx]
       if should_close_for_origin(item) then
         popup.close(item)
+        unindex_popup(item)
         table.remove(stack.popups, idx)
       end
     end
@@ -643,6 +787,7 @@ function M.close_ephemerals()
       local item = stack.popups[idx]
       if item.ephemeral then
         popup.close(item)
+        unindex_popup(item)
         table.remove(stack.popups, idx)
         removed = true
       end
@@ -679,6 +824,7 @@ function M.close_all(winid)
 
     history.push_entry(stack, history.build_entry(item, idx))
 
+    unindex_popup(item)
     table.remove(stack.popups, idx)
   end
   stack.focused_id = nil
@@ -696,6 +842,9 @@ end
 function M._reset()
   stacks = {}
   ephemerals = {}
+  stack_view_wins = {}
+  popup_by_id = {}
+  popup_by_winid = {}
 end
 
 ---Get ephemeral popups (for testing).

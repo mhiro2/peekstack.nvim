@@ -151,6 +151,7 @@
 ---@field winid integer?
 ---@field root_winid integer?
 ---@field line_to_id table<integer, integer>
+---@field render_keys string[]
 ---@field filter string?
 ---@field header_lines integer
 ---@field help_bufnr integer?

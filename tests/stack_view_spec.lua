@@ -84,6 +84,73 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(lines[1]:find("Stack: 2", 1, true) ~= nil)
   end)
 
+  it("skips line updates when rendered content is unchanged", function()
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
+      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
+    }
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local original_set_lines = vim.api.nvim_buf_set_lines
+    local calls = 0
+    local ok, err = pcall(function()
+      vim.api.nvim_buf_set_lines = function(...)
+        calls = calls + 1
+        return original_set_lines(...)
+      end
+
+      stack_view._render(state)
+      assert.equals(0, calls)
+    end)
+    vim.api.nvim_buf_set_lines = original_set_lines
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("updates only changed line range when one entry changes", function()
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
+      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
+    }
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    stack_view._render(state)
+
+    local original_set_lines = vim.api.nvim_buf_set_lines
+    local calls = {}
+    local ok, err = pcall(function()
+      vim.api.nvim_buf_set_lines = function(bufnr, start, finish, strict_indexing, replacement)
+        table.insert(calls, {
+          start = start,
+          finish = finish,
+          count = #replacement,
+        })
+        return original_set_lines(bufnr, start, finish, strict_indexing, replacement)
+      end
+
+      s.popups[2].title = "Beta updated"
+      stack_view._render(state)
+
+      assert.equals(1, #calls)
+      assert.equals(2, calls[1].start)
+      assert.equals(3, calls[1].finish)
+      assert.equals(1, calls[1].count)
+    end)
+    vim.api.nvim_buf_set_lines = original_set_lines
+    if not ok then
+      error(err)
+    end
+  end)
+
   it("renders empty state with header", function()
     stack_view.open()
     local state = stack_view._get_state()
