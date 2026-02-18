@@ -61,6 +61,7 @@ local function get_state()
       winid = nil,
       root_winid = nil,
       line_to_id = {},
+      render_keys = {},
       filter = nil,
       header_lines = 0,
       help_bufnr = nil,
@@ -150,6 +151,7 @@ local function reset_open_state(s)
   s.winid = nil
   s.bufnr = nil
   s.root_winid = nil
+  s.render_keys = {}
   s.autoclose_suspended = 0
   s.help_augroup = nil
 end
@@ -231,6 +233,7 @@ function M.open()
   s.root_winid = find_root_winid()
   s.bufnr = vim.api.nvim_create_buf(false, true)
   s.winid = vim.api.nvim_open_win(s.bufnr, true, stack_view_win_config())
+  s.render_keys = {}
 
   vim.wo[s.winid].cursorline = true
   vim.wo[s.winid].winhighlight = "CursorLine:PeekstackStackViewCursorLine"
