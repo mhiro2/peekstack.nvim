@@ -216,6 +216,29 @@ describe("peekstack.persist.sessions", function()
     -- Should not error
   end)
 
+  it("should invoke on_done with false when persist is disabled", function()
+    config.setup({ persist = { enabled = false } })
+
+    local save_done = nil
+    local restore_done = nil
+
+    persist.save_current("disabled_save", {
+      silent = true,
+      on_done = function(success)
+        save_done = success
+      end,
+    })
+    persist.restore("disabled_restore", {
+      silent = true,
+      on_done = function(restored)
+        restore_done = restored
+      end,
+    })
+
+    assert.is_false(save_done)
+    assert.is_false(restore_done)
+  end)
+
   it("should migrate version 1 to version 2 schema", function()
     -- Write version 1 data
     local v1_data = {

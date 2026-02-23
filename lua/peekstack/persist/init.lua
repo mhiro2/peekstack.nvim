@@ -77,6 +77,7 @@ function M.save_current(name, opts)
   end
 
   if not ensure_enabled(silent) then
+    finish(false)
     return
   end
 
@@ -156,6 +157,7 @@ function M.restore(name, opts)
   end
 
   if not ensure_enabled(silent) then
+    finish(false)
     return
   end
 
