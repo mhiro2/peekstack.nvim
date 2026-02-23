@@ -200,9 +200,14 @@ function M.restore(name, opts)
       for _, item in ipairs(session.items) do
         local loc = location.normalize({ uri = item.uri, range = item.range }, item.provider or "persist")
         if loc then
-          stack.push(loc, { title = item.title })
+          stack.push(loc, {
+            title = item.title,
+            defer_reflow = true,
+          })
         end
       end
+
+      stack.reflow()
 
       if not silent then
         vim.notify("Session restored: " .. resolved_name, vim.log.levels.INFO)
