@@ -83,6 +83,31 @@ describe("peekstack.commands", function()
     assert.equals("broken: 1 items (updated: unknown)", prompts[2])
   end)
 
+  it("sorts sessions in list command", function()
+    local first_items = nil
+    persist.list_sessions = function(opts)
+      assert.is_truthy(opts)
+      assert.is_truthy(opts.on_done)
+      opts.on_done({
+        zeta = { items = {}, meta = { created_at = 1, updated_at = 1 } },
+        alpha = { items = {}, meta = { created_at = 1, updated_at = 1 } },
+      })
+      return {}
+    end
+
+    vim.ui.select = function(items, opts, on_choice)
+      if opts.prompt == "Select a session" then
+        first_items = vim.deepcopy(items)
+      end
+      on_choice(nil)
+    end
+
+    commands.setup()
+    vim.api.nvim_cmd({ cmd = "PeekstackListSessions" }, {})
+
+    assert.same({ "alpha", "zeta" }, first_items)
+  end)
+
   it("notifies when list sessions is invoked while persist is disabled", function()
     config.setup({ persist = { enabled = false } })
 

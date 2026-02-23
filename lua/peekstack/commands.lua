@@ -86,6 +86,7 @@ function M.setup()
     persist.list_sessions({
       on_done = function(sessions)
         local names = vim.tbl_keys(sessions)
+        table.sort(names)
         if #names == 0 then
           notify.info("No saved sessions")
           return
