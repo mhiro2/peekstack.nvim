@@ -79,4 +79,29 @@ describe("peekstack.core.events", function()
     })
     assert.equals(1, #after)
   end)
+
+  it("falls back to default close_events when quick_peek.close_events is invalid", function()
+    config.setup({
+      ui = {
+        quick_peek = { close_events = "CursorMoved" },
+        popup = { auto_close = { enabled = false } },
+      },
+    })
+
+    assert.has_no.errors(function()
+      events.setup()
+    end)
+
+    local buf_leave = vim.api.nvim_get_autocmds({
+      group = "PeekstackEvents",
+      event = "BufLeave",
+    })
+    local win_leave = vim.api.nvim_get_autocmds({
+      group = "PeekstackEvents",
+      event = "WinLeave",
+    })
+
+    assert.equals(1, #buf_leave)
+    assert.equals(1, #win_leave)
+  end)
 end)

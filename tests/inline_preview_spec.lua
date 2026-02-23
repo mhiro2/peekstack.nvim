@@ -148,4 +148,33 @@ describe("peekstack.ui.inline_preview", function()
 
     assert.equals(1, get_namespaces_calls)
   end)
+
+  it("falls back to default close events when config is invalid", function()
+    config.setup({
+      ui = {
+        inline_preview = {
+          enabled = true,
+          max_lines = 10,
+          hl_group = "PeekstackInlinePreview",
+          close_events = "CursorMoved",
+        },
+      },
+    })
+
+    assert.has_no.errors(function()
+      inline_preview.setup_close_events()
+    end)
+
+    local buf_leave = vim.api.nvim_get_autocmds({
+      group = "PeekstackInlinePreview",
+      event = "BufLeave",
+    })
+    local win_leave = vim.api.nvim_get_autocmds({
+      group = "PeekstackInlinePreview",
+      event = "WinLeave",
+    })
+
+    assert.equals(1, #buf_leave)
+    assert.equals(1, #win_leave)
+  end)
 end)

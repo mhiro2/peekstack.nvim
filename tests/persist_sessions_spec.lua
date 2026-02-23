@@ -133,6 +133,22 @@ describe("peekstack.persist.sessions", function()
     assert.is_not_nil(sessions["test_session_2"])
   end)
 
+  it("should save synchronously when sync is enabled", function()
+    local done = nil
+    persist.save_current("sync_session", {
+      silent = true,
+      sync = true,
+      on_done = function(success)
+        done = success
+      end,
+    })
+
+    assert.is_true(done)
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.is_not_nil(data.sessions.sync_session)
+  end)
+
   it("should load sessions synchronously on first list_sessions call", function()
     write_and_wait(test_scope, {
       version = 2,
@@ -214,6 +230,29 @@ describe("peekstack.persist.sessions", function()
   it("should handle non-existent sessions gracefully", function()
     persist.restore("non_existent")
     -- Should not error
+  end)
+
+  it("should invoke on_done with false when persist is disabled", function()
+    config.setup({ persist = { enabled = false } })
+
+    local save_done = nil
+    local restore_done = nil
+
+    persist.save_current("disabled_save", {
+      silent = true,
+      on_done = function(success)
+        save_done = success
+      end,
+    })
+    persist.restore("disabled_restore", {
+      silent = true,
+      on_done = function(restored)
+        restore_done = restored
+      end,
+    })
+
+    assert.is_false(save_done)
+    assert.is_false(restore_done)
   end)
 
   it("should migrate version 1 to version 2 schema", function()

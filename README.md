@@ -62,15 +62,15 @@ Using lazy.nvim:
     })
 
     -- LSP: peek at definitions and references
-    vim.keymap.set("n", "pd", function() peekstack.peek.definition() end)
-    vim.keymap.set("n", "pr", function() peekstack.peek.references() end)
+    vim.keymap.set("n", "<leader>pd", function() peekstack.peek.definition() end)
+    vim.keymap.set("n", "<leader>pr", function() peekstack.peek.references() end)
 
     -- Diagnostics & files: peek at diagnostics or files under cursor
-    vim.keymap.set("n", "pl", function() peekstack.peek.diagnostics_cursor() end)
-    vim.keymap.set("n", "pf", function() peekstack.peek.file_under_cursor() end)
+    vim.keymap.set("n", "<leader>pl", function() peekstack.peek.diagnostics_cursor() end)
+    vim.keymap.set("n", "<leader>pf", function() peekstack.peek.file_under_cursor() end)
 
     -- Marks: browse buffer marks (requires marks provider enabled)
-    vim.keymap.set("n", "pm", function() peekstack.peek.marks_buffer() end)
+    vim.keymap.set("n", "<leader>pm", function() peekstack.peek.marks_buffer() end)
   end,
 }
 ```

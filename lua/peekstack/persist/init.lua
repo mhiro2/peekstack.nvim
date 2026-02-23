@@ -66,9 +66,10 @@ end
 
 ---Save the current stack to persistent storage with optional name
 ---@param name? string
----@param opts? { scope?: string, root_winid?: integer, silent?: boolean, on_done?: fun(success: boolean) }
+---@param opts? { scope?: string, root_winid?: integer, silent?: boolean, sync?: boolean, on_done?: fun(success: boolean) }
 function M.save_current(name, opts)
   local silent = opts and opts.silent or false
+  local sync = opts and opts.sync or false
   local on_done = opts and opts.on_done or nil
   local function finish(success)
     if on_done then
@@ -77,6 +78,7 @@ function M.save_current(name, opts)
   end
 
   if not ensure_enabled(silent) then
+    finish(false)
     return
   end
 
@@ -100,42 +102,62 @@ function M.save_current(name, opts)
     data_items = vim.list_slice(data_items, #data_items - max_items + 1, #data_items)
   end
 
+  ---@param data PeekstackStoreData
+  ---@return PeekstackStoreData
+  local function upsert_session(data)
+    local now = os.time()
+    if data.sessions[resolved_name] then
+      data.sessions[resolved_name].items = data_items
+      data.sessions[resolved_name].meta.updated_at = now
+    else
+      data.sessions[resolved_name] = {
+        items = data_items,
+        meta = {
+          created_at = now,
+          updated_at = now,
+        },
+      }
+    end
+    return data
+  end
+
+  local function notify_save_result(success)
+    if not silent then
+      if success then
+        vim.notify("Session saved: " .. resolved_name, vim.log.levels.INFO)
+      else
+        vim.notify("Failed to save session: " .. resolved_name, vim.log.levels.WARN)
+      end
+    end
+    if success then
+      user_events.emit("PeekstackSave", {
+        session = resolved_name,
+        item_count = #data_items,
+      })
+    end
+  end
+
+  if sync then
+    local data = upsert_session(migrate.ensure(store.read_sync(scope)))
+    local success = store.write_sync(scope, data)
+    if success then
+      update_cache(data)
+    end
+    notify_save_result(success)
+    finish(success)
+    return
+  end
+
   store.read(scope, {
     on_done = function(read_data)
-      local data = migrate.ensure(read_data)
-      local now = os.time()
-
-      if data.sessions[resolved_name] then
-        data.sessions[resolved_name].items = data_items
-        data.sessions[resolved_name].meta.updated_at = now
-      else
-        data.sessions[resolved_name] = {
-          items = data_items,
-          meta = {
-            created_at = now,
-            updated_at = now,
-          },
-        }
-      end
+      local data = upsert_session(migrate.ensure(read_data))
 
       store.write(scope, data, {
         on_done = function(success)
           if success then
             update_cache(data)
           end
-          if not silent then
-            if success then
-              vim.notify("Session saved: " .. resolved_name, vim.log.levels.INFO)
-            else
-              vim.notify("Failed to save session: " .. resolved_name, vim.log.levels.WARN)
-            end
-          end
-          if success then
-            user_events.emit("PeekstackSave", {
-              session = resolved_name,
-              item_count = #data_items,
-            })
-          end
+          notify_save_result(success)
           finish(success)
         end,
       })
@@ -156,6 +178,7 @@ function M.restore(name, opts)
   end
 
   if not ensure_enabled(silent) then
+    finish(false)
     return
   end
 

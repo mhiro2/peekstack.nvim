@@ -204,10 +204,11 @@ describe("config", function()
       assert.equals(config.defaults.ui.inline_preview.enabled, cfg.ui.inline_preview.enabled)
       assert.equals(config.defaults.ui.inline_preview.max_lines, cfg.ui.inline_preview.max_lines)
       assert.equals(config.defaults.ui.inline_preview.hl_group, cfg.ui.inline_preview.hl_group)
+      assert.same(config.defaults.ui.inline_preview.close_events, cfg.ui.inline_preview.close_events)
     end)
 
     it("warns on invalid quick peek config", function()
-      config.setup({
+      local cfg = config.setup({
         ui = {
           quick_peek = {
             close_events = { 1, 2 },
@@ -215,6 +216,33 @@ describe("config", function()
         },
       })
       assert.is_true(has_message("ui.quick_peek.close_events"))
+      assert.same(config.defaults.ui.quick_peek.close_events, cfg.ui.quick_peek.close_events)
+    end)
+
+    it("sanitizes mixed quick peek close_events values", function()
+      local cfg = config.setup({
+        ui = {
+          quick_peek = {
+            close_events = { "CursorMoved", 1, "", "InsertEnter" },
+          },
+        },
+      })
+
+      assert.is_true(has_message("ui.quick_peek.close_events"))
+      assert.same({ "CursorMoved", "InsertEnter" }, cfg.ui.quick_peek.close_events)
+    end)
+
+    it("falls back when quick peek close_events is empty", function()
+      local cfg = config.setup({
+        ui = {
+          quick_peek = {
+            close_events = {},
+          },
+        },
+      })
+
+      assert.is_true(has_message("ui.quick_peek.close_events"))
+      assert.same(config.defaults.ui.quick_peek.close_events, cfg.ui.quick_peek.close_events)
     end)
 
     it("warns on invalid path config", function()

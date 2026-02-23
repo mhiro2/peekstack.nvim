@@ -7,6 +7,34 @@ local function empty_data()
   return { version = 2, sessions = {} }
 end
 
+---@param data PeekstackStoreData
+---@return string?
+local function encode_data(data)
+  local ok, encoded = pcall(vim.json.encode, data)
+  if not ok then
+    vim.notify("Failed to encode session data", vim.log.levels.WARN)
+    return nil
+  end
+  return encoded
+end
+
+---@param path string
+---@return boolean
+local function ensure_parent_dir(path)
+  local dir = vim.fs.dirname(path)
+  if vim.uv.fs_stat(dir) then
+    return true
+  end
+
+  local mkdir_ok = pcall(vim.fn.mkdir, dir, "p")
+  if not mkdir_ok then
+    vim.notify("Failed to create directory: " .. dir, vim.log.levels.WARN)
+    return false
+  end
+
+  return true
+end
+
 ---@param scope string
 ---@param opts { on_done: fun(data: PeekstackStoreData) }
 function M.read(scope, opts)
@@ -94,22 +122,17 @@ function M.write(scope, data, opts)
   end
 
   local path = fs.scope_path(scope)
-  local ok, encoded = pcall(vim.json.encode, data)
-  if not ok then
-    vim.notify("Failed to encode session data", vim.log.levels.WARN)
+  local encoded = encode_data(data)
+  if not encoded then
     finish(false)
     return
   end
-  local dir = vim.fs.dirname(path)
-  local dir_stat = vim.uv.fs_stat(dir)
-  if not dir_stat then
-    local mkdir_ok = pcall(vim.fn.mkdir, dir, "p")
-    if not mkdir_ok then
-      vim.notify("Failed to create directory: " .. dir, vim.log.levels.WARN)
-      finish(false)
-      return
-    end
+
+  if not ensure_parent_dir(path) then
+    finish(false)
+    return
   end
+
   local tmp_path = path .. ".tmp"
   vim.uv.fs_open(tmp_path, "w", 438, function(open_err, fd)
     if open_err or not fd then
@@ -143,6 +166,45 @@ function M.write(scope, data, opts)
       end)
     end)
   end)
+end
+
+---@param scope string
+---@param data PeekstackStoreData
+---@return boolean
+function M.write_sync(scope, data)
+  local path = fs.scope_path(scope)
+  local encoded = encode_data(data)
+  if not encoded then
+    return false
+  end
+
+  if not ensure_parent_dir(path) then
+    return false
+  end
+
+  local tmp_path = path .. ".tmp"
+  local fd = vim.uv.fs_open(tmp_path, "w", 438)
+  if not fd then
+    vim.notify("Failed to write session data: " .. path, vim.log.levels.WARN)
+    return false
+  end
+
+  local write_ok = vim.uv.fs_write(fd, encoded, 0)
+  pcall(vim.uv.fs_close, fd)
+  if not write_ok then
+    vim.notify("Failed to write session data: " .. path, vim.log.levels.WARN)
+    pcall(vim.uv.fs_unlink, tmp_path)
+    return false
+  end
+
+  local rename_ok = vim.uv.fs_rename(tmp_path, path)
+  if not rename_ok then
+    vim.notify("Failed to write session data: " .. path, vim.log.levels.WARN)
+    pcall(vim.uv.fs_unlink, tmp_path)
+    return false
+  end
+
+  return true
 end
 
 return M
