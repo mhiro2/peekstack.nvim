@@ -54,8 +54,9 @@ local function resolve_root_winid()
 end
 
 ---@param root_winid? integer
+---@param opts? { sync?: boolean }
 ---@return boolean
-local function save_session(root_winid)
+local function save_session(root_winid, opts)
   if not is_enabled() then
     return false
   end
@@ -66,6 +67,7 @@ local function save_session(root_winid)
     scope = "repo",
     root_winid = normalize_root_winid(root_winid),
     silent = true,
+    sync = opts and opts.sync or false,
   })
   return true
 end
@@ -162,7 +164,7 @@ function M.save_on_leave(opts)
     save_timer:stop()
   end
 
-  return save_session(root_winid)
+  return save_session(root_winid, { sync = true })
 end
 
 function M.setup()

@@ -105,4 +105,20 @@ describe("peekstack.persist.auto", function()
     end, 10)
     assert.is_true(ok, "Timed out waiting for debounced save")
   end)
+
+  it("uses synchronous save on VimLeavePre path", function()
+    local calls = 0
+    original_save = persist.save_current
+    persist.save_current = function(name, opts)
+      calls = calls + 1
+      assert.equals("auto", name)
+      assert.equals("repo", opts.scope)
+      assert.is_true(opts.silent)
+      assert.is_true(opts.sync)
+    end
+
+    local saved = auto.save_on_leave({ root_winid = vim.api.nvim_get_current_win() })
+    assert.is_true(saved)
+    assert.equals(1, calls)
+  end)
 end)

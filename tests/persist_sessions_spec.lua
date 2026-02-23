@@ -133,6 +133,22 @@ describe("peekstack.persist.sessions", function()
     assert.is_not_nil(sessions["test_session_2"])
   end)
 
+  it("should save synchronously when sync is enabled", function()
+    local done = nil
+    persist.save_current("sync_session", {
+      silent = true,
+      sync = true,
+      on_done = function(success)
+        done = success
+      end,
+    })
+
+    assert.is_true(done)
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.is_not_nil(data.sessions.sync_session)
+  end)
+
   it("should load sessions synchronously on first list_sessions call", function()
     write_and_wait(test_scope, {
       version = 2,

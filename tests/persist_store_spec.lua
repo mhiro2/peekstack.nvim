@@ -151,4 +151,29 @@ describe("peekstack.persist.store", function()
     local result = store.read_sync(test_scope)
     assert.same({ version = 2, sessions = {} }, result)
   end)
+
+  it("write_sync stores data that can be read back", function()
+    local data = {
+      version = 2,
+      sessions = {
+        sync_write = {
+          items = {},
+          meta = { created_at = 10, updated_at = 20 },
+        },
+      },
+    }
+
+    local ok = store.write_sync(test_scope, data)
+    assert.is_true(ok)
+    assert.same(data, store.read_sync(test_scope))
+  end)
+
+  it("write_sync returns false when payload cannot be encoded", function()
+    local ok = store.write_sync(test_scope, {
+      version = 2,
+      sessions = {},
+      invalid = function() end,
+    })
+    assert.is_false(ok)
+  end)
 end)
