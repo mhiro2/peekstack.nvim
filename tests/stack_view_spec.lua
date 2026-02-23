@@ -84,6 +84,41 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(lines[1]:find("Stack: 2", 1, true) ~= nil)
   end)
 
+  it("caches repo root resolution within a render", function()
+    config.setup({
+      ui = {
+        path = {
+          base = "repo",
+        },
+      },
+    })
+
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      { id = 1, location = location_for("/tmp/repo/src/a.lua"), pinned = false },
+      { id = 2, location = location_for("/tmp/repo/src/b.lua"), pinned = false },
+    }
+
+    local fs = require("peekstack.util.fs")
+    local original_repo_root = fs.repo_root
+    local repo_calls = 0
+    local ok, err = pcall(function()
+      fs.repo_root = function(start)
+        repo_calls = repo_calls + 1
+        assert.equals("/tmp/repo/src", start)
+        return "/tmp/repo"
+      end
+
+      stack_view.open()
+      assert.equals(1, repo_calls)
+    end)
+    fs.repo_root = original_repo_root
+    if not ok then
+      error(err)
+    end
+  end)
+
   it("skips line updates when rendered content is unchanged", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)

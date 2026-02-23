@@ -489,6 +489,7 @@ function M.render(s, is_ready)
   local stack = require("peekstack.core.stack")
   local items = stack.list(s.root_winid)
   local ui_path = config.get().ui.path or {}
+  local repo_root_cache = ui_path.base == "repo" and {} or nil
   local win_width = vim.api.nvim_win_get_width(s.winid)
   if win_width <= 0 then
     win_width = vim.o.columns
@@ -510,6 +511,7 @@ function M.render(s, is_ready)
     local filter_label = popup.title
       or location.display_text(popup.location, 0, {
         path_base = ui_path.base,
+        repo_root_cache = repo_root_cache,
       })
     if not s.filter or s.filter == "" or filter_label:lower():find(s.filter:lower(), 1, true) ~= nil then
       table.insert(visible, popup)
@@ -565,6 +567,7 @@ function M.render(s, is_ready)
       label = location.display_text(popup.location, 0, {
         path_base = ui_path.base,
         max_width = max_label_width,
+        repo_root_cache = repo_root_cache,
       })
     end
 

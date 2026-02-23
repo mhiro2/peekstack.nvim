@@ -233,7 +233,7 @@ function M.display_text(location, preview_lines, opts)
   local raw_path = fs.uri_to_fname(location.uri) or ""
   local path = raw_path
   if opts.path_base then
-    path = str.relative_path(raw_path, opts.path_base)
+    path = str.relative_path(raw_path, opts.path_base, opts)
   else
     path = str.shorten_path(raw_path)
   end

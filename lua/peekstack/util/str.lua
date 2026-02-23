@@ -29,6 +29,22 @@ vim.api.nvim_create_autocmd("DirChanged", {
   callback = refresh_cwd,
 })
 
+---@class PeekstackRelativePathOpts
+---@field repo_root_cache? table<string, string|false>
+
+---@param start string
+---@param cache table<string, string|false>
+---@return string?
+local function repo_root_with_cache(start, cache)
+  local cached = cache[start]
+  if cached ~= nil then
+    return cached ~= false and cached or nil
+  end
+  local resolved = fs.repo_root(start)
+  cache[start] = resolved or false
+  return resolved
+end
+
 ---@param path? string
 ---@return string
 function M.shorten_path(path)
@@ -45,8 +61,9 @@ end
 
 ---@param path? string
 ---@param base? "repo"|"cwd"|"absolute"
+---@param opts? PeekstackRelativePathOpts
 ---@return string
-function M.relative_path(path, base)
+function M.relative_path(path, base, opts)
   if not path or path == "" then
     return ""
   end
@@ -54,7 +71,13 @@ function M.relative_path(path, base)
     return path
   end
   if base == "repo" then
-    local repo = fs.repo_root(vim.fs.dirname(path))
+    local start = vim.fs.dirname(path)
+    local repo = nil
+    if opts and opts.repo_root_cache then
+      repo = repo_root_with_cache(start, opts.repo_root_cache)
+    else
+      repo = fs.repo_root(start)
+    end
     if repo and path:find(repo, 1, true) == 1 then
       return path:gsub("^" .. vim.pesc(repo) .. "/?", "")
     end
