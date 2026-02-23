@@ -154,7 +154,7 @@ describe("peekstack.providers.lsp", function()
     assert.is_false(called)
     local found = false
     for _, item in ipairs(notifications) do
-      if item.msg == "No LSP clients attached" then
+      if tostring(item.msg):find("No LSP clients attached", 1, true) then
         found = true
         break
       end

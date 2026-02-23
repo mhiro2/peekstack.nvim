@@ -94,7 +94,7 @@ describe("peekstack.commands", function()
     commands.setup()
     vim.api.nvim_cmd({ cmd = "PeekstackListSessions" }, {})
 
-    assert.is_true(vim.list_contains(messages, "peekstack.persist is disabled"))
+    assert.is_true(vim.list_contains(messages, "[peekstack] peekstack.persist is disabled"))
   end)
 
   it("formats session updated_at with vim.fn.strftime", function()

@@ -1,4 +1,5 @@
 local M = {}
+local notify = require("peekstack.util.notify")
 
 M.enabled = false
 
@@ -12,7 +13,7 @@ function M.debug(...)
   if not M.enabled then
     return
   end
-  vim.notify(table.concat(vim.iter({ ... }):map(tostring):totable(), " "), vim.log.levels.DEBUG)
+  notify.debug(table.concat(vim.iter({ ... }):map(tostring):totable(), " "))
 end
 
 return M

@@ -17,7 +17,7 @@ describe("peekstack.picker.snacks", function()
     package.loaded["snacks.picker"] = nil
     local warned = false
     vim.notify = function(msg)
-      if msg == "snacks.nvim not available" then
+      if tostring(msg):find("snacks.nvim not available", 1, true) then
         warned = true
       end
     end

@@ -223,7 +223,7 @@ describe("peekstack.persist.sessions", function()
     assert.is_false(callback_called)
     persist.delete_session("test")
     persist.rename_session("a", "b")
-    assert.is_true(vim.list_contains(messages, "peekstack.persist is disabled"))
+    assert.is_true(vim.list_contains(messages, "[peekstack] peekstack.persist is disabled"))
     vim.notify = original_notify
   end)
 

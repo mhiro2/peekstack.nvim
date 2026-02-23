@@ -1,6 +1,7 @@
 local fs = require("peekstack.util.fs")
 local config = require("peekstack.config")
 local user_events = require("peekstack.core.user_events")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -10,7 +11,7 @@ local function open_in_win(winid, location)
   local fname = fs.uri_to_fname(location.uri)
   local ok, bufnr = pcall(vim.fn.bufadd, fname)
   if not ok or not bufnr then
-    vim.notify("Failed to add buffer: " .. fname, vim.log.levels.WARN)
+    notify.warn("Failed to add buffer: " .. fname)
     return
   end
   pcall(vim.fn.bufload, bufnr)

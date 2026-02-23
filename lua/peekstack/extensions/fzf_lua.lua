@@ -1,4 +1,5 @@
 local ext = require("peekstack.extensions")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -29,12 +30,12 @@ local function open_picker(fzf_picker, provider, opts)
   opts = opts or {}
   local ok, fzf = pcall(require, "fzf-lua")
   if not ok then
-    vim.notify("fzf-lua not available", vim.log.levels.WARN)
+    notify.warn("fzf-lua not available")
     return
   end
   local fn = fzf[fzf_picker]
   if not fn then
-    vim.notify("fzf-lua." .. fzf_picker .. " not found", vim.log.levels.WARN)
+    notify.warn("fzf-lua." .. fzf_picker .. " not found")
     return
   end
 

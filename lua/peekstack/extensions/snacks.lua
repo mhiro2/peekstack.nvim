@@ -1,4 +1,5 @@
 local ext = require("peekstack.extensions")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -28,12 +29,12 @@ local function open_picker(snacks_picker, provider, opts)
   opts = opts or {}
   local ok, snacks = pcall(require, "snacks.picker")
   if not ok then
-    vim.notify("snacks.nvim not available", vim.log.levels.WARN)
+    notify.warn("snacks.nvim not available")
     return
   end
   local fn = snacks[snacks_picker]
   if not fn then
-    vim.notify("snacks.picker." .. snacks_picker .. " not found", vim.log.levels.WARN)
+    notify.warn("snacks.picker." .. snacks_picker .. " not found")
     return
   end
 

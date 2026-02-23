@@ -4,6 +4,7 @@ local location = require("peekstack.core.location")
 local store = require("peekstack.persist.store")
 local migrate = require("peekstack.persist.migrate")
 local user_events = require("peekstack.core.user_events")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -27,7 +28,7 @@ end
 local function ensure_enabled(silent)
   if not config.get().persist.enabled then
     if not silent then
-      vim.notify("peekstack.persist is disabled", vim.log.levels.INFO)
+      notify.info("peekstack.persist is disabled")
     end
     return false
   end
@@ -124,9 +125,9 @@ function M.save_current(name, opts)
   local function notify_save_result(success)
     if not silent then
       if success then
-        vim.notify("Session saved: " .. resolved_name, vim.log.levels.INFO)
+        notify.info("Session saved: " .. resolved_name)
       else
-        vim.notify("Failed to save session: " .. resolved_name, vim.log.levels.WARN)
+        notify.warn("Failed to save session: " .. resolved_name)
       end
     end
     if success then
@@ -191,7 +192,7 @@ function M.restore(name, opts)
 
       if not session or not session.items or #session.items == 0 then
         if not silent then
-          vim.notify("No saved session: " .. resolved_name, vim.log.levels.INFO)
+          notify.info("No saved session: " .. resolved_name)
         end
         finish(false)
         return
@@ -210,7 +211,7 @@ function M.restore(name, opts)
       stack.reflow()
 
       if not silent then
-        vim.notify("Session restored: " .. resolved_name, vim.log.levels.INFO)
+        notify.info("Session restored: " .. resolved_name)
       end
 
       user_events.emit("PeekstackRestore", {
@@ -262,7 +263,7 @@ function M.delete_session(name)
       local data = migrate.ensure(read_data)
 
       if not data.sessions[name] then
-        vim.notify("Session not found: " .. name, vim.log.levels.WARN)
+        notify.warn("Session not found: " .. name)
         return
       end
 
@@ -271,12 +272,12 @@ function M.delete_session(name)
         on_done = function(success)
           if success then
             update_cache(data)
-            vim.notify("Session deleted: " .. name, vim.log.levels.INFO)
+            notify.info("Session deleted: " .. name)
             user_events.emit("PeekstackDeleteSession", {
               session = name,
             })
           else
-            vim.notify("Failed to delete session: " .. name, vim.log.levels.WARN)
+            notify.warn("Failed to delete session: " .. name)
           end
         end,
       })
@@ -293,7 +294,7 @@ function M.rename_session(from, to)
   end
 
   if from == to then
-    vim.notify("Source and destination names are the same", vim.log.levels.WARN)
+    notify.warn("Source and destination names are the same")
     return
   end
 
@@ -303,12 +304,12 @@ function M.rename_session(from, to)
       local data = migrate.ensure(read_data)
 
       if not data.sessions[from] then
-        vim.notify("Session not found: " .. from, vim.log.levels.WARN)
+        notify.warn("Session not found: " .. from)
         return
       end
 
       if data.sessions[to] then
-        vim.notify("Target session already exists: " .. to, vim.log.levels.WARN)
+        notify.warn("Target session already exists: " .. to)
         return
       end
 
@@ -320,13 +321,13 @@ function M.rename_session(from, to)
         on_done = function(success)
           if success then
             update_cache(data)
-            vim.notify("Session renamed: " .. from .. " -> " .. to, vim.log.levels.INFO)
+            notify.info("Session renamed: " .. from .. " -> " .. to)
             user_events.emit("PeekstackRenameSession", {
               from = from,
               to = to,
             })
           else
-            vim.notify("Failed to rename session: " .. from .. " -> " .. to, vim.log.levels.WARN)
+            notify.warn("Failed to rename session: " .. from .. " -> " .. to)
           end
         end,
       })

@@ -1,5 +1,6 @@
 local config = require("peekstack.config")
 local fs = require("peekstack.util.fs")
+local notify = require("peekstack.util.notify")
 
 local NS_NAME = "PeekstackInlinePreviewNS"
 ---@type integer?
@@ -157,7 +158,7 @@ function M.open(location, opts)
 
   local cfg = config.get()
   if not cfg.ui.inline_preview or not cfg.ui.inline_preview.enabled then
-    vim.notify("Inline preview is disabled", vim.log.levels.INFO)
+    notify.info("Inline preview is disabled")
     return
   end
 
