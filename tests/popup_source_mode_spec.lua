@@ -3,6 +3,18 @@ describe("popup source mode", function()
   local config = require("peekstack.config")
   local stack = require("peekstack.core.stack")
 
+  ---@param bufnr integer
+  ---@param lhs string
+  ---@return boolean
+  local function has_buffer_map(bufnr, lhs)
+    for _, item in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
+      if item.lhs == lhs then
+        return true
+      end
+    end
+    return false
+  end
+
   before_each(function()
     popup._reset()
     stack._reset()
@@ -92,7 +104,34 @@ describe("popup source mode", function()
     local model = popup.create(loc, { buffer_mode = "copy" })
     assert.is_not_nil(model)
     assert.equals("nofile", vim.bo[model.bufnr].buftype)
+    assert.is_true(has_buffer_map(model.bufnr, config.get().ui.keys.close))
     popup.close(model)
+  end)
+
+  it("does not install popup keymaps on source buffers", function()
+    local temp = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "print('peekstack')" }, temp)
+    vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+    local source_bufnr = vim.api.nvim_get_current_buf()
+    local close_key = config.get().ui.keys.close
+
+    assert.is_false(has_buffer_map(source_bufnr, close_key))
+
+    local model = popup.create({
+      uri = vim.uri_from_fname(temp),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      provider = "test",
+    }, {
+      buffer_mode = "source",
+    })
+
+    assert.is_not_nil(model)
+    assert.is_false(has_buffer_map(source_bufnr, close_key))
+
+    popup.close(model)
+    assert.is_false(has_buffer_map(source_bufnr, close_key))
+
+    vim.fn.delete(temp)
   end)
 
   it("deletes copy-mode scratch buffer when render.open fails", function()

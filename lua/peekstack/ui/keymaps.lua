@@ -26,6 +26,12 @@ end
 
 ---@param popup table
 function M.apply_popup(popup)
+  if popup.buffer_mode == "source" then
+    -- Source mode uses the real editing buffer, so buffer-local mappings
+    -- would leak into normal editing after popup close.
+    return
+  end
+
   local keys = config.get().ui.keys
   local popup_id = popup.id
 
