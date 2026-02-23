@@ -354,13 +354,13 @@ describe("peekstack.persist.sessions", function()
     assert.equals(1, #migrated.sessions.default.items)
   end)
 
-  it("should always use repo scope when saving", function()
+  it("should always use repo storage when saving", function()
     config.setup({ persist = { enabled = true, max_items = 200 } })
 
     write_and_wait("global", { version = 2, sessions = {} })
     write_and_wait("repo", { version = 2, sessions = {} })
 
-    persist.save_current("scoped_session", { scope = "global", silent = true })
+    persist.save_current("scoped_session", { silent = true })
 
     wait_for_store("repo", function(read_data)
       local ensured = migrate.ensure(read_data)

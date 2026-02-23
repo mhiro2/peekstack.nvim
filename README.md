@@ -317,7 +317,7 @@ if you do not pass a name. If `persist.session.prompt_if_missing = true`, you'll
 for a name instead of using the default.
 
 > [!WARNING]
-> Persistence scope is fixed to the current git repository.
+> Persistence target is fixed to the current git repository.
 
 ### Auto persist (optional)
 
@@ -327,7 +327,7 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 - **Save** on `PeekstackPush` / `PeekstackClose` / `PeekstackRestorePopup` with a debounce
 - **Save on leave** on `VimLeavePre` if `save_on_leave = true`
 
-Auto persist only runs inside a git repository and uses `scope = "repo"` internally. Make sure
+Auto persist only runs inside a git repository and always uses the repository session storage. Make sure
 `persist.enabled = true` as well.
 
 ## 🪟 Popup buffer modes

@@ -56,7 +56,6 @@ describe("peekstack.persist.auto", function()
     persist.restore = function(name, opts)
       calls = calls + 1
       assert.equals("auto", name)
-      assert.equals("repo", opts.scope)
       assert.is_true(opts.silent)
     end
 
@@ -112,7 +111,6 @@ describe("peekstack.persist.auto", function()
     persist.save_current = function(name, opts)
       calls = calls + 1
       assert.equals("auto", name)
-      assert.equals("repo", opts.scope)
       assert.is_true(opts.silent)
       assert.is_true(opts.sync)
     end

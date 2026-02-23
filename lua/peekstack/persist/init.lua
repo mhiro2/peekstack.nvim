@@ -66,7 +66,7 @@ end
 
 ---Save the current stack to persistent storage with optional name
 ---@param name? string
----@param opts? { scope?: string, root_winid?: integer, silent?: boolean, sync?: boolean, on_done?: fun(success: boolean) }
+---@param opts? { root_winid?: integer, silent?: boolean, sync?: boolean, on_done?: fun(success: boolean) }
 function M.save_current(name, opts)
   local silent = opts and opts.silent or false
   local sync = opts and opts.sync or false
@@ -167,7 +167,7 @@ end
 
 ---Restore a named session from persistent storage
 ---@param name? string
----@param opts? { scope?: string, root_winid?: integer, silent?: boolean, on_done?: fun(restored: boolean) }
+---@param opts? { root_winid?: integer, silent?: boolean, on_done?: fun(restored: boolean) }
 function M.restore(name, opts)
   local silent = opts and opts.silent or false
   local on_done = opts and opts.on_done or nil
