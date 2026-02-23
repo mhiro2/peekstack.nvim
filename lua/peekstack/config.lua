@@ -199,17 +199,35 @@ local config = vim.deepcopy(M.defaults)
 
 ---@param path string
 ---@param value any
-local function validate_event_list(path, value)
+---@param default string[]
+---@return string[]
+local function sanitize_event_list(path, value, default)
   if type(value) ~= "table" then
-    notify.warn(string.format("%s must be a list of strings", path))
-    return
+    notify.warn(string.format("%s must be a list of strings. Falling back to defaults", path))
+    return vim.deepcopy(default)
   end
-  for idx, event in ipairs(value) do
-    if type(event) ~= "string" then
-      notify.warn(string.format("%s[%d] must be a string, got %s", path, idx, type(event)))
-      return
+
+  ---@type string[]
+  local events = {}
+  local invalid_count = 0
+  for _, event in ipairs(value) do
+    if type(event) == "string" and event ~= "" then
+      events[#events + 1] = event
+    else
+      invalid_count = invalid_count + 1
     end
   end
+
+  if invalid_count > 0 then
+    notify.warn(string.format("%s contains %d invalid entries. Ignoring invalid values", path, invalid_count))
+  end
+
+  if #events == 0 then
+    notify.warn(string.format("%s must contain at least one valid event. Falling back to defaults", path))
+    return vim.deepcopy(default)
+  end
+
+  return events
 end
 
 ---@alias PeekstackConfigFieldValidator fun(path: string, value: any, default: any): any
@@ -268,9 +286,8 @@ end
 
 ---@return PeekstackConfigFieldValidator
 local function field_event_list()
-  return function(path, value, _default)
-    validate_event_list(path, value)
-    return value
+  return function(path, value, default)
+    return sanitize_event_list(path, value, default)
   end
 end
 
