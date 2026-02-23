@@ -223,13 +223,145 @@ describe("peekstack.persist.sessions", function()
     assert.is_false(callback_called)
     persist.delete_session("test")
     persist.rename_session("a", "b")
-    assert.is_true(vim.list_contains(messages, "peekstack.persist is disabled"))
+    assert.is_true(vim.list_contains(messages, "[peekstack] peekstack.persist is disabled"))
     vim.notify = original_notify
   end)
 
   it("should handle non-existent sessions gracefully", function()
     persist.restore("non_existent")
     -- Should not error
+  end)
+
+  it("should batch reflow when restoring a session", function()
+    local stack = require("peekstack.core.stack")
+    local original_push = stack.push
+    local original_reflow = stack.reflow
+
+    local test_data = {
+      version = 2,
+      sessions = {
+        batched = {
+          items = {
+            {
+              uri = "file:///tmp/a.lua",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+            {
+              uri = "file:///tmp/b.lua",
+              range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+          },
+          meta = { created_at = os.time(), updated_at = os.time() },
+        },
+      },
+    }
+    write_and_wait(test_scope, test_data)
+
+    local pushed_opts = {}
+    local reflow_calls = 0
+
+    local ok, err = pcall(function()
+      stack.push = function(_loc, opts)
+        table.insert(pushed_opts, opts or {})
+        return { id = #pushed_opts }
+      end
+      stack.reflow = function(_winid)
+        reflow_calls = reflow_calls + 1
+      end
+
+      local restored = nil
+      persist.restore("batched", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+
+      assert.is_true(restored)
+      assert.equals(2, #pushed_opts)
+      assert.is_true(pushed_opts[1].defer_reflow)
+      assert.is_true(pushed_opts[2].defer_reflow)
+      assert.equals(1, reflow_calls)
+    end)
+
+    stack.push = original_push
+    stack.reflow = original_reflow
+
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("should restore session items even when title and provider are missing", function()
+    local stack = require("peekstack.core.stack")
+    local original_push = stack.push
+    local original_reflow = stack.reflow
+
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        optional_fields = {
+          items = {
+            {
+              uri = "file:///tmp/optional.lua",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
+              ts = os.time(),
+            },
+          },
+          meta = { created_at = os.time(), updated_at = os.time() },
+        },
+      },
+    })
+
+    local pushed_loc = nil
+    local pushed_opts = nil
+    local reflow_calls = 0
+
+    local ok, err = pcall(function()
+      stack.push = function(loc, opts)
+        pushed_loc = vim.deepcopy(loc)
+        pushed_opts = vim.deepcopy(opts or {})
+        return { id = 1 }
+      end
+      stack.reflow = function(_winid)
+        reflow_calls = reflow_calls + 1
+      end
+
+      local restored = nil
+      persist.restore("optional_fields", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+
+      assert.is_true(restored)
+      assert.equals("persist", pushed_loc.provider)
+      assert.is_nil(pushed_opts.title)
+      assert.is_true(pushed_opts.defer_reflow)
+      assert.equals(1, reflow_calls)
+    end)
+
+    stack.push = original_push
+    stack.reflow = original_reflow
+
+    if not ok then
+      error(err)
+    end
   end)
 
   it("should invoke on_done with false when persist is disabled", function()
@@ -285,13 +417,13 @@ describe("peekstack.persist.sessions", function()
     assert.equals(1, #migrated.sessions.default.items)
   end)
 
-  it("should always use repo scope when saving", function()
+  it("should always use repo storage when saving", function()
     config.setup({ persist = { enabled = true, max_items = 200 } })
 
     write_and_wait("global", { version = 2, sessions = {} })
     write_and_wait("repo", { version = 2, sessions = {} })
 
-    persist.save_current("scoped_session", { scope = "global", silent = true })
+    persist.save_current("scoped_session", { silent = true })
 
     wait_for_store("repo", function(read_data)
       local ensured = migrate.ensure(read_data)

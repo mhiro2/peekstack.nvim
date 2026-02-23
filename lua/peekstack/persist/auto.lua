@@ -64,7 +64,6 @@ local function save_session(root_winid, opts)
     return false
   end
   persist.save_current(resolve_session_name(), {
-    scope = "repo",
     root_winid = normalize_root_winid(root_winid),
     silent = true,
     sync = opts and opts.sync or false,
@@ -100,7 +99,7 @@ function M.maybe_restore()
   end
 
   last_restored_repo = repo_root
-  persist.restore(resolve_session_name(), { scope = "repo", silent = true })
+  persist.restore(resolve_session_name(), { silent = true })
   return true
 end
 

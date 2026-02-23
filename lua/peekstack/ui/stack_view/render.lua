@@ -51,6 +51,11 @@ local TITLE_HL_TO_SV = {
 ---@field source_col_end integer
 ---@field preview_col_start integer
 
+---@class PeekstackStackViewPreviewTsHighlight
+---@field start_offset integer
+---@field end_offset integer
+---@field hl_group string
+
 ---@class PeekstackStackViewParserCacheEntry
 ---@field trees TSTree[]
 ---@field fallback_lang string?
@@ -201,34 +206,37 @@ end
 ---@param preview_line_nr integer
 ---@param preview PeekstackStackViewPreviewLine
 ---@param parser_cache table<integer, PeekstackStackViewParserCacheEntry|false>
-local function apply_preview_treesitter_highlight(target_bufnr, preview_line_nr, preview, parser_cache)
+---@return PeekstackStackViewPreviewTsHighlight[]?
+local function collect_preview_treesitter_highlights(preview, parser_cache)
   local source_bufnr = preview.source_bufnr
   if not source_bufnr or not vim.api.nvim_buf_is_valid(source_bufnr) then
-    return
+    return nil
   end
 
   local source_line = preview.source_line
   local source_start = preview.source_col_start
   local source_end = preview.source_col_end
   if source_end <= source_start then
-    return
+    return nil
   end
 
   local parser_entry = get_parser_cache_entry(parser_cache, source_bufnr)
   if not parser_entry then
-    return
+    return nil
   end
 
   local root, lang = treesitter_root_for_line(parser_entry, source_line)
   if not root or not lang then
-    return
+    return nil
   end
 
   local query = get_treesitter_highlight_query(lang)
   if not query then
-    return
+    return nil
   end
 
+  ---@type PeekstackStackViewPreviewTsHighlight[]
+  local highlights = {}
   local ok_iter = pcall(function()
     for capture_id, node in query:iter_captures(root, source_bufnr, source_line, source_line + 1) do
       local hl_group = capture_hl_group(query.captures[capture_id], lang)
@@ -240,12 +248,10 @@ local function apply_preview_treesitter_highlight(target_bufnr, preview_line_nr,
           local start_col = math.max(node_start, source_start)
           local end_col = math.min(node_end, source_end)
           if end_col > start_col then
-            local view_start = preview.preview_col_start + (start_col - source_start)
-            local view_end = preview.preview_col_start + (end_col - source_start)
-            vim.api.nvim_buf_set_extmark(target_bufnr, NS, preview_line_nr - 1, view_start, {
-              end_col = view_end,
+            table.insert(highlights, {
+              start_offset = start_col - source_start,
+              end_offset = end_col - source_start,
               hl_group = hl_group,
-              priority = TS_HL_PRIORITY,
             })
           end
         end
@@ -254,17 +260,69 @@ local function apply_preview_treesitter_highlight(target_bufnr, preview_line_nr,
   end)
 
   if not ok_iter then
-    return
+    return nil
+  end
+
+  if #highlights == 0 then
+    return nil
+  end
+
+  return highlights
+end
+
+---@param preview PeekstackStackViewPreviewLine
+---@return string?
+local function preview_treesitter_cache_key(preview)
+  local source_bufnr = preview.source_bufnr
+  if not source_bufnr or not vim.api.nvim_buf_is_valid(source_bufnr) then
+    return nil
+  end
+  local changedtick = vim.api.nvim_buf_get_changedtick(source_bufnr)
+  return string.format(
+    "%d:%d:%d:%d:%d",
+    source_bufnr,
+    changedtick,
+    preview.source_line,
+    preview.source_col_start,
+    preview.source_col_end
+  )
+end
+
+---@param target_bufnr integer
+---@param preview_line_nr integer
+---@param preview PeekstackStackViewPreviewLine
+---@param highlights PeekstackStackViewPreviewTsHighlight[]
+local function apply_cached_preview_treesitter_highlights(target_bufnr, preview_line_nr, preview, highlights)
+  for _, hl in ipairs(highlights) do
+    local view_start = preview.preview_col_start + hl.start_offset
+    local view_end = preview.preview_col_start + hl.end_offset
+    vim.api.nvim_buf_set_extmark(target_bufnr, NS, preview_line_nr - 1, view_start, {
+      end_col = view_end,
+      hl_group = hl.hl_group,
+      priority = TS_HL_PRIORITY,
+    })
   end
 end
 
 ---@param target_bufnr integer
 ---@param previews table<integer, PeekstackStackViewPreviewLine>
-local function apply_preview_treesitter_highlights(target_bufnr, previews)
+---@param preview_cache table<string, PeekstackStackViewPreviewTsHighlight[]|false>
+local function apply_preview_treesitter_highlights(target_bufnr, previews, preview_cache)
   ---@type table<integer, PeekstackStackViewParserCacheEntry|false>
   local parser_cache = {}
   for preview_line_nr, preview in pairs(previews) do
-    apply_preview_treesitter_highlight(target_bufnr, preview_line_nr, preview, parser_cache)
+    local cache_key = preview_treesitter_cache_key(preview)
+    local cached = cache_key and preview_cache[cache_key] or nil
+    if cached == nil then
+      local computed = collect_preview_treesitter_highlights(preview, parser_cache)
+      if cache_key then
+        preview_cache[cache_key] = computed or false
+      end
+      cached = computed
+    end
+    if cached and cached ~= false then
+      apply_cached_preview_treesitter_highlights(target_bufnr, preview_line_nr, preview, cached)
+    end
   end
 end
 
@@ -385,7 +443,8 @@ end
 ---@param preview_lines table<integer, PeekstackStackViewPreviewLine>
 ---@param start_idx integer
 ---@param end_idx integer
-local function apply_highlights_in_range(bufnr, highlights, preview_lines, start_idx, end_idx)
+---@param preview_cache table<string, PeekstackStackViewPreviewTsHighlight[]|false>
+local function apply_highlights_in_range(bufnr, highlights, preview_lines, start_idx, end_idx, preview_cache)
   if end_idx < start_idx then
     return
   end
@@ -415,7 +474,7 @@ local function apply_highlights_in_range(bufnr, highlights, preview_lines, start
     end
   end
   if next(changed_previews) then
-    apply_preview_treesitter_highlights(bufnr, changed_previews)
+    apply_preview_treesitter_highlights(bufnr, changed_previews, preview_cache)
   end
 end
 
@@ -425,10 +484,12 @@ function M.render(s, is_ready)
   if not is_ready(s) then
     return
   end
+  s.preview_ts_cache = s.preview_ts_cache or {}
 
   local stack = require("peekstack.core.stack")
   local items = stack.list(s.root_winid)
   local ui_path = config.get().ui.path or {}
+  local repo_root_cache = ui_path.base == "repo" and {} or nil
   local win_width = vim.api.nvim_win_get_width(s.winid)
   if win_width <= 0 then
     win_width = vim.o.columns
@@ -450,6 +511,7 @@ function M.render(s, is_ready)
     local filter_label = popup.title
       or location.display_text(popup.location, 0, {
         path_base = ui_path.base,
+        repo_root_cache = repo_root_cache,
       })
     if not s.filter or s.filter == "" or filter_label:lower():find(s.filter:lower(), 1, true) ~= nil then
       table.insert(visible, popup)
@@ -505,6 +567,7 @@ function M.render(s, is_ready)
       label = location.display_text(popup.location, 0, {
         path_base = ui_path.base,
         max_width = max_label_width,
+        repo_root_cache = repo_root_cache,
       })
     end
 
@@ -598,7 +661,7 @@ function M.render(s, is_ready)
     vim.bo[s.bufnr].modifiable = false
 
     vim.api.nvim_buf_clear_namespace(s.bufnr, NS, start_idx - 1, old_end)
-    apply_highlights_in_range(s.bufnr, highlights, preview_lines, start_idx, new_end)
+    apply_highlights_in_range(s.bufnr, highlights, preview_lines, start_idx, new_end, s.preview_ts_cache)
   end
   s.render_keys = line_keys
 

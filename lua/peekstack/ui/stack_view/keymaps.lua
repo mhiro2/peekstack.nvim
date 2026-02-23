@@ -1,6 +1,7 @@
 local config = require("peekstack.config")
 local location = require("peekstack.core.location")
 local str = require("peekstack.util.str")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -288,9 +289,9 @@ function M.apply(s, deps)
       deps.render(s)
     else
       if #stack.history_list(s.root_winid) > 0 then
-        vim.notify("Failed to restore popup", vim.log.levels.WARN)
+        notify.warn("Failed to restore popup")
       else
-        vim.notify("No closed popups to restore", vim.log.levels.INFO)
+        notify.info("No closed popups to restore")
       end
     end
     refocus_and_resume(s, deps)
@@ -385,9 +386,9 @@ function M.apply(s, deps)
     end
     local remaining = stack.history_list(s.root_winid)
     if #remaining > 0 then
-      vim.notify("Some popups could not be restored", vim.log.levels.WARN)
+      notify.warn("Some popups could not be restored")
     elseif #restored == 0 then
-      vim.notify("No closed popups to restore", vim.log.levels.INFO)
+      notify.info("No closed popups to restore")
     end
     refocus_and_resume(s, deps)
   end, { buffer = s.bufnr, nowait = true, silent = true })
@@ -396,7 +397,7 @@ function M.apply(s, deps)
     local stack = require("peekstack.core.stack")
     local history = stack.history_list(s.root_winid)
     if #history == 0 then
-      vim.notify("No history entries", vim.log.levels.INFO)
+      notify.info("No history entries")
       return
     end
 
@@ -445,10 +446,10 @@ function M.apply(s, deps)
           if restored then
             deps.render(s)
           else
-            vim.notify("Failed to restore history entry", vim.log.levels.WARN)
+            notify.warn("Failed to restore history entry")
           end
         else
-          vim.notify("Failed to restore history entry", vim.log.levels.WARN)
+          notify.warn("Failed to restore history entry")
         end
       end
 

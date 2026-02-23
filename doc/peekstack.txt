@@ -417,7 +417,7 @@ PERSIST                                                   *peekstack-persist*
 
 Persistence is disabled by default. Enable with `persist.enabled = true`.
 
-Persistence scope is fixed to the current git repository ("repo").
+Persistence target is fixed to the current git repository.
 
 `persist.session.default_name` is used when a name is omitted, unless
 `persist.session.prompt_if_missing` is true.
@@ -431,7 +431,8 @@ Auto persistence (`persist.auto`) requires `persist.enabled = true`:
     debounce_ms        debounce time for auto save
     save_on_leave      save on VimLeavePre
 
-Auto persistence runs only inside a git repository and uses scope "repo".
+Auto persistence runs only inside a git repository and always uses
+the repository session storage.
 
 ==============================================================================
 BUFFER MODES                                           *peekstack-buffer-modes*

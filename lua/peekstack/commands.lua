@@ -1,4 +1,5 @@
 local M = {}
+local notify = require("peekstack.util.notify")
 
 local loaded = false
 local COMMAND_NAMES = {
@@ -85,8 +86,9 @@ function M.setup()
     persist.list_sessions({
       on_done = function(sessions)
         local names = vim.tbl_keys(sessions)
+        table.sort(names)
         if #names == 0 then
-          vim.notify("No saved sessions", vim.log.levels.INFO)
+          notify.info("No saved sessions")
           return
         end
         vim.ui.select(names, { prompt = "Select a session" }, function(selected)
@@ -113,7 +115,7 @@ function M.setup()
   vim.api.nvim_create_user_command("PeekstackDeleteSession", function(opts)
     local name = opts.args
     if not name or name == "" then
-      vim.notify("Usage: PeekstackDeleteSession <name>", vim.log.levels.WARN)
+      notify.warn("Usage: PeekstackDeleteSession <name>")
       return
     end
     vim.ui.select({ "Yes", "No" }, { prompt = "Delete session '" .. name .. "'?" }, function(choice)
@@ -129,14 +131,14 @@ function M.setup()
   vim.api.nvim_create_user_command("PeekstackRestorePopup", function()
     local restored = require("peekstack.core.stack").restore_last()
     if not restored then
-      vim.notify("No closed popups to restore", vim.log.levels.INFO)
+      notify.info("No closed popups to restore")
     end
   end, {})
 
   vim.api.nvim_create_user_command("PeekstackRestoreAllPopups", function()
     local restored = require("peekstack.core.stack").restore_all()
     if #restored == 0 then
-      vim.notify("No closed popups to restore", vim.log.levels.INFO)
+      notify.info("No closed popups to restore")
     end
   end, {})
 
@@ -145,7 +147,7 @@ function M.setup()
     local loc = require("peekstack.core.location")
     local history = stack.history_list()
     if #history == 0 then
-      vim.notify("No history entries", vim.log.levels.INFO)
+      notify.info("No history entries")
       return
     end
     local items = {}

@@ -23,8 +23,8 @@
 ---@class PeekstackSessionItem
 ---@field uri string
 ---@field range PeekstackRange
----@field title string
----@field provider string
+---@field title? string
+---@field provider? string
 ---@field ts integer
 
 ---@class PeekstackSessionMeta

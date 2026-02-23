@@ -40,6 +40,29 @@ describe("str.relative_path", function()
     assert(vim.uv.fs_rmdir(repo))
     assert(vim.uv.fs_rmdir(tmpdir))
   end)
+
+  it("reuses repo root lookups when cache is provided", function()
+    local fs = require("peekstack.util.fs")
+    local original_repo_root = fs.repo_root
+    local repo_calls = 0
+    local cache = {}
+    local ok, err = pcall(function()
+      fs.repo_root = function(start)
+        repo_calls = repo_calls + 1
+        assert.equals("/tmp/repo/src", start)
+        return "/tmp/repo"
+      end
+
+      local opts = { repo_root_cache = cache }
+      assert.equals("src/a.lua", str.relative_path("/tmp/repo/src/a.lua", "repo", opts))
+      assert.equals("src/b.lua", str.relative_path("/tmp/repo/src/b.lua", "repo", opts))
+      assert.equals(1, repo_calls)
+    end)
+    fs.repo_root = original_repo_root
+    if not ok then
+      error(err)
+    end
+  end)
 end)
 
 describe("str.truncate_middle", function()

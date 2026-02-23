@@ -1,4 +1,5 @@
 local picker_util = require("peekstack.util.picker")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -9,7 +10,7 @@ local M = {}
 function M.pick(locations, opts, cb)
   local ok, fzf = pcall(require, "fzf-lua")
   if not ok then
-    vim.notify("fzf-lua not available", vim.log.levels.WARN)
+    notify.warn("fzf-lua not available")
     return
   end
 

@@ -84,6 +84,41 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(lines[1]:find("Stack: 2", 1, true) ~= nil)
   end)
 
+  it("caches repo root resolution within a render", function()
+    config.setup({
+      ui = {
+        path = {
+          base = "repo",
+        },
+      },
+    })
+
+    local root_winid = vim.api.nvim_get_current_win()
+    local s = stack.current_stack(root_winid)
+    s.popups = {
+      { id = 1, location = location_for("/tmp/repo/src/a.lua"), pinned = false },
+      { id = 2, location = location_for("/tmp/repo/src/b.lua"), pinned = false },
+    }
+
+    local fs = require("peekstack.util.fs")
+    local original_repo_root = fs.repo_root
+    local repo_calls = 0
+    local ok, err = pcall(function()
+      fs.repo_root = function(start)
+        repo_calls = repo_calls + 1
+        assert.equals("/tmp/repo/src", start)
+        return "/tmp/repo"
+      end
+
+      stack_view.open()
+      assert.equals(1, repo_calls)
+    end)
+    fs.repo_root = original_repo_root
+    if not ok then
+      error(err)
+    end
+  end)
+
   it("skips line updates when rendered content is unchanged", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)
@@ -1051,6 +1086,93 @@ describe("peekstack.ui.stack_view", function()
 
       assert.equals(1, parser_calls)
       assert.equals(1, parse_calls)
+    end)
+
+    vim.treesitter.get_parser = original_get_parser
+    vim.treesitter.query.get = original_query_get
+    vim.fn.delete(tmpfile)
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("reuses cached treesitter captures across renders", function()
+    local tmpfile = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "local value = 42" }, tmpfile)
+
+    local original_get_parser = vim.treesitter.get_parser
+    local original_query_get = vim.treesitter.query.get
+
+    local parser_calls = 0
+    local capture_calls = 0
+
+    local ok, err = pcall(function()
+      vim.api.nvim_set_hl(0, "@keyword.peekstack_test_render_cache", { link = "Keyword" })
+
+      local fake_node = {
+        range = function()
+          return 0, 0, 0, 5
+        end,
+      }
+      local fake_root = {
+        range = function()
+          return 0, 0, 0, 20
+        end,
+      }
+      local fake_tree = {
+        root = function()
+          return fake_root
+        end,
+        lang = function()
+          return "peekstack_test_render_cache"
+        end,
+      }
+      local fake_query = {
+        captures = { "keyword" },
+      }
+      fake_query.iter_captures = function(_self, _root, _bufnr, _start_row, _end_row)
+        capture_calls = capture_calls + 1
+        local emitted = false
+        return function()
+          if emitted then
+            return nil
+          end
+          emitted = true
+          return 1, fake_node
+        end
+      end
+
+      vim.treesitter.get_parser = function(_bufnr)
+        parser_calls = parser_calls + 1
+        return {
+          parse = function() end,
+          trees = function()
+            return { fake_tree }
+          end,
+        }
+      end
+      vim.treesitter.query.get = function(_lang, _query_name)
+        return fake_query
+      end
+
+      local loc = helpers.make_location({
+        uri = vim.uri_from_fname(tmpfile),
+        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      })
+      local model = stack.push(loc)
+      assert.is_not_nil(model)
+
+      stack_view.open()
+      local state = stack_view._get_state()
+
+      assert.equals(1, parser_calls)
+      assert.equals(1, capture_calls)
+
+      state.render_keys = {}
+      stack_view._render(state)
+
+      assert.equals(1, parser_calls)
+      assert.equals(1, capture_calls)
     end)
 
     vim.treesitter.get_parser = original_get_parser

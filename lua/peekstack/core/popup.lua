@@ -3,6 +3,7 @@ local fs = require("peekstack.util.fs")
 local render = require("peekstack.ui.render")
 local diagnostics_ui = require("peekstack.ui.diagnostics")
 local keymaps = require("peekstack.ui.keymaps")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -127,18 +128,18 @@ function M.create(location, opts)
 
   local ok_buf, fname = pcall(fs.uri_to_fname, location.uri)
   if not ok_buf or not fname then
-    vim.notify("Failed to resolve file: " .. tostring(location.uri), vim.log.levels.WARN)
+    notify.warn("Failed to resolve file: " .. tostring(location.uri))
     return nil
   end
 
   local source_bufnr = vim.fn.bufadd(fname)
   if source_bufnr == 0 then
-    vim.notify("Failed to add buffer: " .. fname, vim.log.levels.WARN)
+    notify.warn("Failed to add buffer: " .. fname)
     return nil
   end
   local ok_load = pcall(vim.fn.bufload, source_bufnr)
   if not ok_load then
-    vim.notify("Failed to load buffer: " .. fname, vim.log.levels.WARN)
+    notify.warn("Failed to load buffer: " .. fname)
     return nil
   end
 
@@ -158,7 +159,7 @@ function M.create(location, opts)
     line_offset = vp_offset
     local ok_lines, lines = pcall(vim.api.nvim_buf_get_lines, source_bufnr, vp_start, vp_end, false)
     if not ok_lines then
-      vim.notify("Failed to read buffer contents: " .. fname, vim.log.levels.WARN)
+      notify.warn("Failed to read buffer contents: " .. fname)
       return nil
     end
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
@@ -170,7 +171,7 @@ function M.create(location, opts)
     if buffer_mode ~= "source" and vim.api.nvim_buf_is_valid(bufnr) then
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end
-    vim.notify("Failed to open popup window", vim.log.levels.WARN)
+    notify.warn("Failed to open popup window")
     return nil
   end
 

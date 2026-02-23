@@ -1,4 +1,5 @@
 local picker_util = require("peekstack.util.picker")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -38,7 +39,7 @@ end
 function M.pick(locations, opts, cb)
   local ok, snacks = pcall(require, "snacks.picker")
   if not ok then
-    vim.notify("snacks.nvim not available", vim.log.levels.WARN)
+    notify.warn("snacks.nvim not available")
     return
   end
 

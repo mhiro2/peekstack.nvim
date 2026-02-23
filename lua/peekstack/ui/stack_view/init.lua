@@ -69,6 +69,7 @@ local function get_state()
       help_augroup = nil,
       autoclose_group = nil,
       autoclose_suspended = 0,
+      preview_ts_cache = {},
     }
   end
   return states[tabpage]
@@ -154,6 +155,7 @@ local function reset_open_state(s)
   s.render_keys = {}
   s.autoclose_suspended = 0
   s.help_augroup = nil
+  s.preview_ts_cache = {}
 end
 
 ---Find a non-floating window to use as root.

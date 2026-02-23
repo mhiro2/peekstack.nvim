@@ -257,7 +257,9 @@ end
 function M.push(location, opts)
   deps()
   opts = opts or {}
+  local defer_reflow = opts.defer_reflow == true
   local create_opts = vim.tbl_extend("force", {}, opts)
+  create_opts.defer_reflow = nil
   create_opts.parent_popup_id = resolve_parent_popup_id(opts)
 
   -- Handle quick-peek mode (don't add to stack)
@@ -282,11 +284,19 @@ function M.push(location, opts)
   table.insert(stack.popups, model)
   index_popup(model, stack.root_winid)
   stack.focused_id = model.id
-  layout.reflow(stack)
+  if not defer_reflow then
+    layout.reflow(stack)
+  end
 
   emit_popup_event("PeekstackPush", model, stack.root_winid)
 
   return model
+end
+
+---@param winid? integer
+function M.reflow(winid)
+  deps()
+  layout.reflow(ensure_stack(winid))
 end
 
 ---@param winid? integer

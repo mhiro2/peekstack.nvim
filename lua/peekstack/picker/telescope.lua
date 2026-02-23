@@ -1,4 +1,5 @@
 local picker_util = require("peekstack.util.picker")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -50,7 +51,7 @@ end
 function M.pick(locations, opts, cb)
   local ok, telescope = pcall(require, "telescope.pickers")
   if not ok then
-    vim.notify("telescope not available", vim.log.levels.WARN)
+    notify.warn("telescope not available")
     return
   end
   local finders = require("telescope.finders")

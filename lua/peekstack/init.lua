@@ -1,3 +1,4 @@
+local notify = require("peekstack.util.notify")
 local M = {}
 
 ---@type table<string, fun(ctx: PeekstackProviderContext, cb: fun(locations: PeekstackLocation[]))>
@@ -104,7 +105,7 @@ local function prepare_location(loc, opts)
     return normalized
   end
 
-  vim.notify("Invalid location payload: expected uri/range", vim.log.levels.WARN)
+  notify.warn("Invalid location payload: expected uri/range")
   return nil
 end
 
@@ -145,7 +146,7 @@ end
 ---@param opts? table
 function M.peek_locations(locations, opts)
   if not locations or #locations == 0 then
-    vim.notify("No locations", vim.log.levels.INFO)
+    notify.info("No locations")
     return
   end
   if #locations == 1 then
@@ -167,7 +168,7 @@ end
 local function peek_by_provider(provider, opts)
   local fn = ensure_provider(provider)
   if not fn then
-    vim.notify("Unknown provider: " .. tostring(provider), vim.log.levels.WARN)
+    notify.warn("Unknown provider: " .. tostring(provider))
     return
   end
   local context = require("peekstack.core.context")

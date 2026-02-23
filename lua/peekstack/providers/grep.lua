@@ -1,5 +1,6 @@
 local fs = require("peekstack.util.fs")
 local location = require("peekstack.core.location")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -41,7 +42,7 @@ end
 ---@param cb fun(locations: PeekstackLocation[])
 function M.search(_, cb)
   if vim.fn.executable("rg") ~= 1 then
-    vim.notify("rg not found in PATH", vim.log.levels.WARN)
+    notify.warn("rg not found in PATH")
     cb({})
     return
   end
@@ -55,7 +56,7 @@ function M.search(_, cb)
     vim.system({ "rg", "--vimgrep", query }, { text = true }, function(result)
       vim.schedule(function()
         if result.code ~= 0 and result.code ~= 1 then
-          vim.notify("rg failed: " .. (result.stderr or "unknown error"), vim.log.levels.WARN)
+          notify.warn("rg failed: " .. (result.stderr or "unknown error"))
           cb({})
           return
         end

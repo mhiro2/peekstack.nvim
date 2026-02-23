@@ -1,4 +1,5 @@
 local location = require("peekstack.core.location")
+local notify = require("peekstack.util.notify")
 
 local M = {}
 
@@ -95,7 +96,7 @@ local function request(ctx, method, provider, params_modifier, result_mapper, cb
   local bufnr = ctx.bufnr
   local clients = vim.lsp.get_clients({ bufnr = bufnr, method = method })
   if not clients or vim.tbl_isempty(clients) then
-    vim.notify("No LSP clients attached", vim.log.levels.WARN)
+    notify.warn("No LSP clients attached")
     return
   end
 
