@@ -71,6 +71,9 @@ Using lazy.nvim:
 
     -- Marks: browse buffer marks (requires marks provider enabled)
     vim.keymap.set("n", "<leader>pm", function() peekstack.peek.marks_buffer() end)
+
+    -- Utility: temporarily hide/show all popups in current stack
+    vim.keymap.set("n", "<leader>ph", "<cmd>PeekstackToggleVisibility<cr>", { desc = "Peekstack: toggle visibility" })
   end,
 }
 ```
@@ -109,6 +112,7 @@ Built-in provider names:
 - `:PeekstackRestorePopup` — restore the last closed popup (undo close)
 - `:PeekstackRestoreAllPopups` — restore all closed popups
 - `:PeekstackCloseAll` — close all popups in the current stack
+- `:PeekstackToggleVisibility` — temporarily hide/show all popups in the current stack
 - `:PeekstackHistory` — show popup history and select to restore
 - `:PeekstackQuickPeek [provider]` — quick peek without stacking (default: `lsp.definition`, accepts any registered provider)
 
