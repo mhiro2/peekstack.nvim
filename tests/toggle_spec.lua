@@ -3,7 +3,7 @@ local config = require("peekstack.config")
 local events = require("peekstack.core.events")
 local helpers = require("tests.helpers")
 
-describe("stack.toggle_visibility", function()
+describe("stack.toggle", function()
   before_each(function()
     stack._reset()
     config.setup({})
@@ -14,7 +14,7 @@ describe("stack.toggle_visibility", function()
     local s = stack.current_stack()
     -- Restore visibility so windows can be closed normally
     if s.hidden then
-      stack.toggle_visibility()
+      stack.toggle()
     end
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
@@ -23,7 +23,7 @@ describe("stack.toggle_visibility", function()
   end)
 
   it("returns false on empty stack", function()
-    assert.is_false(stack.toggle_visibility())
+    assert.is_false(stack.toggle())
     assert.is_false(stack.is_hidden())
   end)
 
@@ -34,7 +34,7 @@ describe("stack.toggle_visibility", function()
     assert.is_not_nil(m1)
     assert.is_not_nil(m2)
 
-    assert.is_true(stack.toggle_visibility())
+    assert.is_true(stack.toggle())
     assert.is_true(stack.is_hidden())
 
     -- Windows should be gone but popups remain in the stack
@@ -53,11 +53,11 @@ describe("stack.toggle_visibility", function()
     assert.is_not_nil(m2)
 
     -- Hide
-    stack.toggle_visibility()
+    stack.toggle()
     assert.is_true(stack.is_hidden())
 
     -- Show
-    assert.is_true(stack.toggle_visibility())
+    assert.is_true(stack.toggle())
     assert.is_false(stack.is_hidden())
 
     local s = stack.current_stack()
@@ -76,8 +76,8 @@ describe("stack.toggle_visibility", function()
     local id1 = m1.id
     local id2 = m2.id
 
-    stack.toggle_visibility()
-    stack.toggle_visibility()
+    stack.toggle()
+    stack.toggle()
 
     local s = stack.current_stack()
     assert.equals(id1, s.popups[1].id)
@@ -88,7 +88,7 @@ describe("stack.toggle_visibility", function()
     local loc = helpers.make_location()
     stack.push(loc)
 
-    stack.toggle_visibility()
+    stack.toggle()
     assert.is_true(stack.is_hidden())
 
     -- Pushing should auto-show
@@ -109,7 +109,7 @@ describe("stack.toggle_visibility", function()
     stack.push(loc)
     stack.push(loc)
 
-    stack.toggle_visibility()
+    stack.toggle()
     assert.is_true(stack.is_hidden())
 
     stack.close_all()
@@ -124,7 +124,7 @@ describe("stack.toggle_visibility", function()
     stack.push(loc)
     stack.push(loc)
 
-    stack.toggle_visibility()
+    stack.toggle()
     assert.is_true(stack.is_hidden())
 
     -- reflow_all should skip hidden popups (winid=nil) safely
@@ -140,13 +140,54 @@ describe("stack.toggle_visibility", function()
     end
   end)
 
+  it("close by id works after hide/show cycle", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+
+    -- Hide then show
+    stack.toggle()
+    stack.toggle()
+
+    -- close should find the popup by its original id
+    assert.is_true(stack.close(m2.id))
+    assert.is_true(stack.close(m1.id))
+
+    local s = stack.current_stack()
+    assert.equals(0, #s.popups)
+  end)
+
+  it("keymaps reference correct popup id after hide/show cycle", function()
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+
+    local original_id = m1.id
+
+    -- Hide then show (recreates buffer + keymaps)
+    stack.toggle()
+    stack.toggle()
+
+    local s = stack.current_stack()
+    local restored = s.popups[1]
+    assert.equals(original_id, restored.id)
+
+    -- The close keymap should work via the buffer variable
+    assert.equals(original_id, vim.b[restored.bufnr].peekstack_popup_id)
+
+    -- Simulate what the close keymap does: resolve + close by popup_id
+    local found = stack.find_by_id(original_id)
+    assert.is_not_nil(found)
+    assert.equals(restored.bufnr, found.bufnr)
+    assert.is_true(stack.close(original_id))
+  end)
+
   it("does not leak popups to history when hiding", function()
     local loc = helpers.make_location()
     stack.push(loc)
     stack.push(loc)
 
     local history_before = #stack.history_list()
-    stack.toggle_visibility()
+    stack.toggle()
     local history_after = #stack.history_list()
 
     assert.equals(history_before, history_after)

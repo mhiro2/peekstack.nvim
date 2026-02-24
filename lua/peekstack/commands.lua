@@ -13,7 +13,7 @@ local COMMAND_NAMES = {
   "PeekstackHistory",
   "PeekstackCloseAll",
   "PeekstackQuickPeek",
-  "PeekstackToggleVisibility",
+  "PeekstackToggle",
 }
 
 ---@param session PeekstackSession|table
@@ -174,8 +174,8 @@ function M.setup()
     require("peekstack.core.stack").close_all()
   end, {})
 
-  vim.api.nvim_create_user_command("PeekstackToggleVisibility", function()
-    local toggled = require("peekstack.core.stack").toggle_visibility()
+  vim.api.nvim_create_user_command("PeekstackToggle", function()
+    local toggled = require("peekstack.core.stack").toggle()
     if not toggled then
       notify.info("No popups in the current stack")
     end
