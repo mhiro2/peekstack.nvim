@@ -199,8 +199,10 @@ function M.create(location, opts)
   end
   set_cursor(winid, location, line_offset)
 
-  local id = next_id
-  next_id = next_id + 1
+  local id = opts.id or next_id
+  if not opts.id then
+    next_id = next_id + 1
+  end
 
   local popup = {
     id = id,

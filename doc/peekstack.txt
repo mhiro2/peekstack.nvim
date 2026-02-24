@@ -291,7 +291,7 @@ Commands are registered after `setup()` is called.
 :PeekstackCloseAll                            *:PeekstackCloseAll*
     Close all popups in the current stack.
 
-:PeekstackToggleVisibility                *:PeekstackToggleVisibility*
+:PeekstackToggle                                    *:PeekstackToggle*
     Temporarily hide or show all popups in the current stack. When hidden,
     popup windows are closed but the stack state is preserved. Toggling
     again recreates the windows in their original layout. Pushing a new

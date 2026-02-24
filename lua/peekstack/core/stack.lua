@@ -281,7 +281,7 @@ function M.push(location, opts)
   local stack = ensure_stack()
   -- Auto-show hidden stack before pushing a new popup
   if stack.hidden then
-    M.toggle_visibility(stack.root_winid)
+    M.toggle(stack.root_winid)
   end
   local model = popup.create(location, create_opts)
   if not model then
@@ -543,6 +543,7 @@ end
 ---@return PeekstackPopupModel?
 local function reopen_popup(item, stack)
   local reopen_opts = {
+    id = item.id,
     buffer_mode = item.buffer_mode or "copy",
     origin_winid = stack.root_winid,
     parent_popup_id = item.parent_popup_id,
@@ -554,10 +555,7 @@ local function reopen_popup(item, stack)
   if not model then
     return nil
   end
-  model.id = item.id
   model.pinned = item.pinned or false
-  vim.b[model.bufnr].peekstack_popup_id = model.id
-  vim.w[model.winid].peekstack_popup_id = model.id
   return model
 end
 
@@ -849,7 +847,7 @@ end
 ---When shown, popup windows are recreated from the stored models.
 ---@param winid? integer
 ---@return boolean
-function M.toggle_visibility(winid)
+function M.toggle(winid)
   deps()
   local stack = ensure_stack(winid)
   if #stack.popups == 0 then
