@@ -29,6 +29,29 @@ describe("peekstack.ui.stack_view", function()
     stack._reset()
   end)
 
+  it("resize_all updates open stack view dimensions", function()
+    local original_columns = vim.o.columns
+
+    stack_view.open()
+    local state = stack_view._get_state()
+    local cfg_before = vim.api.nvim_win_get_config(state.winid)
+
+    -- Simulate wider screen
+    vim.o.columns = original_columns + 40
+    stack_view.resize_all()
+
+    local cfg_after = vim.api.nvim_win_get_config(state.winid)
+    assert.is_true(cfg_after.width >= cfg_before.width)
+
+    vim.o.columns = original_columns
+  end)
+
+  it("resize_all does not error when stack view is closed", function()
+    assert.has_no.errors(function()
+      stack_view.resize_all()
+    end)
+  end)
+
   it("filters stack entries by query", function()
     local root_winid = vim.api.nvim_get_current_win()
     local s = stack.current_stack(root_winid)

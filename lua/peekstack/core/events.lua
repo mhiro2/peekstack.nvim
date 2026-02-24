@@ -29,6 +29,7 @@ local function debounced_reflow()
     reflow_timer:stop()
     vim.schedule(function()
       stack.reflow_all()
+      require("peekstack.ui.stack_view").resize_all()
     end)
   end)
 end

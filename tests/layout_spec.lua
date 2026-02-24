@@ -90,6 +90,101 @@ describe("layout.compute", function()
     assert.equals(first.row, second.row)
     assert.equals(first.col, second.col)
   end)
+
+  it("clamps to min_size on very small screen", function()
+    vim.o.columns = 30
+    vim.o.lines = 10
+    config.setup({
+      ui = {
+        layout = {
+          style = "stack",
+          offset = { row = 1, col = 4 },
+          shrink = { w = 4, h = 2 },
+          min_size = { w = 60, h = 12 },
+          max_ratio = 0.65,
+          zindex_base = 50,
+        },
+      },
+    })
+
+    local result = layout.compute(1)
+    assert.equals(30, result.width) -- clamped to columns (< min_size.w)
+    assert.equals(9, result.height) -- clamped to lines (< min_size.h)
+    assert.is_true(result.row >= 0)
+    assert.is_true(result.col >= 0)
+  end)
+
+  it("produces non-negative row and col for all indices", function()
+    vim.o.columns = 40
+    vim.o.lines = 15
+    config.setup({
+      ui = {
+        layout = {
+          style = "stack",
+          offset = { row = 1, col = 4 },
+          shrink = { w = 4, h = 2 },
+          min_size = { w = 20, h = 6 },
+          max_ratio = 0.65,
+          zindex_base = 50,
+        },
+      },
+    })
+
+    for idx = 1, 5 do
+      local result = layout.compute(idx)
+      assert.is_true(result.width > 0, "width should be positive at index " .. idx)
+      assert.is_true(result.height > 0, "height should be positive at index " .. idx)
+      assert.is_true(result.row >= 0, "row should be non-negative at index " .. idx)
+      assert.is_true(result.col >= 0, "col should be non-negative at index " .. idx)
+    end
+  end)
+end)
+
+describe("layout.reflow", function()
+  before_each(function()
+    stack._reset()
+    config.setup({})
+  end)
+
+  after_each(function()
+    local s = stack.current_stack()
+    for i = #s.popups, 1, -1 do
+      stack.close(s.popups[i].id)
+    end
+    stack._reset()
+  end)
+
+  it("does not error on empty stack", function()
+    local s = stack.current_stack()
+    assert.equals(0, #s.popups)
+    assert.has_no.errors(function()
+      layout.reflow(s)
+    end)
+  end)
+
+  it("recalculates popup dimensions after screen size change", function()
+    local original_columns = vim.o.columns
+    local original_lines = vim.o.lines
+
+    local loc = helpers.make_location()
+    local m1 = stack.push(loc)
+    assert.is_not_nil(m1)
+
+    local cfg_before = vim.api.nvim_win_get_config(m1.winid)
+
+    -- Simulate screen resize
+    vim.o.columns = math.floor(original_columns / 2)
+    vim.o.lines = math.floor(original_lines / 2)
+
+    local s = stack.current_stack()
+    layout.reflow(s)
+
+    local cfg_after = vim.api.nvim_win_get_config(m1.winid)
+    assert.is_true(cfg_after.width <= cfg_before.width)
+
+    vim.o.columns = original_columns
+    vim.o.lines = original_lines
+  end)
 end)
 
 describe("layout.update_focus_zindex", function()
