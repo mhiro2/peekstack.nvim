@@ -119,6 +119,27 @@ describe("stack.toggle_visibility", function()
     assert.equals(0, #s.popups)
   end)
 
+  it("reflow_all skips hidden stack without error", function()
+    local loc = helpers.make_location()
+    stack.push(loc)
+    stack.push(loc)
+
+    stack.toggle_visibility()
+    assert.is_true(stack.is_hidden())
+
+    -- reflow_all should skip hidden popups (winid=nil) safely
+    assert.has_no.errors(function()
+      stack.reflow_all()
+    end)
+
+    -- Popups should still be in the stack
+    local s = stack.current_stack()
+    assert.equals(2, #s.popups)
+    for _, item in ipairs(s.popups) do
+      assert.is_nil(item.winid)
+    end
+  end)
+
   it("does not leak popups to history when hiding", function()
     local loc = helpers.make_location()
     stack.push(loc)

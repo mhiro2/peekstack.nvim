@@ -297,6 +297,16 @@ function M.refresh_all()
   end
 end
 
+---Resize and re-render all open stack views (called on VimResized/WinResized).
+function M.resize_all()
+  for _, s in pairs(states) do
+    if is_open(s) and s.winid and vim.api.nvim_win_is_valid(s.winid) then
+      vim.api.nvim_win_set_config(s.winid, stack_view_win_config())
+      render_state(s)
+    end
+  end
+end
+
 ---Get stack view state (for testing).
 ---@return PeekstackStackViewState
 function M._get_state()
