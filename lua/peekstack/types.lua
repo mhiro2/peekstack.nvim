@@ -62,6 +62,7 @@
 ---@field history PeekstackHistoryEntry[]
 ---@field layout_state any
 ---@field focused_id integer?
+---@field hidden boolean?
 
 ---@class PeekstackUserEventData
 ---@field event string

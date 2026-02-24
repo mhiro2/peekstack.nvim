@@ -28,6 +28,8 @@ local stacks = {}
 local ephemerals = {}
 ---@type table<integer, boolean>
 local stack_view_wins = {}
+--- Guard flag: when true, WinClosed/BufWipeout handlers skip popup removal.
+local suppress_win_events = false
 ---@class PeekstackPopupLookupEntry
 ---@field popup PeekstackPopupModel
 ---@field root_winid integer?
@@ -277,6 +279,10 @@ function M.push(location, opts)
   end
 
   local stack = ensure_stack()
+  -- Auto-show hidden stack before pushing a new popup
+  if stack.hidden then
+    M.toggle_visibility(stack.root_winid)
+  end
   local model = popup.create(location, create_opts)
   if not model then
     return nil
@@ -531,6 +537,30 @@ function M.focus_by_id(id, winid)
   return false
 end
 
+---Re-create a popup window for an existing stack item.
+---@param item PeekstackPopupModel
+---@param stack PeekstackStackModel
+---@return PeekstackPopupModel?
+local function reopen_popup(item, stack)
+  local reopen_opts = {
+    buffer_mode = item.buffer_mode or "copy",
+    origin_winid = stack.root_winid,
+    parent_popup_id = item.parent_popup_id,
+  }
+  if not item.title_chunks then
+    reopen_opts.title = item.title
+  end
+  local model = popup.create(item.location, reopen_opts)
+  if not model then
+    return nil
+  end
+  model.id = item.id
+  model.pinned = item.pinned or false
+  vim.b[model.bufnr].peekstack_popup_id = model.id
+  vim.w[model.winid].peekstack_popup_id = model.id
+  return model
+end
+
 ---Re-open a popup by id when its window is gone.
 ---@param id integer
 ---@param winid? integer
@@ -540,22 +570,10 @@ function M.reopen_by_id(id, winid)
   local stack = ensure_stack(winid)
   for idx, item in ipairs(stack.popups) do
     if item.id == id then
-      local reopen_opts = {
-        buffer_mode = item.buffer_mode or "copy",
-        origin_winid = stack.root_winid,
-        parent_popup_id = item.parent_popup_id,
-      }
-      if not item.title_chunks then
-        reopen_opts.title = item.title
-      end
-      local model = popup.create(item.location, reopen_opts)
+      local model = reopen_popup(item, stack)
       if not model then
         return nil
       end
-      model.id = item.id
-      model.pinned = item.pinned or false
-      vim.b[model.bufnr].peekstack_popup_id = model.id
-      vim.w[model.winid].peekstack_popup_id = model.id
       unindex_popup(item)
       stack.popups[idx] = model
       index_popup(model, stack.root_winid)
@@ -601,6 +619,9 @@ end
 ---@param winid integer
 function M.handle_win_closed(winid)
   deps()
+  if suppress_win_events then
+    return
+  end
   if stack_view_wins[winid] then
     stack_view_wins[winid] = nil
     return
@@ -688,6 +709,9 @@ end
 ---@param bufnr integer
 function M.handle_buf_wipeout(bufnr)
   deps()
+  if suppress_win_events then
+    return
+  end
   for id, item in pairs(ephemerals) do
     if item.bufnr == bufnr then
       unregister_ephemeral(id)
@@ -820,11 +844,80 @@ function M.reflow_all()
   end
 end
 
+---Toggle visibility of all popups in the current stack.
+---When hidden, popup windows are closed but models remain in the stack.
+---When shown, popup windows are recreated from the stored models.
+---@param winid? integer
+---@return boolean
+function M.toggle_visibility(winid)
+  deps()
+  local stack = ensure_stack(winid)
+  if #stack.popups == 0 then
+    return false
+  end
+
+  if not stack.hidden then
+    -- Move focus back to root window before hiding
+    if vim.api.nvim_win_is_valid(stack.root_winid) then
+      vim.api.nvim_set_current_win(stack.root_winid)
+    end
+    -- Close all popup windows but keep models in the stack.
+    -- Suppress WinClosed/BufWipeout handlers to prevent them from
+    -- removing popups that we intend to keep in the stack.
+    suppress_win_events = true
+    for _, item in ipairs(stack.popups) do
+      popup.close(item)
+      unindex_popup(item)
+      item.winid = nil
+    end
+    suppress_win_events = false
+    stack.hidden = true
+  else
+    -- Recreate all popup windows
+    for idx, item in ipairs(stack.popups) do
+      local model = reopen_popup(item, stack)
+      if model then
+        stack.popups[idx] = model
+        index_popup(model, stack.root_winid)
+      end
+    end
+    layout.reflow(stack)
+    stack.hidden = false
+    -- Restore focus to the previously focused popup
+    if stack.focused_id then
+      M.focus_by_id(stack.focused_id, stack.root_winid)
+    end
+  end
+  return true
+end
+
+---Check whether the current stack is hidden.
+---@param winid? integer
+---@return boolean
+function M.is_hidden(winid)
+  local stack = ensure_stack(winid)
+  return stack.hidden == true
+end
+
 --- Close all popups in the current (or given) window's stack.
 ---@param winid? integer
 function M.close_all(winid)
   deps()
   local stack = ensure_stack(winid)
+  -- When hidden, windows are already closed; just clear hidden state
+  -- and record history for each popup.
+  if stack.hidden then
+    for idx = #stack.popups, 1, -1 do
+      local item = stack.popups[idx]
+      emit_popup_event("PeekstackClose", item, stack.root_winid)
+      history.push_entry(stack, history.build_entry(item, idx))
+      unindex_popup(item)
+      table.remove(stack.popups, idx)
+    end
+    stack.hidden = false
+    stack.focused_id = nil
+    return
+  end
   for idx = #stack.popups, 1, -1 do
     local item = stack.popups[idx]
     feedback.highlight_origin(item.origin)
@@ -855,6 +948,7 @@ function M._reset()
   stack_view_wins = {}
   popup_by_id = {}
   popup_by_winid = {}
+  suppress_win_events = false
 end
 
 ---Get ephemeral popups (for testing).
