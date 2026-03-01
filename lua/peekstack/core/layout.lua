@@ -67,6 +67,22 @@ function M.compute(index)
   }
 end
 
+---Compute fullscreen layout for zoomed popup.
+---@param popup_count integer  number of popups in the stack
+---@return PeekstackLayoutResult
+function M.compute_zoom(popup_count)
+  local columns = vim.o.columns
+  local lines = vim.o.lines - vim.o.cmdheight
+  local base = config.get().ui.layout.zindex_base
+  return {
+    width = columns,
+    height = lines,
+    row = 0,
+    col = 0,
+    zindex = base + popup_count + 1,
+  }
+end
+
 ---@param winid integer
 ---@param is_focused boolean
 local function set_popup_winhighlight(winid, is_focused)
@@ -89,28 +105,52 @@ local function focused_popup_winid(stack)
   return nil
 end
 
+---@param winid integer
+---@param is_zoomed boolean
+local function set_popup_zoom_winhighlight(winid, is_zoomed)
+  if not vim.api.nvim_win_is_valid(winid) then
+    return
+  end
+  if is_zoomed then
+    vim.wo[winid].winhighlight = "FloatBorder:PeekstackPopupBorderZoomed"
+  end
+end
+
 ---@param stack PeekstackStackModel
 function M.reflow(stack)
   local focused_winid = focused_popup_winid(stack)
   local base = config.get().ui.layout.zindex_base
   local top = base + #stack.popups
+  local zoomed_id = stack.zoomed_id
   for idx, popup in ipairs(stack.popups) do
     if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
       local is_focused = focused_winid ~= nil and popup.winid == focused_winid
-      local layout = M.compute(idx)
-      local z = layout.zindex
-      if is_focused then
+      local is_zoomed = zoomed_id ~= nil and popup.id == zoomed_id
+
+      local lo
+      if is_zoomed then
+        lo = M.compute_zoom(#stack.popups)
+      else
+        lo = M.compute(idx)
+      end
+
+      local z = lo.zindex
+      if not is_zoomed and is_focused then
         z = top
       end
       local win_opts = vim.tbl_extend("force", popup.win_opts or {}, {
-        row = layout.row,
-        col = layout.col,
-        width = layout.width,
-        height = layout.height,
+        row = lo.row,
+        col = lo.col,
+        width = lo.width,
+        height = lo.height,
         zindex = z,
       })
       vim.api.nvim_win_set_config(popup.winid, win_opts)
-      set_popup_winhighlight(popup.winid, is_focused)
+      if is_zoomed then
+        set_popup_zoom_winhighlight(popup.winid, true)
+      else
+        set_popup_winhighlight(popup.winid, is_focused)
+      end
     end
   end
 end
@@ -126,12 +166,24 @@ function M.update_focus_zindex(stack, focused_winid)
   local ui = config.get().ui
   local base = ui.layout.zindex_base
   local top = base + #stack.popups
+  local zoomed_id = stack.zoomed_id
 
   for idx, popup in ipairs(stack.popups) do
     if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
       local is_focused = popup.winid == focused_winid
-      local z = is_focused and top or (base + idx - 1)
-      local lo = M.compute(idx)
+      local is_zoomed = zoomed_id ~= nil and popup.id == zoomed_id
+
+      local lo
+      if is_zoomed then
+        lo = M.compute_zoom(#stack.popups)
+      else
+        lo = M.compute(idx)
+      end
+
+      local z = lo.zindex
+      if not is_zoomed and is_focused then
+        z = top
+      end
       local win_opts = vim.tbl_extend("force", popup.win_opts or {}, {
         row = lo.row,
         col = lo.col,
@@ -140,7 +192,11 @@ function M.update_focus_zindex(stack, focused_winid)
         zindex = z,
       })
       pcall(vim.api.nvim_win_set_config, popup.winid, win_opts)
-      set_popup_winhighlight(popup.winid, is_focused)
+      if is_zoomed then
+        set_popup_zoom_winhighlight(popup.winid, true)
+      else
+        set_popup_winhighlight(popup.winid, is_focused)
+      end
     end
   end
 end

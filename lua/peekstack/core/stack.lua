@@ -283,6 +283,10 @@ function M.push(location, opts)
   if stack.hidden then
     M.toggle(stack.root_winid)
   end
+  -- Clear zoom before pushing so the new top popup gets normal layout
+  if stack.zoomed_id then
+    stack.zoomed_id = nil
+  end
   local model = popup.create(location, create_opts)
   if not model then
     return nil
@@ -325,6 +329,10 @@ end
 local function close_stack_item(stack, idx, item)
   local current_win = vim.api.nvim_get_current_win()
   local should_restore_focus = item.winid == current_win and vim.w[current_win].peekstack_popup_id ~= nil
+  -- Clear zoom if the zoomed popup is being closed
+  if stack.zoomed_id == item.id then
+    stack.zoomed_id = nil
+  end
   -- Remove from popups BEFORE closing the window to prevent
   -- WinClosed autocmd from re-entering and processing the same popup.
   table.remove(stack.popups, idx)
@@ -650,6 +658,9 @@ function M.handle_win_closed(winid)
           if stack.focused_id == item.id then
             focused_removed = true
           end
+          if stack.zoomed_id == item.id then
+            stack.zoomed_id = nil
+          end
           emit_popup_event("PeekstackClose", item, root_winid)
           feedback.highlight_origin(item.origin)
           table.remove(stack.popups, idx)
@@ -719,6 +730,9 @@ function M.handle_buf_wipeout(bufnr)
     for idx = #stack.popups, 1, -1 do
       local item = stack.popups[idx]
       if item.bufnr == bufnr then
+        if stack.zoomed_id == item.id then
+          stack.zoomed_id = nil
+        end
         unindex_popup(item)
         table.remove(stack.popups, idx)
       end
@@ -795,6 +809,9 @@ function M.handle_origin_wipeout(bufnr)
     for idx = #stack.popups, 1, -1 do
       local item = stack.popups[idx]
       if should_close_for_origin(item) then
+        if stack.zoomed_id == item.id then
+          stack.zoomed_id = nil
+        end
         popup.close(item)
         unindex_popup(item)
         table.remove(stack.popups, idx)
@@ -855,6 +872,8 @@ function M.toggle(winid)
   end
 
   if not stack.hidden then
+    -- Clear zoom state before hiding
+    stack.zoomed_id = nil
     -- Move focus back to root window before hiding
     if vim.api.nvim_win_is_valid(stack.root_winid) then
       vim.api.nvim_set_current_win(stack.root_winid)
@@ -897,11 +916,41 @@ function M.is_hidden(winid)
   return stack.hidden == true
 end
 
+---Toggle zoom on the top popup.  When zoomed, the popup fills the
+---entire editor.  Calling again restores the normal layout.
+---@param winid? integer
+---@return boolean
+function M.toggle_zoom(winid)
+  deps()
+  local stack = ensure_stack(winid)
+  if #stack.popups == 0 or stack.hidden then
+    return false
+  end
+
+  local top = stack.popups[#stack.popups]
+  if stack.zoomed_id == top.id then
+    stack.zoomed_id = nil
+  else
+    stack.zoomed_id = top.id
+  end
+  layout.reflow(stack)
+  return true
+end
+
+---Check whether the current stack has a zoomed popup.
+---@param winid? integer
+---@return boolean
+function M.is_zoomed(winid)
+  local stack = ensure_stack(winid)
+  return stack.zoomed_id ~= nil
+end
+
 --- Close all popups in the current (or given) window's stack.
 ---@param winid? integer
 function M.close_all(winid)
   deps()
   local stack = ensure_stack(winid)
+  stack.zoomed_id = nil
   -- When hidden, windows are already closed; just clear hidden state
   -- and record history for each popup.
   if stack.hidden then

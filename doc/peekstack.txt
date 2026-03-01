@@ -98,6 +98,7 @@ With options:
         promote_vsplit = "<C-v>",
         promote_tab = "<C-t>",
         toggle_stack_view = "<leader>os",
+        zoom = "<C-z>",
       },
     },
     picker = {
@@ -296,6 +297,13 @@ Commands are registered after `setup()` is called.
     popup windows are closed but the stack state is preserved. Toggling
     again recreates the windows in their original layout. Pushing a new
     popup while hidden automatically restores visibility.
+
+:PeekstackZoom                                      *:PeekstackZoom*
+    Toggle zoom on the top popup. When zoomed, the popup fills the entire
+    editor. Call again to restore the normal layout. The border highlight
+    changes to `PeekstackPopupBorderZoomed` while zoomed. Zoom is
+    automatically cleared when the zoomed popup is closed, a new popup
+    is pushed, or the stack is hidden via |:PeekstackToggle|.
 
 :PeekstackHistory                             *:PeekstackHistory*
     Show popup history and select an entry to restore.
@@ -496,6 +504,7 @@ Default keymaps inside popup windows:
     `<C-v>`       Promote to vertical split
     `<C-t>`       Promote to new tab
     `<leader>os`  Toggle the stack view panel
+    `<C-z>`       Toggle zoom (maximize top popup)
 
 Stack view keymaps:
 
@@ -509,6 +518,7 @@ Stack view keymaps:
     `/`           Filter the list
     `gg/G`        Jump to first/last stack item
     `j/k`         Move cursor by stack item (skip header/preview lines)
+    `z`           Toggle zoom (maximize top popup)
     `?`           Toggle help
     `q`           Close the stack view
 
@@ -534,6 +544,7 @@ Title highlights:
 Popup border highlights:
     PeekstackPopupBorder           Unfocused popup border (links to FloatBorder)
     PeekstackPopupBorderFocused    Focused popup border (links to Function)
+    PeekstackPopupBorderZoomed     Zoomed popup border (links to WarningMsg)
 
 Stack view highlights:
     PeekstackStackViewIndex        Entry index number (links to LineNr)

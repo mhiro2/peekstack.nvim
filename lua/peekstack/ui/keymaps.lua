@@ -89,6 +89,11 @@ function M.apply_popup(popup)
   map(popup.bufnr, keys.toggle_stack_view, function()
     stack_view.toggle()
   end, "Peekstack stack view")
+
+  map(popup.bufnr, keys.zoom, function()
+    local stack = require("peekstack.core.stack")
+    stack.toggle_zoom()
+  end, "Peekstack zoom")
 end
 
 return M

@@ -63,6 +63,7 @@
 ---@field layout_state any
 ---@field focused_id integer?
 ---@field hidden boolean?
+---@field zoomed_id integer?
 
 ---@class PeekstackUserEventData
 ---@field event string
@@ -250,6 +251,7 @@
 ---@field promote_vsplit string
 ---@field promote_tab string
 ---@field toggle_stack_view string
+---@field zoom string
 
 ---@class PeekstackConfigUI
 ---@field layout PeekstackConfigLayout

@@ -113,6 +113,7 @@ Built-in provider names:
 - `:PeekstackRestoreAllPopups` — restore all closed popups
 - `:PeekstackCloseAll` — close all popups in the current stack
 - `:PeekstackToggle` — temporarily hide/show all popups in the current stack
+- `:PeekstackZoom` — toggle zoom (maximize the top popup to fill the editor)
 - `:PeekstackHistory` — show popup history and select to restore
 - `:PeekstackQuickPeek [provider]` — quick peek without stacking (default: `lsp.definition`, accepts any registered provider)
 
@@ -127,6 +128,7 @@ Defaults inside popup windows:
 - `<C-v>` — promote to vertical split
 - `<C-t>` — promote to new tab
 - `<leader>os` — open stack view
+- `<C-z>` — toggle zoom (maximize top popup)
 
 Defaults in stack view:
 
@@ -140,6 +142,7 @@ Defaults in stack view:
 - `/` — filter
 - `gg/G` — jump to first/last stack item
 - `j/k` — move cursor by stack item (skip header/preview lines)
+- `z` — toggle zoom (maximize top popup)
 - `?` — help
 - `q` — close
 
@@ -228,6 +231,7 @@ Configure via `require("peekstack").setup({ ... })`.
       promote_vsplit = "<C-v>",
       promote_tab = "<C-t>",
       toggle_stack_view = "<leader>os",
+      zoom = "<C-z>",
     },
   },
   picker = {

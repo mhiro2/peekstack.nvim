@@ -14,6 +14,7 @@ local COMMAND_NAMES = {
   "PeekstackCloseAll",
   "PeekstackQuickPeek",
   "PeekstackToggle",
+  "PeekstackZoom",
 }
 
 ---@param session PeekstackSession|table
@@ -176,6 +177,13 @@ function M.setup()
 
   vim.api.nvim_create_user_command("PeekstackToggle", function()
     local toggled = require("peekstack.core.stack").toggle()
+    if not toggled then
+      notify.info("No popups in the current stack")
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("PeekstackZoom", function()
+    local toggled = require("peekstack.core.stack").toggle_zoom()
     if not toggled then
       notify.info("No popups in the current stack")
     end
