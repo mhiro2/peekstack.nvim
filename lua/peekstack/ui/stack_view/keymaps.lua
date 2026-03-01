@@ -187,6 +187,7 @@ local function toggle_help(s, deps)
     "/     Filter list",
     "gg/G  Jump to first/last stack item",
     "j/k   Move cursor by stack item",
+    "z     Toggle zoom (maximize top popup)",
     "q     Close stack view",
     "?     Toggle this help",
   }
@@ -458,6 +459,11 @@ function M.apply(s, deps)
         return
       end
     end)
+  end, { buffer = s.bufnr, nowait = true, silent = true })
+
+  vim.keymap.set("n", "z", function()
+    local stack = require("peekstack.core.stack")
+    stack.toggle_zoom(s.root_winid)
   end, { buffer = s.bufnr, nowait = true, silent = true })
 
   vim.keymap.set("n", "?", function()

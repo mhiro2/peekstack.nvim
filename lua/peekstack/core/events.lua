@@ -125,12 +125,11 @@ function M.setup()
   local close_events = cfg.ui.quick_peek and cfg.ui.quick_peek.close_events
     or { "CursorMoved", "InsertEnter", "BufLeave", "WinLeave" }
 
-  for _, event in ipairs(close_events) do
-    vim.api.nvim_create_autocmd(event, {
-      group = group,
-      callback = close_ephemeral_popups,
-    })
-  end
+  -- Merge all close events into a single autocmd for efficiency
+  vim.api.nvim_create_autocmd(close_events, {
+    group = group,
+    callback = close_ephemeral_popups,
+  })
 
   vim.api.nvim_create_autocmd("User", {
     group = group,

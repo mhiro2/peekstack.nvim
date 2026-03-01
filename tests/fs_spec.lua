@@ -30,6 +30,54 @@ describe("fs", function()
     end)
   end)
 
+  describe("win_is_valid", function()
+    it("returns false for nil input", function()
+      assert.is_false(fs.win_is_valid(nil))
+    end)
+
+    it("returns true for current window", function()
+      assert.is_true(fs.win_is_valid(vim.api.nvim_get_current_win()))
+    end)
+
+    it("returns false for closed window", function()
+      local bufnr = vim.api.nvim_create_buf(false, true)
+      local winid = vim.api.nvim_open_win(bufnr, false, {
+        relative = "editor",
+        row = 0,
+        col = 0,
+        width = 1,
+        height = 1,
+        style = "minimal",
+      })
+
+      assert.is_true(fs.win_is_valid(winid))
+      vim.api.nvim_win_close(winid, true)
+      assert.is_false(fs.win_is_valid(winid))
+
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_delete(bufnr, { force = true })
+      end
+    end)
+  end)
+
+  describe("buf_is_valid", function()
+    it("returns false for nil input", function()
+      assert.is_false(fs.buf_is_valid(nil))
+    end)
+
+    it("returns true for current buffer", function()
+      assert.is_true(fs.buf_is_valid(vim.api.nvim_get_current_buf()))
+    end)
+
+    it("returns false for deleted buffer", function()
+      local bufnr = vim.api.nvim_create_buf(false, true)
+      assert.is_true(fs.buf_is_valid(bufnr))
+
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+      assert.is_false(fs.buf_is_valid(bufnr))
+    end)
+  end)
+
   describe("scope_path", function()
     local original_ensure_dir
 

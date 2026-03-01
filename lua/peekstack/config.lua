@@ -156,6 +156,7 @@ M.defaults = {
       promote_vsplit = "<C-v>",
       promote_tab = "<C-t>",
       toggle_stack_view = "<leader>os",
+      zoom = "<C-z>",
     },
   },
   picker = {
