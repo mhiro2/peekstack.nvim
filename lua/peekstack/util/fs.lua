@@ -2,6 +2,20 @@ local M = {}
 
 ---@type string?
 local cached_repo_root = nil
+
+---Check if a window ID is valid (non-nil and exists)
+---@param winid integer?
+---@return boolean
+function M.win_is_valid(winid)
+  return winid ~= nil and vim.api.nvim_win_is_valid(winid)
+end
+
+---Check if a buffer number is valid (non-nil and exists)
+---@param bufnr integer?
+---@return boolean
+function M.buf_is_valid(bufnr)
+  return bufnr ~= nil and vim.api.nvim_buf_is_valid(bufnr)
+end
 ---@type string?
 local cached_repo_cwd = nil
 ---@type string?
@@ -84,9 +98,7 @@ end
 ---@param path string
 ---@return string
 function M.ensure_dir(path)
-  if vim.fn.isdirectory(path) == 1 then
-    return path
-  end
+  -- mkdir with "p" flag is atomic and handles existing directories
   vim.fn.mkdir(path, "p")
   return path
 end

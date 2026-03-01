@@ -8,39 +8,16 @@ local NS = vim.api.nvim_create_namespace("peekstack_diagnostics")
 ---@field ids integer[]
 
 ---@param kind? integer
+---@param prefix string "DiagnosticVirtualText" or "DiagnosticUnderline"
 ---@return string
-local function virtual_text_hl(kind)
-  if kind == vim.diagnostic.severity.ERROR then
-    return "DiagnosticVirtualTextError"
-  end
-  if kind == vim.diagnostic.severity.WARN then
-    return "DiagnosticVirtualTextWarn"
-  end
-  if kind == vim.diagnostic.severity.INFO then
-    return "DiagnosticVirtualTextInfo"
-  end
-  if kind == vim.diagnostic.severity.HINT then
-    return "DiagnosticVirtualTextHint"
-  end
-  return "DiagnosticVirtualTextInfo"
-end
-
----@param kind? integer
----@return string
-local function underline_hl(kind)
-  if kind == vim.diagnostic.severity.ERROR then
-    return "DiagnosticUnderlineError"
-  end
-  if kind == vim.diagnostic.severity.WARN then
-    return "DiagnosticUnderlineWarn"
-  end
-  if kind == vim.diagnostic.severity.INFO then
-    return "DiagnosticUnderlineInfo"
-  end
-  if kind == vim.diagnostic.severity.HINT then
-    return "DiagnosticUnderlineHint"
-  end
-  return "DiagnosticUnderlineInfo"
+local function severity_hl(kind, prefix)
+  local suffix = ({
+    [vim.diagnostic.severity.ERROR] = "Error",
+    [vim.diagnostic.severity.WARN] = "Warn",
+    [vim.diagnostic.severity.INFO] = "Info",
+    [vim.diagnostic.severity.HINT] = "Hint",
+  })[kind] or "Info"
+  return prefix .. suffix
 end
 
 ---@param text string
@@ -103,7 +80,7 @@ function M.decorate(popup)
   local ids = {}
 
   local virt_lines = {}
-  local virt_hl = virtual_text_hl(location.kind)
+  local virt_hl = severity_hl(location.kind, "DiagnosticVirtualText")
   for _, msg in ipairs(split_message(text)) do
     local msg_text = msg ~= "" and msg or " "
     table.insert(virt_lines, { { msg_text, virt_hl } })
@@ -117,7 +94,7 @@ function M.decorate(popup)
     table.insert(ids, id)
   end
 
-  local underline = underline_hl(location.kind)
+  local underline = severity_hl(location.kind, "DiagnosticUnderline")
   if underline ~= "" then
     local id = vim.api.nvim_buf_set_extmark(bufnr, NS, line, col, {
       end_row = end_line,
