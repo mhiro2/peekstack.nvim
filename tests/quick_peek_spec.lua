@@ -113,6 +113,34 @@ describe("peekstack.quick_peek", function()
     assert.is_nil(stack._ephemerals()[model.id])
   end)
 
+  it("keeps split navigation root for quick peek popups", function()
+    local location = {
+      uri = vim.uri_from_bufnr(0),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+      provider = "test",
+    }
+
+    vim.api.nvim_cmd({ cmd = "vsplit" }, {})
+    vim.api.nvim_cmd({ cmd = "vsplit" }, {})
+    vim.api.nvim_cmd({ cmd = "wincmd", args = { "h" } }, {})
+    vim.api.nvim_cmd({ cmd = "wincmd", args = { "h" } }, {})
+    vim.api.nvim_cmd({ cmd = "wincmd", args = { "l" } }, {})
+    local middle_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_cmd({ cmd = "wincmd", args = { "l" } }, {})
+    local right_win = vim.api.nvim_get_current_win()
+
+    vim.api.nvim_set_current_win(middle_win)
+    local model = stack.push(location, { stack = false })
+    assert.is_not_nil(model)
+    vim.api.nvim_set_current_win(model.winid)
+
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-w>l", true, false, true), "x", false)
+    assert.equals(right_win, vim.api.nvim_get_current_win())
+
+    assert.is_true(stack.close(model.id))
+    vim.api.nvim_cmd({ cmd = "only" }, {})
+  end)
+
   it("should handle normal peek mode", function()
     local location = {
       uri = vim.uri_from_bufnr(0),

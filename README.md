@@ -129,6 +129,7 @@ Defaults inside popup windows:
 - `<C-t>` — promote to new tab
 - `<leader>os` — open stack view
 - `<C-z>` — toggle zoom (maximize top popup)
+- `<C-w>h/j/k/l` — navigate to adjacent split window
 
 Defaults in stack view:
 
