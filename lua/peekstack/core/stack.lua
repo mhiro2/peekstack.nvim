@@ -37,6 +37,26 @@ local suppress_win_events = false
 local popup_by_id = {}
 ---@type table<integer, PeekstackPopupLookupEntry>
 local popup_by_winid = {}
+---@param winid? integer
+---@return integer
+local get_root_winid
+
+---@param model PeekstackPopupModel
+---@return integer?
+local function resolve_ephemeral_root_winid(model)
+  if not model or not model.origin then
+    return nil
+  end
+  local origin_winid = model.origin.winid
+  if type(origin_winid) ~= "number" or not vim.api.nvim_win_is_valid(origin_winid) then
+    return nil
+  end
+  local ok_root, root_winid = pcall(get_root_winid, origin_winid)
+  if ok_root and type(root_winid) == "number" and vim.api.nvim_win_is_valid(root_winid) then
+    return root_winid
+  end
+  return nil
+end
 
 ---@param model PeekstackPopupModel
 local function unindex_popup(model)
@@ -145,7 +165,7 @@ local function lookup_by_winid(winid)
 
   for _, item in pairs(ephemerals) do
     if item.winid == winid then
-      index_popup(item, nil)
+      index_popup(item, resolve_ephemeral_root_winid(item))
       return popup_by_winid[winid]
     end
   end
@@ -161,7 +181,7 @@ end
 ---@param model PeekstackPopupModel
 local function register_ephemeral(model)
   ephemerals[model.id] = model
-  index_popup(model, nil)
+  index_popup(model, resolve_ephemeral_root_winid(model))
 end
 
 ---@param id integer
@@ -180,7 +200,7 @@ local function find_ephemeral(id)
     return id, ephemerals[id]
   end
   local entry = lookup_by_winid(id)
-  if entry and entry.root_winid == nil then
+  if entry and entry.popup and entry.popup.ephemeral then
     return entry.popup.id, entry.popup
   end
   return nil
@@ -190,7 +210,7 @@ end
 --- floating window, walk through the stacks to find its origin window instead.
 ---@param winid? integer
 ---@return integer
-local function get_root_winid(winid)
+get_root_winid = function(winid)
   local wid = winid or vim.api.nvim_get_current_win()
   local win_cfg = vim.api.nvim_win_get_config(wid)
   if win_cfg.relative == "" then
@@ -986,6 +1006,14 @@ end
 function M.focused_id(winid)
   local stack = ensure_stack(winid)
   return stack.focused_id
+end
+
+--- Public wrapper for get_root_winid – used by keymaps to resolve the
+--- non-floating owner window for the current (or given) window.
+---@param winid? integer
+---@return integer
+function M.get_root_winid(winid)
+  return get_root_winid(winid)
 end
 
 --- Reset all stacks (for testing).

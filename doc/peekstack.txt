@@ -505,6 +505,7 @@ Default keymaps inside popup windows:
     `<C-t>`       Promote to new tab
     `<leader>os`  Toggle the stack view panel
     `<C-z>`       Toggle zoom (maximize top popup)
+    `<C-w>h/j/k/l`  Navigate to the adjacent split window
 
 Stack view keymaps:
 

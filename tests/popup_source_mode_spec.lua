@@ -134,6 +134,68 @@ describe("popup source mode", function()
     vim.fn.delete(temp)
   end)
 
+  it("installs <C-w>hjkl navigation keymaps on copy-mode popups", function()
+    local loc = make_location()
+    local model = popup.create(loc, { buffer_mode = "copy" })
+    assert.is_not_nil(model)
+    assert.is_true(has_buffer_map(model.bufnr, "<C-W>h"))
+    assert.is_true(has_buffer_map(model.bufnr, "<C-W>j"))
+    assert.is_true(has_buffer_map(model.bufnr, "<C-W>k"))
+    assert.is_true(has_buffer_map(model.bufnr, "<C-W>l"))
+    popup.close(model)
+  end)
+
+  it("<C-w>l navigates from popup to adjacent split", function()
+    -- Create a vertical split so there are two windows.
+    vim.api.nvim_cmd({ cmd = "vsplit" }, {})
+    local left_win = vim.api.nvim_get_current_win()
+    -- Move to the right split.
+    vim.api.nvim_cmd({ cmd = "wincmd", args = { "l" } }, {})
+    local right_win = vim.api.nvim_get_current_win()
+    assert.is_not.equals(left_win, right_win)
+
+    -- Open a popup anchored to the right split.
+    local loc = make_location()
+    local model = stack.push(loc)
+    assert.is_not_nil(model)
+    -- Focus the popup (simulates user entering the floating window).
+    vim.api.nvim_set_current_win(model.winid)
+    assert.equals(model.winid, vim.api.nvim_get_current_win())
+
+    -- Execute the <C-w>h keymap callback: should land on the left split.
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-w>h", true, false, true), "x", false)
+    assert.equals(left_win, vim.api.nvim_get_current_win())
+
+    -- Cleanup
+    stack.close(model.id)
+    vim.api.nvim_set_current_win(right_win)
+    vim.api.nvim_cmd({ cmd = "close" }, {})
+  end)
+
+  it("does not install <C-w>hjkl navigation keymaps on source-mode popups", function()
+    local temp = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "print('peekstack')" }, temp)
+    vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+    local source_bufnr = vim.api.nvim_get_current_buf()
+
+    local model = popup.create({
+      uri = vim.uri_from_fname(temp),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      provider = "test",
+    }, {
+      buffer_mode = "source",
+    })
+
+    assert.is_not_nil(model)
+    assert.is_false(has_buffer_map(source_bufnr, "<C-W>h"))
+    assert.is_false(has_buffer_map(source_bufnr, "<C-W>j"))
+    assert.is_false(has_buffer_map(source_bufnr, "<C-W>k"))
+    assert.is_false(has_buffer_map(source_bufnr, "<C-W>l"))
+
+    popup.close(model)
+    vim.fn.delete(temp)
+  end)
+
   it("deletes copy-mode scratch buffer when render.open fails", function()
     local render = require("peekstack.ui.render")
     local loc = make_location()

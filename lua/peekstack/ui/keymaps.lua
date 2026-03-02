@@ -15,6 +15,19 @@ local function map(bufnr, lhs, rhs, desc)
   vim.keymap.set("n", lhs, rhs, { buffer = bufnr, nowait = true, silent = true, desc = desc })
 end
 
+--- Navigate from a popup to an adjacent split window.
+--- Moves focus back to the root (non-floating) window first, then executes
+--- wincmd in the given direction.
+---@param direction string  one of "h", "j", "k", "l"
+local function nav_to_split(direction)
+  local stack = require("peekstack.core.stack")
+  local root = stack.get_root_winid()
+  if root and vim.api.nvim_win_is_valid(root) then
+    vim.api.nvim_set_current_win(root)
+  end
+  vim.api.nvim_cmd({ cmd = "wincmd", args = { direction } }, {})
+end
+
 --- Resolve the current popup by looking up its id in the stack.
 --- This avoids holding a stale reference to a popup object.
 ---@param popup_id integer
@@ -94,6 +107,22 @@ function M.apply_popup(popup)
     local stack = require("peekstack.core.stack")
     stack.toggle_zoom()
   end, "Peekstack zoom")
+
+  -- Window navigation: <C-w>h/j/k/l to move from popup to adjacent split.
+  -- These are hardcoded (not in ui.keys) because they restore standard Vim
+  -- window-navigation behaviour that floating windows would otherwise break.
+  map(popup.bufnr, "<C-w>h", function()
+    nav_to_split("h")
+  end, "Peekstack navigate left")
+  map(popup.bufnr, "<C-w>j", function()
+    nav_to_split("j")
+  end, "Peekstack navigate down")
+  map(popup.bufnr, "<C-w>k", function()
+    nav_to_split("k")
+  end, "Peekstack navigate up")
+  map(popup.bufnr, "<C-w>l", function()
+    nav_to_split("l")
+  end, "Peekstack navigate right")
 end
 
 return M
