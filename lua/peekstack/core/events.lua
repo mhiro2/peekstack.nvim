@@ -149,8 +149,9 @@ function M.setup()
     end,
   })
 
+  local cleanup = require("peekstack.core.cleanup")
+  cleanup.stop()
   if cfg.ui.popup.auto_close and cfg.ui.popup.auto_close.enabled then
-    local cleanup = require("peekstack.core.cleanup")
     cleanup.start()
   end
 end
