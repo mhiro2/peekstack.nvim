@@ -35,7 +35,6 @@ describe("peekstack.setup idempotent", function()
       providers = {
         marks = {
           enable = true,
-          scope = "buffer",
         },
       },
     })
