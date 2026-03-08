@@ -80,6 +80,35 @@ describe("peekstack.core.events", function()
     assert.equals(1, #after)
   end)
 
+  it("stops cleanup timer when re-setup disables auto_close", function()
+    local timer_store = require("peekstack.util.timer").get_store()
+
+    config.setup({
+      ui = {
+        quick_peek = { close_events = {} },
+        popup = {
+          auto_close = {
+            enabled = true,
+            idle_ms = 300000,
+            check_interval_ms = 60000,
+            ignore_pinned = true,
+          },
+        },
+      },
+    })
+    events.setup()
+    assert.is_not_nil(timer_store.cleanup)
+
+    config.setup({
+      ui = {
+        quick_peek = { close_events = {} },
+        popup = { auto_close = { enabled = false } },
+      },
+    })
+    events.setup()
+    assert.is_nil(timer_store.cleanup)
+  end)
+
   it("falls back to default close_events when quick_peek.close_events is invalid", function()
     config.setup({
       ui = {
@@ -102,6 +131,6 @@ describe("peekstack.core.events", function()
     })
 
     assert.equals(1, #buf_leave)
-    assert.equals(1, #win_leave)
+    assert.equals(2, #win_leave)
   end)
 end)

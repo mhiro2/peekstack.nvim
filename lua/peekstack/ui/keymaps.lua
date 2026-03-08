@@ -4,9 +4,21 @@ local stack_view = require("peekstack.ui.stack_view")
 
 local M = {}
 
+---@class PeekstackSourcePopupMapState
+---@field winid integer
+---@field bufnr integer
+---@field lhs string[]
+---@field original table<string, vim.api.keyset.get_keymap?>
+
+--- Buffer-local keymaps temporarily installed for the currently focused
+--- source-mode popup window. They are restored on WinLeave/close so the
+--- shared source buffer keeps its original mappings in normal editing.
+---@type PeekstackSourcePopupMapState?
+local active_source_maps = nil
+
 ---@param bufnr integer
 ---@param lhs string?
----@param rhs function
+---@param rhs string|function
 ---@param desc string
 local function map(bufnr, lhs, rhs, desc)
   if not lhs or lhs == "" then
@@ -28,101 +40,291 @@ local function nav_to_split(direction)
   vim.api.nvim_cmd({ cmd = "wincmd", args = { direction } }, {})
 end
 
---- Resolve the current popup by looking up its id in the stack.
---- This avoids holding a stale reference to a popup object.
----@param popup_id integer
----@return table?
-local function resolve_popup(popup_id)
+--- Resolve the popup in the current window.
+---@return PeekstackPopupModel?
+local function resolve_current_popup()
+  local winid = vim.api.nvim_get_current_win()
+  if vim.w[winid].peekstack_popup_id == nil then
+    return nil
+  end
   local stack = require("peekstack.core.stack")
-  return stack.find_by_id(popup_id)
+  local _, popup = stack.find_by_winid(winid)
+  return popup
+end
+
+---@return { lhs: string, rhs: function, desc: string }[]
+local function mapping_specs()
+  local keys = config.get().ui.keys
+  ---@type { lhs: string, rhs: function, desc: string }[]
+  local raw = {
+    {
+      lhs = keys.close,
+      rhs = function()
+        local stack = require("peekstack.core.stack")
+        local popup = resolve_current_popup()
+        if not popup then
+          return
+        end
+        if
+          popup.buffer_mode == "source"
+          and vim.api.nvim_buf_is_valid(popup.bufnr)
+          and vim.bo[popup.bufnr].modified
+          and config.get().ui.popup.source.confirm_on_close
+        then
+          vim.ui.input({ prompt = "Buffer has unsaved changes. Close? (y/n) " }, function(input)
+            if input and (input == "y" or input == "Y") then
+              stack.close(popup.id)
+            end
+          end)
+          return
+        end
+        stack.close(popup.id)
+      end,
+      desc = "Peekstack close",
+    },
+    {
+      lhs = keys.focus_next,
+      rhs = function()
+        local stack = require("peekstack.core.stack")
+        stack.focus_next()
+      end,
+      desc = "Peekstack focus next",
+    },
+    {
+      lhs = keys.focus_prev,
+      rhs = function()
+        local stack = require("peekstack.core.stack")
+        stack.focus_prev()
+      end,
+      desc = "Peekstack focus prev",
+    },
+    {
+      lhs = keys.promote_split,
+      rhs = function()
+        local popup = resolve_current_popup()
+        if popup then
+          promote.split(popup)
+        end
+      end,
+      desc = "Peekstack promote split",
+    },
+    {
+      lhs = keys.promote_vsplit,
+      rhs = function()
+        local popup = resolve_current_popup()
+        if popup then
+          promote.vsplit(popup)
+        end
+      end,
+      desc = "Peekstack promote vsplit",
+    },
+    {
+      lhs = keys.promote_tab,
+      rhs = function()
+        local popup = resolve_current_popup()
+        if popup then
+          promote.tab(popup)
+        end
+      end,
+      desc = "Peekstack promote tab",
+    },
+    {
+      lhs = keys.toggle_stack_view,
+      rhs = function()
+        stack_view.toggle()
+      end,
+      desc = "Peekstack stack view",
+    },
+    {
+      lhs = keys.zoom,
+      rhs = function()
+        local stack = require("peekstack.core.stack")
+        stack.toggle_zoom()
+      end,
+      desc = "Peekstack zoom",
+    },
+    {
+      lhs = "<C-w>h",
+      rhs = function()
+        nav_to_split("h")
+      end,
+      desc = "Peekstack navigate left",
+    },
+    {
+      lhs = "<C-w>j",
+      rhs = function()
+        nav_to_split("j")
+      end,
+      desc = "Peekstack navigate down",
+    },
+    {
+      lhs = "<C-w>k",
+      rhs = function()
+        nav_to_split("k")
+      end,
+      desc = "Peekstack navigate up",
+    },
+    {
+      lhs = "<C-w>l",
+      rhs = function()
+        nav_to_split("l")
+      end,
+      desc = "Peekstack navigate right",
+    },
+  }
+
+  ---@type table<string, { lhs: string, rhs: function, desc: string }>
+  local by_lhs = {}
+  ---@type string[]
+  local order = {}
+  for _, spec in ipairs(raw) do
+    if spec.lhs and spec.lhs ~= "" then
+      if not by_lhs[spec.lhs] then
+        order[#order + 1] = spec.lhs
+      end
+      by_lhs[spec.lhs] = spec
+    end
+  end
+
+  ---@type { lhs: string, rhs: function, desc: string }[]
+  local specs = {}
+  for _, lhs in ipairs(order) do
+    specs[#specs + 1] = by_lhs[lhs]
+  end
+  return specs
+end
+
+---@param bufnr integer
+---@param lhs string
+---@return vim.api.keyset.get_keymap?
+local function get_buffer_map(bufnr, lhs)
+  for _, item in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
+    if item.lhs == lhs then
+      return item
+    end
+  end
+  return nil
+end
+
+---@param bufnr integer
+---@param item vim.api.keyset.get_keymap?
+local function restore_buffer_map(bufnr, item)
+  if not item or not item.lhs or item.lhs == "" then
+    return
+  end
+
+  local opts = {
+    buffer = bufnr,
+    desc = item.desc ~= "" and item.desc or nil,
+    expr = item.expr == 1,
+    nowait = item.nowait == 1,
+    remap = item.noremap == 0,
+    script = item.script == 1,
+    silent = item.silent == 1,
+  }
+
+  if item.callback ~= nil then
+    vim.keymap.set("n", item.lhs, item.callback, opts)
+    return
+  end
+
+  if type(item.rhs) == "string" then
+    vim.keymap.set("n", item.lhs, item.rhs, opts)
+  end
+end
+
+local function deactivate_active_source_popup()
+  local active = active_source_maps
+  if not active then
+    return
+  end
+  active_source_maps = nil
+
+  if not vim.api.nvim_buf_is_valid(active.bufnr) then
+    return
+  end
+
+  for _, lhs in ipairs(active.lhs) do
+    pcall(vim.keymap.del, "n", lhs, { buffer = active.bufnr })
+    restore_buffer_map(active.bufnr, active.original[lhs])
+  end
+end
+
+---@param popup PeekstackPopupModel
+local function activate_source_popup(popup)
+  if popup.buffer_mode ~= "source" then
+    return
+  end
+  if active_source_maps and active_source_maps.winid == popup.winid then
+    return
+  end
+
+  deactivate_active_source_popup()
+
+  local specs = mapping_specs()
+  ---@type table<string, vim.api.keyset.get_keymap?>
+  local original = {}
+  ---@type string[]
+  local lhs_list = {}
+
+  for _, spec in ipairs(specs) do
+    original[spec.lhs] = get_buffer_map(popup.bufnr, spec.lhs)
+    map(popup.bufnr, spec.lhs, spec.rhs, spec.desc)
+    lhs_list[#lhs_list + 1] = spec.lhs
+  end
+
+  active_source_maps = {
+    winid = popup.winid,
+    bufnr = popup.bufnr,
+    lhs = lhs_list,
+    original = original,
+  }
 end
 
 ---@param popup table
 function M.apply_popup(popup)
   if popup.buffer_mode == "source" then
-    -- Source mode uses the real editing buffer, so buffer-local mappings
-    -- would leak into normal editing after popup close.
+    activate_source_popup(popup)
     return
   end
 
-  local keys = config.get().ui.keys
-  local popup_id = popup.id
+  for _, spec in ipairs(mapping_specs()) do
+    map(popup.bufnr, spec.lhs, spec.rhs, spec.desc)
+  end
+end
 
-  map(popup.bufnr, keys.close, function()
+---@param target integer|PeekstackPopupModel
+function M.activate_source_popup(target)
+  local popup = target
+  if type(target) ~= "table" then
     local stack = require("peekstack.core.stack")
-    local p = resolve_popup(popup_id)
-    if
-      p
-      and p.buffer_mode == "source"
-      and vim.api.nvim_buf_is_valid(p.bufnr)
-      and vim.bo[p.bufnr].modified
-      and config.get().ui.popup.source.confirm_on_close
-    then
-      vim.ui.input({ prompt = "Buffer has unsaved changes. Close? (y/n) " }, function(input)
-        if input and (input == "y" or input == "Y") then
-          stack.close(popup_id)
-        end
-      end)
-      return
-    end
-    stack.close(popup_id)
-  end, "Peekstack close")
+    local _, found = stack.find_by_winid(target)
+    popup = found
+  end
+  if not popup then
+    return
+  end
+  activate_source_popup(popup)
+end
 
-  map(popup.bufnr, keys.focus_next, function()
-    local stack = require("peekstack.core.stack")
-    stack.focus_next()
-  end, "Peekstack focus next")
+---@param target integer|PeekstackPopupModel
+function M.deactivate_source_popup(target)
+  if not active_source_maps then
+    return
+  end
 
-  map(popup.bufnr, keys.focus_prev, function()
-    local stack = require("peekstack.core.stack")
-    stack.focus_prev()
-  end, "Peekstack focus prev")
+  local winid = type(target) == "table" and target.winid or target
+  if winid ~= active_source_maps.winid then
+    return
+  end
 
-  map(popup.bufnr, keys.promote_split, function()
-    local p = resolve_popup(popup_id)
-    if p then
-      promote.split(p)
-    end
-  end, "Peekstack promote split")
+  deactivate_active_source_popup()
+end
 
-  map(popup.bufnr, keys.promote_vsplit, function()
-    local p = resolve_popup(popup_id)
-    if p then
-      promote.vsplit(p)
-    end
-  end, "Peekstack promote vsplit")
-
-  map(popup.bufnr, keys.promote_tab, function()
-    local p = resolve_popup(popup_id)
-    if p then
-      promote.tab(p)
-    end
-  end, "Peekstack promote tab")
-
-  map(popup.bufnr, keys.toggle_stack_view, function()
-    stack_view.toggle()
-  end, "Peekstack stack view")
-
-  map(popup.bufnr, keys.zoom, function()
-    local stack = require("peekstack.core.stack")
-    stack.toggle_zoom()
-  end, "Peekstack zoom")
-
-  -- Window navigation: <C-w>h/j/k/l to move from popup to adjacent split.
-  -- These are hardcoded (not in ui.keys) because they restore standard Vim
-  -- window-navigation behaviour that floating windows would otherwise break.
-  map(popup.bufnr, "<C-w>h", function()
-    nav_to_split("h")
-  end, "Peekstack navigate left")
-  map(popup.bufnr, "<C-w>j", function()
-    nav_to_split("j")
-  end, "Peekstack navigate down")
-  map(popup.bufnr, "<C-w>k", function()
-    nav_to_split("k")
-  end, "Peekstack navigate up")
-  map(popup.bufnr, "<C-w>l", function()
-    nav_to_split("l")
-  end, "Peekstack navigate right")
+--- Remove active source-mode popup keymaps before the popup window closes.
+---@param popup PeekstackPopupModel
+function M.remove_popup(popup)
+  M.deactivate_source_popup(popup)
 end
 
 return M

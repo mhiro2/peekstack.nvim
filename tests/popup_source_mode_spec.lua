@@ -15,6 +15,18 @@ describe("popup source mode", function()
     return false
   end
 
+  ---@param bufnr integer
+  ---@param lhs string
+  ---@return vim.api.keyset.get_keymap?
+  local function get_buffer_map(bufnr, lhs)
+    for _, item in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
+      if item.lhs == lhs then
+        return item
+      end
+    end
+    return nil
+  end
+
   before_each(function()
     popup._reset()
     stack._reset()
@@ -108,7 +120,7 @@ describe("popup source mode", function()
     popup.close(model)
   end)
 
-  it("does not install popup keymaps on source buffers", function()
+  it("installs popup keymaps on source buffers and removes them on close", function()
     local temp = vim.fn.tempname() .. ".lua"
     vim.fn.writefile({ "print('peekstack')" }, temp)
     vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
@@ -126,11 +138,80 @@ describe("popup source mode", function()
     })
 
     assert.is_not_nil(model)
-    assert.is_false(has_buffer_map(source_bufnr, close_key))
+    -- Keymaps are installed while popup is open
+    assert.is_true(has_buffer_map(source_bufnr, close_key))
 
     popup.close(model)
+    -- Keymaps are removed after popup close
     assert.is_false(has_buffer_map(source_bufnr, close_key))
 
+    vim.fn.delete(temp)
+  end)
+
+  it("restores existing source buffer keymaps after popup close", function()
+    local temp = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "print('peekstack')" }, temp)
+    vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+    local source_bufnr = vim.api.nvim_get_current_buf()
+    local close_key = config.get().ui.keys.close
+
+    vim.keymap.set("n", close_key, function() end, {
+      buffer = source_bufnr,
+      desc = "Original buffer close",
+    })
+
+    local model = popup.create({
+      uri = vim.uri_from_fname(temp),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      provider = "test",
+    }, {
+      buffer_mode = "source",
+    })
+
+    assert.is_not_nil(model)
+    assert.equals("Peekstack close", get_buffer_map(source_bufnr, close_key).desc)
+
+    popup.close(model)
+
+    local restored = get_buffer_map(source_bufnr, close_key)
+    assert.is_not_nil(restored)
+    assert.equals("Original buffer close", restored.desc)
+
+    vim.fn.delete(temp)
+  end)
+
+  it("restores source buffer keymaps when leaving a source popup", function()
+    require("peekstack.core.events").setup()
+    local temp = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "print('peekstack')" }, temp)
+    vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+    local root_win = vim.api.nvim_get_current_win()
+    local source_bufnr = vim.api.nvim_get_current_buf()
+    local close_key = config.get().ui.keys.close
+
+    vim.keymap.set("n", close_key, function() end, {
+      buffer = source_bufnr,
+      desc = "Original buffer close",
+    })
+
+    local model = popup.create({
+      uri = vim.uri_from_fname(temp),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      provider = "test",
+    }, {
+      buffer_mode = "source",
+    })
+
+    assert.is_not_nil(model)
+    assert.equals("Peekstack close", get_buffer_map(source_bufnr, close_key).desc)
+
+    vim.api.nvim_set_current_win(root_win)
+
+    local restored = get_buffer_map(source_bufnr, close_key)
+    assert.is_not_nil(restored)
+    assert.equals("Original buffer close", restored.desc)
+
+    popup.close(model)
     vim.fn.delete(temp)
   end)
 
@@ -172,7 +253,7 @@ describe("popup source mode", function()
     vim.api.nvim_cmd({ cmd = "close" }, {})
   end)
 
-  it("does not install <C-w>hjkl navigation keymaps on source-mode popups", function()
+  it("installs <C-w>hjkl keymaps on source-mode popups and removes them on close", function()
     local temp = vim.fn.tempname() .. ".lua"
     vim.fn.writefile({ "print('peekstack')" }, temp)
     vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
@@ -187,12 +268,48 @@ describe("popup source mode", function()
     })
 
     assert.is_not_nil(model)
+    -- Keymaps are installed while popup is open
+    assert.is_true(has_buffer_map(source_bufnr, "<C-W>h"))
+    assert.is_true(has_buffer_map(source_bufnr, "<C-W>j"))
+    assert.is_true(has_buffer_map(source_bufnr, "<C-W>k"))
+    assert.is_true(has_buffer_map(source_bufnr, "<C-W>l"))
+
+    popup.close(model)
+    -- Keymaps are removed after popup close
     assert.is_false(has_buffer_map(source_bufnr, "<C-W>h"))
     assert.is_false(has_buffer_map(source_bufnr, "<C-W>j"))
     assert.is_false(has_buffer_map(source_bufnr, "<C-W>k"))
     assert.is_false(has_buffer_map(source_bufnr, "<C-W>l"))
 
-    popup.close(model)
+    vim.fn.delete(temp)
+  end)
+
+  it("routes source-mode keymaps to the focused popup when multiple popups share a buffer", function()
+    local temp = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "print('peekstack')" }, temp)
+    vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+    local loc = {
+      uri = vim.uri_from_fname(temp),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      provider = "test",
+    }
+
+    local first = stack.push(loc, { buffer_mode = "source" })
+    local second = stack.push(loc, { buffer_mode = "source" })
+    assert.is_not_nil(first)
+    assert.is_not_nil(second)
+
+    vim.api.nvim_set_current_win(first.winid)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(config.get().ui.keys.close, true, false, true), "x", false)
+
+    assert.is_false(vim.api.nvim_win_is_valid(first.winid))
+    assert.is_true(vim.api.nvim_win_is_valid(second.winid))
+
+    vim.api.nvim_set_current_win(second.winid)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(config.get().ui.keys.close, true, false, true), "x", false)
+
+    assert.is_false(vim.api.nvim_win_is_valid(second.winid))
+
     vim.fn.delete(temp)
   end)
 

@@ -120,12 +120,24 @@ describe("peekstack.persist.store", function()
     assert.same(data, result)
   end)
 
-  it("returns empty data for invalid JSON", function()
+  it("returns empty data and warns for invalid JSON", function()
     local path = fs.scope_path(test_scope)
     write_raw_and_wait(path, "{ invalid json")
 
+    local warnings = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level)
+      if level == vim.log.levels.WARN then
+        table.insert(warnings, msg)
+      end
+    end
+
     local result = read_and_wait(test_scope)
+
+    vim.notify = original_notify
     assert.same({ version = 2, sessions = {} }, result)
+    assert.is_true(#warnings > 0, "should warn about decode failure")
+    assert.is_true(warnings[1]:find("Failed to decode", 1, true) ~= nil)
   end)
 
   it("read_sync returns data for valid store content", function()
@@ -144,12 +156,24 @@ describe("peekstack.persist.store", function()
     assert.same(data, result)
   end)
 
-  it("read_sync returns empty data for invalid JSON", function()
+  it("read_sync returns empty data and warns for invalid JSON", function()
     local path = fs.scope_path(test_scope)
     write_raw_and_wait(path, "{ invalid json")
 
+    local warnings = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level)
+      if level == vim.log.levels.WARN then
+        table.insert(warnings, msg)
+      end
+    end
+
     local result = store.read_sync(test_scope)
+
+    vim.notify = original_notify
     assert.same({ version = 2, sessions = {} }, result)
+    assert.is_true(#warnings > 0, "should warn about decode failure")
+    assert.is_true(warnings[1]:find("Failed to decode", 1, true) ~= nil)
   end)
 
   it("write_sync stores data that can be read back", function()

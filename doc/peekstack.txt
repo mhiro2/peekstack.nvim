@@ -113,7 +113,6 @@ With options:
       file = { enable = true },
       marks = {
         enable = false,
-        scope = "all", -- "buffer" | "global" | "all"
         include = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
         include_special = false,
       },

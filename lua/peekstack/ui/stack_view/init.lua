@@ -301,7 +301,7 @@ end
 function M.resize_all()
   for _, s in pairs(states) do
     if is_open(s) and s.winid and vim.api.nvim_win_is_valid(s.winid) then
-      vim.api.nvim_win_set_config(s.winid, stack_view_win_config())
+      pcall(vim.api.nvim_win_set_config, s.winid, stack_view_win_config())
       render_state(s)
     end
   end

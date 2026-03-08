@@ -72,6 +72,7 @@ function M.setup()
   reset_reflow_timer()
   popup_cursor_buffers = {}
   local group = vim.api.nvim_create_augroup("PeekstackEvents", { clear = true })
+  local keymaps = require("peekstack.ui.keymaps")
 
   vim.api.nvim_create_autocmd("WinClosed", {
     group = group,
@@ -105,6 +106,7 @@ function M.setup()
         local bufnr = vim.api.nvim_win_get_buf(winid)
         ensure_popup_cursor_tracking(group, bufnr)
       end
+      keymaps.activate_source_popup(winid)
       if is_floating_window(winid) then
         stack.touch(winid)
         local layout = require("peekstack.core.layout")
@@ -116,9 +118,17 @@ function M.setup()
     end,
   })
 
+  vim.api.nvim_create_autocmd("WinLeave", {
+    group = group,
+    callback = function()
+      keymaps.deactivate_source_popup(vim.api.nvim_get_current_win())
+    end,
+  })
+
   local current_winid = vim.api.nvim_get_current_win()
   if vim.w[current_winid].peekstack_popup_id ~= nil then
     ensure_popup_cursor_tracking(group, vim.api.nvim_win_get_buf(current_winid))
+    keymaps.activate_source_popup(current_winid)
   end
 
   local cfg = config.get()
@@ -139,8 +149,9 @@ function M.setup()
     end,
   })
 
+  local cleanup = require("peekstack.core.cleanup")
+  cleanup.stop()
   if cfg.ui.popup.auto_close and cfg.ui.popup.auto_close.enabled then
-    local cleanup = require("peekstack.core.cleanup")
     cleanup.start()
   end
 end

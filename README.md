@@ -247,7 +247,6 @@ Configure via `require("peekstack").setup({ ... })`.
     file = { enable = true },
     marks = {
       enable = false,
-      scope = "all", -- "buffer" | "global" | "all"
       include = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
       include_special = false,
     },

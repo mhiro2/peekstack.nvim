@@ -277,7 +277,6 @@
 
 ---@class PeekstackConfigProviderMarks
 ---@field enable boolean
----@field scope "buffer"|"global"|"all"
 ---@field include string
 ---@field include_special boolean
 

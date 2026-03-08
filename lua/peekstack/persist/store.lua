@@ -72,6 +72,7 @@ function M.read(scope, opts)
         vim.schedule(function()
           local ok, decoded = pcall(vim.json.decode, data)
           if not ok or type(decoded) ~= "table" then
+            notify.warn("Failed to decode session data: " .. path)
             on_done(empty_data())
             return
           end
@@ -104,6 +105,7 @@ function M.read_sync(scope)
 
   local ok, decoded = pcall(vim.json.decode, data)
   if not ok or type(decoded) ~= "table" then
+    notify.warn("Failed to decode session data: " .. path)
     return empty_data()
   end
   return decoded
