@@ -102,6 +102,6 @@ describe("peekstack.core.events", function()
     })
 
     assert.equals(1, #buf_leave)
-    assert.equals(1, #win_leave)
+    assert.equals(2, #win_leave)
   end)
 end)

@@ -145,7 +145,7 @@ function M.reflow(stack)
         height = lo.height,
         zindex = z,
       })
-      vim.api.nvim_win_set_config(popup.winid, win_opts)
+      pcall(vim.api.nvim_win_set_config, popup.winid, win_opts)
       if is_zoomed then
         set_popup_zoom_winhighlight(popup.winid, true)
       else
