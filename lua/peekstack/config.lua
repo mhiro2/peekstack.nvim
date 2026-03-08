@@ -17,9 +17,6 @@ local KNOWN_BUFFER_MODES = { "copy", "source" }
 local KNOWN_RESTORE_POSITIONS = { "top", "original" }
 
 ---@type string[]
-local KNOWN_MARK_SCOPES = { "buffer", "global", "all" }
-
----@type string[]
 local KNOWN_PATH_BASES = { "repo", "cwd", "absolute" }
 
 ---@type string[]
@@ -171,7 +168,6 @@ M.defaults = {
     file = { enable = true },
     marks = {
       enable = false,
-      scope = "all",
       include = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
       include_special = false,
     },
@@ -443,7 +439,6 @@ local LAYOUT_OFFSET_RULES = {
 
 ---@type PeekstackConfigFieldRule[]
 local MARKS_RULES = {
-  { key = "scope", validate = field_enum(KNOWN_MARK_SCOPES), require_truthy = true },
   { key = "include", validate = field_type("string") },
   { key = "include_special", validate = field_type("boolean") },
 }

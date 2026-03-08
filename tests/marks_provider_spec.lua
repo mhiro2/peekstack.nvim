@@ -21,7 +21,6 @@ describe("marks provider", function()
       providers = {
         marks = {
           enable = true,
-          scope = "all",
           include = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
           include_special = false,
         },
