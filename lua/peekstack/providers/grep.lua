@@ -53,7 +53,7 @@ function M.search(_, cb)
       return
     end
 
-    vim.system({ "rg", "--vimgrep", query }, { text = true }, function(result)
+    vim.system({ "rg", "--vimgrep", "--max-count=1000", "--", query }, { text = true }, function(result)
       vim.schedule(function()
         if result.code ~= 0 and result.code ~= 1 then
           notify.warn("rg failed: " .. (result.stderr or "unknown error"))
