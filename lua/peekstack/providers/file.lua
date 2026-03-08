@@ -16,6 +16,12 @@ function M.under_cursor(ctx, cb)
     local source_name = vim.api.nvim_buf_get_name(ctx.bufnr)
     local base = vim.fn.fnamemodify(source_name, ":p:h")
     target = vim.fn.fnamemodify(base .. "/" .. target, ":p")
+
+    local stat = vim.uv.fs_stat(target)
+    if not stat or stat.type ~= "file" then
+      cb({})
+      return
+    end
   end
   local uri = fs.fname_to_uri(target)
   local loc = location.normalize(
