@@ -399,7 +399,7 @@ Built-in provider names:
 `require("peekstack").register_provider(name, fn)`
     Register a custom location provider.
 >lua
-    require("peekstack").register_provider("my.provider", function(cb)
+    require("peekstack").register_provider("my.provider", function(ctx, cb)
       cb({ { uri = "file:///path", range = { ... } } })
     end)
 <
@@ -570,6 +570,9 @@ HEALTH                                                   *peekstack-health*
 Run `:checkhealth peekstack` to verify requirements:
 - Neovim >= 0.10
 - `rg` executable (optional, for grep.search)
+- Configured picker backend availability (telescope / fzf-lua / snacks)
+- Persist setup and git repository detection
+- Tree-sitter context parser availability (when `ui.title.context` is enabled)
 
 ==============================================================================
  vim:tw=78:ts=8:ft=help:norl:
