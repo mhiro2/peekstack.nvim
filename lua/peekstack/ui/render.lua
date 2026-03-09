@@ -117,9 +117,16 @@ local function build_title(location)
     icon = icons_cfg.map[provider_name] or icons_cfg.map[category] or ""
   end
 
-  local path = str.shorten_path(fs.uri_to_fname(location.uri))
-  local path_max_width = ui.path and ui.path.max_width
-  if is_diagnostic and type(path_max_width) == "number" and path_max_width > 0 then
+  local ui_path = ui.path or {}
+  local raw_path = fs.uri_to_fname(location.uri)
+  local path
+  if ui_path.base then
+    path = str.relative_path(raw_path, ui_path.base)
+  else
+    path = str.shorten_path(raw_path)
+  end
+  local path_max_width = ui_path.max_width
+  if type(path_max_width) == "number" and path_max_width > 0 then
     path = str.truncate_middle(path, path_max_width)
   end
   local line = (location.range.start.line or 0) + 1

@@ -39,14 +39,14 @@
 ---@field id integer
 ---@field bufnr integer
 ---@field source_bufnr integer
----@field winid integer
+---@field winid integer?
 ---@field location PeekstackLocation
 ---@field diagnostics? PeekstackDiagnosticExtmarks
 ---@field origin { winid: integer, bufnr: integer, row: integer, col: integer }
 ---@field origin_bufnr integer
 ---@field origin_is_popup boolean
 ---@field parent_popup_id? integer
----@field title string
+---@field title string?
 ---@field title_chunks? PeekstackTitleChunk[]
 ---@field pinned boolean
 ---@field buffer_mode "copy"|"source"
@@ -54,7 +54,7 @@
 ---@field created_at integer
 ---@field last_active_at integer
 ---@field ephemeral boolean
----@field win_opts PeekstackRenderWinOpts
+---@field win_opts PeekstackRenderWinOpts?
 
 ---@class PeekstackStackModel
 ---@field root_winid integer
