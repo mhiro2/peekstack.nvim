@@ -147,15 +147,22 @@ function M.setup()
   vim.api.nvim_create_user_command("PeekstackHistory", function()
     local stack = require("peekstack.core.stack")
     local loc = require("peekstack.core.location")
+    local cfg = require("peekstack.config").get()
     local history = stack.history_list()
     if #history == 0 then
       notify.info("No history entries")
       return
     end
+    local ui_path = cfg.ui.path or {}
+    ---@type PeekstackDisplayTextOpts
+    local dt_opts = {
+      path_base = ui_path.base,
+      max_width = ui_path.max_width,
+    }
     local items = {}
     for i = #history, 1, -1 do
       local entry = history[i]
-      local label = entry.title or loc.display_text(entry.location, 0)
+      local label = entry.title or loc.display_text(entry.location, 0, dt_opts)
       table.insert(items, { idx = i, label = label, entry = entry })
     end
     vim.ui.select(items, {
