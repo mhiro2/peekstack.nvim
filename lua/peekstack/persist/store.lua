@@ -1,23 +1,8 @@
 local fs = require("peekstack.util.fs")
+local codec = require("peekstack.persist.codec")
 local notify = require("peekstack.util.notify")
 
 local M = {}
-
----@return PeekstackStoreData
-local function empty_data()
-  return { version = 2, sessions = {} }
-end
-
----@param data PeekstackStoreData
----@return string?
-local function encode_data(data)
-  local ok, encoded = pcall(vim.json.encode, data)
-  if not ok then
-    notify.warn("Failed to encode session data")
-    return nil
-  end
-  return encoded
-end
 
 ---@param path string
 ---@return boolean
@@ -48,7 +33,7 @@ function M.read(scope, opts)
   vim.uv.fs_stat(path, function(stat_err, stat)
     if stat_err or not stat or stat.size == 0 then
       vim.schedule(function()
-        on_done(empty_data())
+        on_done(codec.empty_data())
       end)
       return
     end
@@ -56,7 +41,7 @@ function M.read(scope, opts)
     vim.uv.fs_open(path, "r", 438, function(open_err, fd)
       if open_err or not fd then
         vim.schedule(function()
-          on_done(empty_data())
+          on_done(codec.empty_data())
         end)
         return
       end
@@ -65,18 +50,12 @@ function M.read(scope, opts)
         vim.uv.fs_close(fd)
         if read_err or not data or data == "" then
           vim.schedule(function()
-            on_done(empty_data())
+            on_done(codec.empty_data())
           end)
           return
         end
         vim.schedule(function()
-          local ok, decoded = pcall(vim.json.decode, data)
-          if not ok or type(decoded) ~= "table" then
-            notify.warn("Failed to decode session data: " .. path)
-            on_done(empty_data())
-            return
-          end
-          on_done(decoded)
+          on_done(codec.decode(path, data))
         end)
       end)
     end)
@@ -89,26 +68,21 @@ function M.read_sync(scope)
   local path = fs.scope_path(scope)
   local stat = vim.uv.fs_stat(path)
   if not stat or stat.size == 0 then
-    return empty_data()
+    return codec.empty_data()
   end
 
   local fd = vim.uv.fs_open(path, "r", 438)
   if not fd then
-    return empty_data()
+    return codec.empty_data()
   end
 
   local data = vim.uv.fs_read(fd, stat.size, 0)
   pcall(vim.uv.fs_close, fd)
   if not data or data == "" then
-    return empty_data()
+    return codec.empty_data()
   end
 
-  local ok, decoded = pcall(vim.json.decode, data)
-  if not ok or type(decoded) ~= "table" then
-    notify.warn("Failed to decode session data: " .. path)
-    return empty_data()
-  end
-  return decoded
+  return codec.decode(path, data)
 end
 
 ---@param scope string
@@ -125,7 +99,7 @@ function M.write(scope, data, opts)
   end
 
   local path = fs.scope_path(scope)
-  local encoded = encode_data(data)
+  local encoded = codec.encode(data)
   if not encoded then
     finish(false)
     return
@@ -176,7 +150,7 @@ end
 ---@return boolean
 function M.write_sync(scope, data)
   local path = fs.scope_path(scope)
-  local encoded = encode_data(data)
+  local encoded = codec.encode(data)
   if not encoded then
     return false
   end

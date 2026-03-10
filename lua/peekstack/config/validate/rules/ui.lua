@@ -1,0 +1,253 @@
+local notify = require("peekstack.util.notify")
+local shared = require("peekstack.config.validate.shared")
+
+local M = {}
+
+---@type string[]
+local KNOWN_LAYOUT_STYLES = { "stack", "cascade", "single" }
+
+---@type string[]
+local KNOWN_BUFFER_MODES = { "copy", "source" }
+
+---@type string[]
+local KNOWN_RESTORE_POSITIONS = { "top", "original" }
+
+---@type string[]
+local KNOWN_PATH_BASES = { "repo", "cwd", "absolute" }
+
+---@type string[]
+local KNOWN_STACK_VIEW_POSITIONS = { "left", "right", "bottom" }
+
+---@type PeekstackConfigFieldRule[]
+local UI_PATH_RULES = {
+  { key = "base", validate = shared.field_enum(KNOWN_PATH_BASES), require_truthy = true },
+  { key = "max_width", validate = shared.validate_non_negative_number },
+}
+
+---@type PeekstackConfigFieldRule[]
+local STACK_VIEW_RULES = {
+  { key = "position", validate = shared.field_enum(KNOWN_STACK_VIEW_POSITIONS) },
+}
+
+---@type PeekstackConfigFieldRule[]
+local POPUP_RULES = {
+  { key = "editable", validate = shared.field_type("boolean") },
+  { key = "buffer_mode", validate = shared.field_enum(KNOWN_BUFFER_MODES), require_truthy = true },
+}
+
+---@type PeekstackConfigFieldRule[]
+local POPUP_SOURCE_RULES = {
+  { key = "prevent_auto_close_if_modified", validate = shared.field_type("boolean") },
+  { key = "confirm_on_close", validate = shared.field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local POPUP_HISTORY_RULES = {
+  { key = "max_items", validate = shared.field_number_range({ min = 1 }) },
+  { key = "restore_position", validate = shared.field_enum(KNOWN_RESTORE_POSITIONS), require_truthy = true },
+}
+
+---@type PeekstackConfigFieldRule[]
+local INLINE_PREVIEW_RULES = {
+  { key = "enabled", validate = shared.field_type("boolean") },
+  { key = "max_lines", validate = shared.field_number_range({ min = 1 }) },
+  { key = "hl_group", validate = shared.field_type("string") },
+  { key = "close_events", validate = shared.field_event_list() },
+}
+
+---@type PeekstackConfigFieldRule[]
+local QUICK_PEEK_RULES = {
+  { key = "close_events", validate = shared.field_event_list() },
+}
+
+---@type PeekstackConfigFieldRule[]
+local TITLE_ICON_RULES = {
+  { key = "enabled", validate = shared.field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local LAYOUT_RULES = {
+  { key = "style", validate = shared.field_enum(KNOWN_LAYOUT_STYLES), require_truthy = true },
+  { key = "max_ratio", validate = shared.field_ratio() },
+}
+
+---@type PeekstackConfigFieldRule[]
+local LAYOUT_MIN_SIZE_RULES = {
+  { key = "w", validate = shared.field_number_range({ min = 1 }) },
+  { key = "h", validate = shared.field_number_range({ min = 1 }) },
+}
+
+---@type PeekstackConfigFieldRule[]
+local LAYOUT_SHRINK_RULES = {
+  { key = "w", validate = shared.field_number_range({ min = 0 }) },
+  { key = "h", validate = shared.field_number_range({ min = 0 }) },
+}
+
+---@type PeekstackConfigFieldRule[]
+local LAYOUT_OFFSET_RULES = {
+  { key = "row", validate = shared.field_number_range({ min = 0 }) },
+  { key = "col", validate = shared.field_number_range({ min = 0 }) },
+}
+
+---@param ui table
+---@param defaults PeekstackConfigUI
+local function validate_keys(ui, defaults)
+  if ui.keys == nil then
+    return
+  end
+
+  local keys = shared.ensure_table_field(ui, "keys", "ui.keys", defaults.keys)
+  if not keys then
+    return
+  end
+
+  for name, val in pairs(keys) do
+    if type(val) ~= "string" then
+      notify.warn(
+        string.format(
+          "ui.keys.%s must be a string, got %s. Falling back to %s",
+          name,
+          type(val),
+          tostring(defaults.keys[name])
+        )
+      )
+      keys[name] = defaults.keys[name]
+    end
+  end
+end
+
+---@param ui table
+---@param defaults PeekstackConfigUI
+local function validate_popup(ui, defaults)
+  local popup = shared.as_table(ui.popup)
+  if not popup then
+    return
+  end
+
+  shared.apply_rules(popup, "ui.popup", defaults.popup, POPUP_RULES)
+
+  local source = shared.as_table(popup.source)
+  if source then
+    shared.apply_rules(source, "ui.popup.source", defaults.popup.source, POPUP_SOURCE_RULES)
+  end
+
+  local history = shared.as_table(popup.history)
+  if history then
+    shared.apply_rules(history, "ui.popup.history", defaults.popup.history, POPUP_HISTORY_RULES)
+  end
+end
+
+---@param ui table
+---@param defaults PeekstackConfigUI
+local function validate_path(ui, defaults)
+  local path = shared.as_table(ui.path)
+  if path then
+    shared.apply_rules(path, "ui.path", defaults.path, UI_PATH_RULES)
+  end
+end
+
+---@param ui table
+---@param defaults PeekstackConfigUI
+local function validate_stack_view(ui, defaults)
+  if ui.stack_view == nil then
+    return
+  end
+
+  local stack_view = shared.ensure_table_field(ui, "stack_view", "ui.stack_view", defaults.stack_view)
+  if stack_view then
+    shared.apply_rules(stack_view, "ui.stack_view", defaults.stack_view, STACK_VIEW_RULES)
+  end
+end
+
+---@param ui table
+---@param defaults PeekstackConfigUI
+local function validate_preview(ui, defaults)
+  local inline_preview = shared.as_table(ui.inline_preview)
+  if inline_preview then
+    shared.apply_rules(inline_preview, "ui.inline_preview", defaults.inline_preview, INLINE_PREVIEW_RULES)
+  end
+
+  local quick_peek = shared.as_table(ui.quick_peek)
+  if quick_peek then
+    shared.apply_rules(quick_peek, "ui.quick_peek", defaults.quick_peek, QUICK_PEEK_RULES)
+  end
+end
+
+---@param ui table
+---@param defaults PeekstackConfigTitle
+local function validate_title(ui, defaults)
+  local title = shared.as_table(ui.title)
+  if not title then
+    return
+  end
+
+  if title.icons ~= nil and type(title.icons) ~= "table" then
+    notify.warn("ui.title.icons must be a table, got " .. type(title.icons) .. ". Falling back to defaults")
+    title.icons = vim.deepcopy(defaults.icons)
+    return
+  end
+
+  if type(title.icons) == "table" then
+    local icons = title.icons
+    shared.apply_rules(icons, "ui.title.icons", defaults.icons, TITLE_ICON_RULES)
+    if icons.map ~= nil and type(icons.map) ~= "table" then
+      notify.warn("ui.title.icons.map must be a table, got " .. type(icons.map) .. ". Falling back to defaults")
+      icons.map = vim.deepcopy(defaults.icons.map)
+    end
+  end
+end
+
+---@param ui table
+---@param defaults PeekstackConfigUI
+local function validate_layout(ui, defaults)
+  if ui.layout == nil then
+    return
+  end
+
+  local layout = shared.ensure_table_field(ui, "layout", "ui.layout", defaults.layout)
+  if not layout then
+    return
+  end
+
+  shared.apply_rules(layout, "ui.layout", defaults.layout, LAYOUT_RULES)
+
+  if layout.min_size ~= nil then
+    local min_size = shared.ensure_table_field(layout, "min_size", "ui.layout.min_size", defaults.layout.min_size)
+    if min_size then
+      shared.apply_rules(min_size, "ui.layout.min_size", defaults.layout.min_size, LAYOUT_MIN_SIZE_RULES)
+    end
+  end
+
+  if layout.shrink ~= nil then
+    local shrink = shared.ensure_table_field(layout, "shrink", "ui.layout.shrink", defaults.layout.shrink)
+    if shrink then
+      shared.apply_rules(shrink, "ui.layout.shrink", defaults.layout.shrink, LAYOUT_SHRINK_RULES)
+    end
+  end
+
+  if layout.offset ~= nil then
+    local offset = shared.ensure_table_field(layout, "offset", "ui.layout.offset", defaults.layout.offset)
+    if offset then
+      shared.apply_rules(offset, "ui.layout.offset", defaults.layout.offset, LAYOUT_OFFSET_RULES)
+    end
+  end
+end
+
+---@param cfg table
+---@param defaults PeekstackConfig
+function M.validate(cfg, defaults)
+  local ui = shared.as_table(cfg.ui)
+  if not ui then
+    return
+  end
+
+  validate_keys(ui, defaults.ui)
+  validate_popup(ui, defaults.ui)
+  validate_path(ui, defaults.ui)
+  validate_stack_view(ui, defaults.ui)
+  validate_preview(ui, defaults.ui)
+  validate_title(ui, defaults.ui.title)
+  validate_layout(ui, defaults.ui)
+end
+
+return M
