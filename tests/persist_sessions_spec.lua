@@ -486,15 +486,30 @@ describe("peekstack.persist.sessions", function()
       table.insert(notifications, msg)
     end
 
-    persist.save_current("silent_session", { silent = true })
-    persist.restore("missing_session", { silent = true })
+    local save_done = nil
+    local restore_done = nil
 
-    wait_for_store(test_scope, function(read_data)
-      local ensured = migrate.ensure(read_data)
-      return ensured.sessions.silent_session ~= nil
-    end)
+    persist.save_current("silent_session", {
+      silent = true,
+      on_done = function(success)
+        save_done = success
+      end,
+    })
+    persist.restore("missing_session", {
+      silent = true,
+      on_done = function(restored)
+        restore_done = restored
+      end,
+    })
 
-    assert.equals(0, #notifications)
+    local waited = vim.wait(wait_timeout_ms, function()
+      return save_done ~= nil and restore_done ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for silent persist callbacks")
+    assert.is_true(save_done)
+    assert.is_false(restore_done)
+    assert.is_false(vim.list_contains(notifications, "[peekstack] Session saved: silent_session"))
+    assert.is_false(vim.list_contains(notifications, "[peekstack] No saved session: missing_session"))
     vim.notify = original_notify
   end)
 
