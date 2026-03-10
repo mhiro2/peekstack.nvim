@@ -462,11 +462,178 @@ describe("config", function()
       assert.equals("table", type(cfg.ui.title.icons.map))
     end)
 
+    it("falls back on invalid auto_close config", function()
+      local cfg = config.setup({
+        ui = {
+          popup = {
+            auto_close = {
+              enabled = "yes",
+              idle_ms = "slow",
+              check_interval_ms = false,
+              ignore_pinned = 0,
+            },
+          },
+        },
+      })
+      assert.is_true(has_message("ui.popup.auto_close.enabled"))
+      assert.is_true(has_message("ui.popup.auto_close.idle_ms"))
+      assert.is_true(has_message("ui.popup.auto_close.check_interval_ms"))
+      assert.is_true(has_message("ui.popup.auto_close.ignore_pinned"))
+      assert.equals(config.defaults.ui.popup.auto_close.enabled, cfg.ui.popup.auto_close.enabled)
+      assert.equals(config.defaults.ui.popup.auto_close.idle_ms, cfg.ui.popup.auto_close.idle_ms)
+      assert.equals(config.defaults.ui.popup.auto_close.check_interval_ms, cfg.ui.popup.auto_close.check_interval_ms)
+      assert.equals(config.defaults.ui.popup.auto_close.ignore_pinned, cfg.ui.popup.auto_close.ignore_pinned)
+    end)
+
+    it("falls back on invalid feedback config", function()
+      local cfg = config.setup({
+        ui = {
+          feedback = {
+            highlight_origin_on_close = "yes",
+          },
+        },
+      })
+      assert.is_true(has_message("ui.feedback.highlight_origin_on_close"))
+      assert.equals(config.defaults.ui.feedback.highlight_origin_on_close, cfg.ui.feedback.highlight_origin_on_close)
+    end)
+
+    it("falls back on invalid promote config", function()
+      local cfg = config.setup({
+        ui = {
+          promote = {
+            close_popup = "yes",
+          },
+        },
+      })
+      assert.is_true(has_message("ui.promote.close_popup"))
+      assert.equals(config.defaults.ui.promote.close_popup, cfg.ui.promote.close_popup)
+    end)
+
+    it("falls back on invalid provider enable config", function()
+      local cfg = config.setup({
+        providers = {
+          lsp = { enable = "yes" },
+          diagnostics = { enable = 1 },
+          file = { enable = "true" },
+          marks = { enable = "no" },
+        },
+      })
+      assert.is_true(has_message("providers.lsp.enable"))
+      assert.is_true(has_message("providers.diagnostics.enable"))
+      assert.is_true(has_message("providers.file.enable"))
+      assert.is_true(has_message("providers.marks.enable"))
+      assert.equals(config.defaults.providers.lsp.enable, cfg.providers.lsp.enable)
+      assert.equals(config.defaults.providers.diagnostics.enable, cfg.providers.diagnostics.enable)
+      assert.equals(config.defaults.providers.file.enable, cfg.providers.file.enable)
+      assert.equals(config.defaults.providers.marks.enable, cfg.providers.marks.enable)
+    end)
+
+    it("falls back on invalid persist.enabled", function()
+      local cfg = config.setup({
+        persist = {
+          enabled = "yes",
+        },
+      })
+      assert.is_true(has_message("persist.enabled"))
+      assert.equals(config.defaults.persist.enabled, cfg.persist.enabled)
+    end)
+
+    it("falls back on invalid title top-level fields", function()
+      local cfg = config.setup({
+        ui = {
+          title = {
+            enabled = "yes",
+            format = 123,
+          },
+        },
+      })
+      assert.is_true(has_message("ui.title.enabled"))
+      assert.is_true(has_message("ui.title.format"))
+      assert.equals(config.defaults.ui.title.enabled, cfg.ui.title.enabled)
+      assert.equals(config.defaults.ui.title.format, cfg.ui.title.format)
+    end)
+
+    it("falls back on invalid title context config", function()
+      local cfg = config.setup({
+        ui = {
+          title = {
+            context = {
+              enabled = "yes",
+              max_depth = "deep",
+              separator = 123,
+            },
+          },
+        },
+      })
+      assert.is_true(has_message("ui.title.context.enabled"))
+      assert.is_true(has_message("ui.title.context.max_depth"))
+      assert.is_true(has_message("ui.title.context.separator"))
+      assert.equals(config.defaults.ui.title.context.enabled, cfg.ui.title.context.enabled)
+      assert.equals(config.defaults.ui.title.context.max_depth, cfg.ui.title.context.max_depth)
+      assert.equals(config.defaults.ui.title.context.separator, cfg.ui.title.context.separator)
+    end)
+
     it("has icons enabled by default", function()
       local cfg = config.setup({})
       assert.is_true(cfg.ui.title.icons.enabled)
       assert.equals("table", type(cfg.ui.title.icons.map))
       assert.is_not_nil(cfg.ui.title.icons.map.lsp)
+    end)
+
+    it("falls back when subsection is a scalar instead of a table", function()
+      local cfg = config.setup({
+        ui = {
+          feedback = false,
+          promote = "no",
+          popup = {
+            auto_close = true,
+            source = 1,
+            history = false,
+          },
+          title = {
+            context = false,
+          },
+        },
+        providers = {
+          lsp = false,
+          marks = true,
+        },
+        persist = {
+          session = "default",
+        },
+      })
+
+      assert.is_true(has_message("ui.feedback must be a table"))
+      assert.equals("table", type(cfg.ui.feedback))
+      assert.equals(config.defaults.ui.feedback.highlight_origin_on_close, cfg.ui.feedback.highlight_origin_on_close)
+
+      assert.is_true(has_message("ui.promote must be a table"))
+      assert.equals("table", type(cfg.ui.promote))
+      assert.equals(config.defaults.ui.promote.close_popup, cfg.ui.promote.close_popup)
+
+      assert.is_true(has_message("ui.popup.auto_close must be a table"))
+      assert.equals("table", type(cfg.ui.popup.auto_close))
+      assert.equals(config.defaults.ui.popup.auto_close.enabled, cfg.ui.popup.auto_close.enabled)
+
+      assert.is_true(has_message("ui.popup.source must be a table"))
+      assert.equals("table", type(cfg.ui.popup.source))
+
+      assert.is_true(has_message("ui.popup.history must be a table"))
+      assert.equals("table", type(cfg.ui.popup.history))
+
+      assert.is_true(has_message("ui.title.context must be a table"))
+      assert.equals("table", type(cfg.ui.title.context))
+
+      assert.is_true(has_message("providers.lsp must be a table"))
+      assert.equals("table", type(cfg.providers.lsp))
+      assert.equals(config.defaults.providers.lsp.enable, cfg.providers.lsp.enable)
+
+      assert.is_true(has_message("providers.marks must be a table"))
+      assert.equals("table", type(cfg.providers.marks))
+      assert.equals(config.defaults.providers.marks.enable, cfg.providers.marks.enable)
+
+      assert.is_true(has_message("persist.session must be a table"))
+      assert.equals("table", type(cfg.persist.session))
     end)
   end)
 end)
