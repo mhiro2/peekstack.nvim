@@ -126,6 +126,7 @@
 ---@field display_col? integer
 
 ---@class PeekstackHistoryEntry
+---@field popup_id integer
 ---@field location PeekstackLocation
 ---@field title? string
 ---@field title_chunks? PeekstackTitleChunk[]
