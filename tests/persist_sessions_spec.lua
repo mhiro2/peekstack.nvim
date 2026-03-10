@@ -1,6 +1,7 @@
 describe("peekstack.persist.sessions", function()
   local persist = require("peekstack.persist")
   local config = require("peekstack.config")
+  local stack = require("peekstack.core.stack")
   local store = require("peekstack.persist.store")
   local migrate = require("peekstack.persist.migrate")
 
@@ -8,6 +9,60 @@ describe("peekstack.persist.sessions", function()
   local test_scope = "repo"
   local wait_timeout_ms = 500
   local wait_interval_ms = 10
+  local temp_paths = {}
+
+  local function cleanup_stack()
+    for root_winid, model in pairs(stack._all_stacks()) do
+      if model and model.popups and #model.popups > 0 then
+        pcall(stack.close_all, root_winid)
+      end
+    end
+    stack._reset()
+  end
+
+  local function cleanup_temp_files()
+    for _, path in ipairs(temp_paths) do
+      pcall(vim.fn.delete, path)
+    end
+    temp_paths = {}
+  end
+
+  ---@param name string
+  ---@param lines? string[]
+  ---@return string
+  local function make_file(name, lines)
+    local path = vim.fn.tempname() .. "_" .. name .. ".lua"
+    vim.fn.writefile(lines or { "line1", "line2", "line3", "line4" }, path)
+    temp_paths[#temp_paths + 1] = path
+    return path
+  end
+
+  ---@param path string
+  ---@param line? integer
+  ---@return PeekstackLocation
+  local function make_location(path, line)
+    local target_line = line or 0
+    return {
+      uri = vim.uri_from_fname(path),
+      range = {
+        start = { line = target_line, character = 0 },
+        ["end"] = { line = target_line, character = 1 },
+      },
+      provider = "test",
+    }
+  end
+
+  ---@param name string
+  ---@param opts? { title?: string, line?: integer, lines?: string[] }
+  ---@return { path: string, model: PeekstackPopupModel }
+  local function push_popup(name, opts)
+    local path = make_file(name, opts and opts.lines or nil)
+    local model = stack.push(make_location(path, opts and opts.line or 0), {
+      title = opts and opts.title or name,
+    })
+    assert.is_not_nil(model)
+    return { path = path, model = model }
+  end
 
   ---@param scope string
   ---@param data PeekstackStoreData
@@ -104,6 +159,8 @@ describe("peekstack.persist.sessions", function()
   before_each(function()
     -- Setup config with persist enabled
     config.setup({ persist = { enabled = true, max_items = 200 } })
+    persist._reset_cache()
+    cleanup_stack()
 
     -- Clear any existing test data
     local data = { version = 2, sessions = {} }
@@ -111,26 +168,79 @@ describe("peekstack.persist.sessions", function()
   end)
 
   after_each(function()
+    cleanup_stack()
+    cleanup_temp_files()
+    persist._reset_cache()
+
     -- Cleanup test data
     local data = { version = 2, sessions = {} }
     write_and_wait(test_scope, data)
   end)
 
   it("should save and restore a named session", function()
-    -- This test requires a valid Neovim buffer/window context
-    -- For now, we test the data structure manipulation
-    local data = migrate.ensure(read_and_wait(test_scope))
-    assert.same({ version = 2, sessions = {} }, data)
+    local first = push_popup("save_restore_a", { title = "Alpha", line = 0 })
+    local second = push_popup("save_restore_b", { title = "Beta", line = 1 })
+
+    local saved = nil
+    persist.save_current("named_session", {
+      silent = true,
+      sync = true,
+      on_done = function(success)
+        saved = success
+      end,
+    })
+
+    assert.is_true(saved)
+
+    local persisted = migrate.ensure(read_and_wait(test_scope))
+    local session = persisted.sessions.named_session
+    assert.is_not_nil(session)
+    assert.equals(2, #session.items)
+    assert.equals(first.model.location.uri, session.items[1].uri)
+    assert.equals(second.model.location.uri, session.items[2].uri)
+    assert.equals("Alpha", session.items[1].title)
+    assert.equals("Beta", session.items[2].title)
+
+    cleanup_stack()
+
+    local restored = nil
+    persist.restore("named_session", {
+      silent = true,
+      on_done = function(result)
+        restored = result
+      end,
+    })
+
+    local waited = vim.wait(wait_timeout_ms, function()
+      return restored ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for restore callback")
+    assert.is_true(restored)
+
+    local restored_popups = stack.list()
+    assert.equals(2, #restored_popups)
+    assert.equals(first.model.location.uri, restored_popups[1].location.uri)
+    assert.equals(second.model.location.uri, restored_popups[2].location.uri)
+    assert.equals("Alpha", restored_popups[1].title)
+    assert.equals("Beta", restored_popups[2].title)
   end)
 
   it("should list all sessions", function()
-    persist.save_current("test_session_1")
-    wait_for_session("test_session_1", true)
-    persist.save_current("test_session_2")
+    push_popup("list_session_a", { title = "List A" })
+    persist.save_current("test_session_1", { silent = true, sync = true })
+    cleanup_stack()
 
-    local sessions = wait_for_session("test_session_2", true)
+    push_popup("list_session_b", { title = "List B" })
+    persist.save_current("test_session_2", { silent = true, sync = true })
+    persist._reset_cache()
+
+    local sessions = persist.list_sessions()
     assert.is_not_nil(sessions["test_session_1"])
     assert.is_not_nil(sessions["test_session_2"])
+    assert.equals(1, #sessions["test_session_1"].items)
+    assert.equals("List A", sessions["test_session_1"].items[1].title)
+    assert.equals(1, #sessions["test_session_2"].items)
+    assert.equals("List B", sessions["test_session_2"].items[1].title)
   end)
 
   it("should save synchronously when sync is enabled", function()
@@ -166,7 +276,8 @@ describe("peekstack.persist.sessions", function()
   end)
 
   it("should delete a session", function()
-    persist.save_current("to_delete")
+    push_popup("delete_session", { title = "Delete me" })
+    persist.save_current("to_delete", { silent = true, sync = true })
 
     local sessions_before = wait_for_session("to_delete", true)
     assert.is_not_nil(sessions_before["to_delete"])
@@ -175,10 +286,14 @@ describe("peekstack.persist.sessions", function()
 
     local sessions_after = wait_for_session("to_delete", false)
     assert.is_nil(sessions_after["to_delete"])
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.is_nil(data.sessions.to_delete)
   end)
 
   it("should rename a session", function()
-    persist.save_current("old_name")
+    push_popup("rename_session", { title = "Rename me" })
+    persist.save_current("old_name", { silent = true, sync = true })
 
     local sessions_before = wait_for_session("old_name", true)
     assert.is_not_nil(sessions_before["old_name"])
@@ -190,15 +305,23 @@ describe("peekstack.persist.sessions", function()
     sessions_after = wait_for_session("new_name", true)
     assert.is_nil(sessions_after["old_name"])
     assert.is_not_nil(sessions_after["new_name"])
+    assert.equals("Rename me", sessions_after["new_name"].items[1].title)
   end)
 
   it("should respect max_items when saving", function()
     config.setup({ persist = { enabled = true, max_items = 2 } })
+    local first = push_popup("max_items_a", { title = "First" })
+    local second = push_popup("max_items_b", { title = "Second" })
+    local third = push_popup("max_items_c", { title = "Third" })
 
-    -- max_items is enforced when calling save_current with items in the stack
-    -- Since we can't create a real stack in tests, we verify the logic is in place
-    -- by checking the code path exists
-    assert.is_not_nil(persist.save_current)
+    persist.save_current("trimmed", { silent = true, sync = true })
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    local items = data.sessions.trimmed.items
+    assert.equals(2, #items)
+    assert.equals(second.model.location.uri, items[1].uri)
+    assert.equals(third.model.location.uri, items[2].uri)
+    assert.is_not.equals(first.model.location.uri, items[1].uri)
   end)
 
   it("should notify when persist is disabled", function()
@@ -233,7 +356,6 @@ describe("peekstack.persist.sessions", function()
   end)
 
   it("should batch reflow when restoring a session", function()
-    local stack = require("peekstack.core.stack")
     local original_push = stack.push
     local original_reflow = stack.reflow
 
@@ -302,7 +424,6 @@ describe("peekstack.persist.sessions", function()
   end)
 
   it("should restore session items even when title and provider are missing", function()
-    local stack = require("peekstack.core.stack")
     local original_push = stack.push
     local original_reflow = stack.reflow
 
@@ -439,7 +560,6 @@ describe("peekstack.persist.sessions", function()
   end)
 
   it("should use root_winid when saving", function()
-    local stack = require("peekstack.core.stack")
     stack._reset()
 
     local winid1 = vim.api.nvim_get_current_win()
@@ -514,7 +634,6 @@ describe("peekstack.persist.sessions", function()
   end)
 
   it("should save the root stack when stack view is active", function()
-    local stack = require("peekstack.core.stack")
     local stack_view = require("peekstack.ui.stack_view")
 
     stack._reset()
