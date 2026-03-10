@@ -161,6 +161,32 @@
 ---@field help_augroup integer?
 ---@field autoclose_group integer?
 ---@field autoclose_suspended integer
+---@field preview_ts_cache table<string, PeekstackStackViewPreviewTsHighlight[]|false>
+
+---@class PeekstackStackViewHighlight
+---@field col_start integer
+---@field col_end integer
+---@field hl_group string
+
+---@class PeekstackStackViewPreviewLine
+---@field line string
+---@field source_bufnr integer
+---@field source_line integer
+---@field source_col_start integer
+---@field source_col_end integer
+---@field preview_col_start integer
+
+---@class PeekstackStackViewPreviewTsHighlight
+---@field start_offset integer
+---@field end_offset integer
+---@field hl_group string
+
+---@class PeekstackStackViewRenderModel
+---@field lines string[]
+---@field highlights PeekstackStackViewHighlight[][]
+---@field preview_lines table<integer, PeekstackStackViewPreviewLine>
+---@field line_to_id table<integer, integer>
+---@field header_lines integer
 
 -- Config type definitions
 

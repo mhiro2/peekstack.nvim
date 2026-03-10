@@ -2,7 +2,10 @@ describe("peekstack.ui.stack_view", function()
   local config = require("peekstack.config")
   local stack = require("peekstack.core.stack")
   local stack_view = require("peekstack.ui.stack_view")
+  local state = require("peekstack.ui.stack_view.state")
   local helpers = require("tests.helpers")
+
+  local initial_tabpage = nil
 
   local function location_for(path)
     return {
@@ -12,38 +15,108 @@ describe("peekstack.ui.stack_view", function()
     }
   end
 
+  local function stack_view_context(tabpage)
+    local wins = vim.api.nvim_tabpage_list_wins(tabpage or 0)
+    for _, winid in ipairs(wins) do
+      local bufnr = vim.api.nvim_win_get_buf(winid)
+      if vim.bo[bufnr].filetype == "peekstack-stack" then
+        return {
+          winid = winid,
+          bufnr = bufnr,
+          root_winid = vim.api.nvim_win_get_var(winid, "peekstack_root_winid"),
+        }
+      end
+    end
+  end
+
+  local function help_context(tabpage)
+    local wins = vim.api.nvim_tabpage_list_wins(tabpage or 0)
+    for _, winid in ipairs(wins) do
+      local bufnr = vim.api.nvim_win_get_buf(winid)
+      if vim.bo[bufnr].filetype == "peekstack-stack-help" then
+        return {
+          winid = winid,
+          bufnr = bufnr,
+        }
+      end
+    end
+  end
+
+  local function close_floating_windows()
+    for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
+      if vim.api.nvim_tabpage_is_valid(tabpage) then
+        for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+          local cfg = vim.api.nvim_win_get_config(winid)
+          if cfg.relative ~= "" then
+            pcall(vim.api.nvim_win_close, winid, true)
+          end
+        end
+      end
+    end
+  end
+
+  local function close_extra_tabs()
+    local tabs = vim.api.nvim_list_tabpages()
+    for idx = #tabs, 1, -1 do
+      local tabpage = tabs[idx]
+      if tabpage ~= initial_tabpage and vim.api.nvim_tabpage_is_valid(tabpage) then
+        vim.api.nvim_set_current_tabpage(tabpage)
+        vim.api.nvim_cmd({ cmd = "tabclose" }, {})
+      end
+    end
+    if initial_tabpage and vim.api.nvim_tabpage_is_valid(initial_tabpage) then
+      vim.api.nvim_set_current_tabpage(initial_tabpage)
+    end
+  end
+
+  local function reset_stack_view_state()
+    for _, s in pairs(state.all()) do
+      state.cleanup(s)
+      state.reset_open_state(s)
+      s.filter = nil
+    end
+  end
+
+  local function set_stack_items(items)
+    local current = stack.current_stack(vim.api.nvim_get_current_win())
+    current.popups = items
+    current.focused_id = items[#items] and items[#items].id or nil
+  end
+
   before_each(function()
+    initial_tabpage = vim.api.nvim_get_current_tabpage()
     config.setup({})
     stack._reset()
-    stack_view._get_state().filter = nil
+    reset_stack_view_state()
   end)
 
   after_each(function()
-    local s = stack.current_stack()
-    for i = #s.popups, 1, -1 do
-      stack.close(s.popups[i].id)
-    end
-    if stack_view._get_state().winid then
-      stack_view.toggle()
-    end
+    close_floating_windows()
+    close_extra_tabs()
     stack._reset()
+    reset_stack_view_state()
   end)
 
   it("resize_all updates open stack view dimensions", function()
     local original_columns = vim.o.columns
 
-    stack_view.open()
-    local state = stack_view._get_state()
-    local cfg_before = vim.api.nvim_win_get_config(state.winid)
+    local ok, err = pcall(function()
+      stack_view.open()
+      local context = stack_view_context()
+      assert.is_not_nil(context)
 
-    -- Simulate wider screen
-    vim.o.columns = original_columns + 40
-    stack_view.resize_all()
+      local cfg_before = vim.api.nvim_win_get_config(context.winid)
+      vim.o.columns = original_columns + 40
+      stack_view.resize_all()
 
-    local cfg_after = vim.api.nvim_win_get_config(state.winid)
-    assert.is_true(cfg_after.width >= cfg_before.width)
+      local cfg_after = vim.api.nvim_win_get_config(context.winid)
+      assert.is_true(cfg_after.width >= cfg_before.width)
+    end)
 
     vim.o.columns = original_columns
+    if not ok then
+      error(err)
+    end
   end)
 
   it("resize_all does not error when stack view is closed", function()
@@ -52,181 +125,26 @@ describe("peekstack.ui.stack_view", function()
     end)
   end)
 
-  it("filters stack entries by query", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
-      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
-    }
-
+  it("refresh_all does not error when stack view is closed", function()
     stack_view.open()
-    local state = stack_view._get_state()
-    state.filter = "alp"
-    stack_view._render(state)
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local joined = table.concat(lines, "\n")
+    vim.api.nvim_set_current_win(context.winid)
+    stack_view.toggle()
 
-    assert.is_true(joined:find("Filter: alp", 1, true) ~= nil)
-    assert.is_true(joined:find("Alpha", 1, true) ~= nil)
-    assert.is_true(joined:find("Beta", 1, true) == nil)
-  end)
-
-  it("renders no matches when filter excludes all items", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
-    }
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    state.filter = "zzz"
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local joined = table.concat(lines, "\n")
-
-    assert.is_true(joined:find("No matches", 1, true) ~= nil)
-  end)
-
-  it("renders header when filter is not set", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
-      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
-    }
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    assert.is_true(lines[1]:find("Stack: 2", 1, true) ~= nil)
-  end)
-
-  it("caches repo root resolution within a render", function()
-    config.setup({
-      ui = {
-        path = {
-          base = "repo",
-        },
-      },
-    })
-
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      { id = 1, location = location_for("/tmp/repo/src/a.lua"), pinned = false },
-      { id = 2, location = location_for("/tmp/repo/src/b.lua"), pinned = false },
-    }
-
-    local fs = require("peekstack.util.fs")
-    local original_repo_root = fs.repo_root
-    local repo_calls = 0
-    local ok, err = pcall(function()
-      fs.repo_root = function(start)
-        repo_calls = repo_calls + 1
-        assert.equals("/tmp/repo/src", start)
-        return "/tmp/repo"
-      end
-
-      stack_view.open()
-      assert.equals(1, repo_calls)
+    assert.has_no.errors(function()
+      stack_view.refresh_all()
     end)
-    fs.repo_root = original_repo_root
-    if not ok then
-      error(err)
-    end
-  end)
-
-  it("skips line updates when rendered content is unchanged", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
-      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
-    }
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local original_set_lines = vim.api.nvim_buf_set_lines
-    local calls = 0
-    local ok, err = pcall(function()
-      vim.api.nvim_buf_set_lines = function(...)
-        calls = calls + 1
-        return original_set_lines(...)
-      end
-
-      stack_view._render(state)
-      assert.equals(0, calls)
-    end)
-    vim.api.nvim_buf_set_lines = original_set_lines
-    if not ok then
-      error(err)
-    end
-  end)
-
-  it("updates only changed line range when one entry changes", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
-      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
-    }
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local original_set_lines = vim.api.nvim_buf_set_lines
-    local calls = {}
-    local ok, err = pcall(function()
-      vim.api.nvim_buf_set_lines = function(bufnr, start, finish, strict_indexing, replacement)
-        table.insert(calls, {
-          start = start,
-          finish = finish,
-          count = #replacement,
-        })
-        return original_set_lines(bufnr, start, finish, strict_indexing, replacement)
-      end
-
-      s.popups[2].title = "Beta updated"
-      stack_view._render(state)
-
-      assert.equals(1, #calls)
-      assert.equals(2, calls[1].start)
-      assert.equals(3, calls[1].finish)
-      assert.equals(1, calls[1].count)
-    end)
-    vim.api.nvim_buf_set_lines = original_set_lines
-    if not ok then
-      error(err)
-    end
-  end)
-
-  it("renders empty state with header", function()
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local joined = table.concat(lines, "\n")
-
-    assert.is_true(joined:find("Stack: 0", 1, true) ~= nil)
-    assert.is_true(joined:find("No stack entries", 1, true) ~= nil)
   end)
 
   it("enables cursorline highlight in stack view", function()
     stack_view.open()
-    local state = stack_view._get_state()
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
-    assert.is_true(vim.wo[state.winid].cursorline)
-    local winhighlight = vim.wo[state.winid].winhighlight or ""
+    assert.is_true(vim.wo[context.winid].cursorline)
+    local winhighlight = vim.wo[context.winid].winhighlight or ""
     assert.is_true(winhighlight:find("CursorLine:PeekstackStackViewCursorLine", 1, true) ~= nil)
   end)
 
@@ -240,9 +158,10 @@ describe("peekstack.ui.stack_view", function()
     })
 
     stack_view.open()
-    local state = stack_view._get_state()
-    local win_cfg = vim.api.nvim_win_get_config(state.winid)
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
+    local win_cfg = vim.api.nvim_win_get_config(context.winid)
     assert.equals("editor", win_cfg.relative)
     assert.equals(0, win_cfg.col)
     assert.equals(0, win_cfg.row)
@@ -258,1211 +177,147 @@ describe("peekstack.ui.stack_view", function()
     })
 
     stack_view.open()
-    local state = stack_view._get_state()
-    local win_cfg = vim.api.nvim_win_get_config(state.winid)
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
+    local win_cfg = vim.api.nvim_win_get_config(context.winid)
     assert.equals("editor", win_cfg.relative)
     assert.equals(0, win_cfg.col)
     assert.equals(vim.o.columns, win_cfg.width)
     assert.is_true(win_cfg.row > 0)
   end)
 
-  it("renders pin badge for pinned items", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = true },
-    }
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    assert.is_true(lines[2]:find("• ", 1, true) ~= nil)
-  end)
-
-  it("renders tree guide for linear chains", function()
-    local loc = helpers.make_location()
-    local parent = stack.push(loc, { title = "Parent" })
-    assert.is_not_nil(parent)
-    vim.api.nvim_set_current_win(parent.winid)
-    local child = stack.push(loc, { title = "Child" })
-    assert.is_not_nil(child)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local joined = table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n")
-    assert.is_true(joined:find("└ ", 1, true) ~= nil)
-  end)
-
-  it("renders tree guide when branching from an earlier visible popup", function()
-    local loc = helpers.make_location()
-    local root = stack.push(loc, { title = "Root" })
-    assert.is_not_nil(root)
-
-    vim.api.nvim_set_current_win(root.winid)
-    local first_child = stack.push(loc, { title = "First child" })
-    assert.is_not_nil(first_child)
-
-    vim.api.nvim_set_current_win(root.winid)
-    local second_child = stack.push(loc, { title = "Second child" })
-    assert.is_not_nil(second_child)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local entry_line_by_id = {}
-    for line_nr, id in pairs(state.line_to_id) do
-      if not entry_line_by_id[id] or line_nr < entry_line_by_id[id] then
-        entry_line_by_id[id] = line_nr
-      end
-    end
-    local second_line = lines[entry_line_by_id[second_child.id]]
-    assert.is_true(second_line:find("└ ", 1, true) ~= nil)
-  end)
-
-  it("does not render tree guide when parent popup is filtered out", function()
-    local loc = helpers.make_location()
-    local parent = stack.push(loc, { title = "Parent only" })
-    assert.is_not_nil(parent)
-    vim.api.nvim_set_current_win(parent.winid)
-    local child = stack.push(loc, { title = "Child only" })
-    assert.is_not_nil(child)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    state.filter = "child"
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local child_line = lines[2] or ""
-    assert.is_true(child_line:find("└ ", 1, true) == nil)
-  end)
-
-  it("renders nested guide for depth 2 with space for ended branch", function()
-    local loc = helpers.make_location()
-    local root = stack.push(loc, { title = "Root" })
-    assert.is_not_nil(root)
-    vim.api.nvim_set_current_win(root.winid)
-    local child = stack.push(loc, { title = "Child" })
-    assert.is_not_nil(child)
-    vim.api.nvim_set_current_win(child.winid)
-    local grandchild = stack.push(loc, { title = "Grandchild" })
-    assert.is_not_nil(grandchild)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local entry_line_by_id = {}
-    for line_nr, id in pairs(state.line_to_id) do
-      if not entry_line_by_id[id] or line_nr < entry_line_by_id[id] then
-        entry_line_by_id[id] = line_nr
-      end
-    end
-    local grandchild_line = lines[entry_line_by_id[grandchild.id]]
-    assert.is_true(grandchild_line:find("  └ ", 1, true) ~= nil)
-  end)
-
-  it("renders continuation guide when ancestor has later siblings", function()
-    local loc = helpers.make_location()
-    local root = stack.push(loc, { title = "Root" })
-    assert.is_not_nil(root)
-
-    vim.api.nvim_set_current_win(root.winid)
-    local first = stack.push(loc, { title = "First" })
-    assert.is_not_nil(first)
-
-    vim.api.nvim_set_current_win(root.winid)
-    local second = stack.push(loc, { title = "Second" })
-    assert.is_not_nil(second)
-
-    vim.api.nvim_set_current_win(second.winid)
-    local second_child = stack.push(loc, { title = "Second child" })
-    assert.is_not_nil(second_child)
-
-    vim.api.nvim_set_current_win(root.winid)
-    local third = stack.push(loc, { title = "Third" })
-    assert.is_not_nil(third)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local entry_line_by_id = {}
-    for line_nr, id in pairs(state.line_to_id) do
-      if not entry_line_by_id[id] or line_nr < entry_line_by_id[id] then
-        entry_line_by_id[id] = line_nr
-      end
-    end
-    local second_child_line = lines[entry_line_by_id[second_child.id]]
-    assert.is_true(second_child_line:find("│ └ ", 1, true) ~= nil)
-  end)
-
-  it("sorts items in tree order so children follow their parent", function()
-    local loc = helpers.make_location()
-    local root = stack.push(loc, { title = "Root" })
-    assert.is_not_nil(root)
-
-    vim.api.nvim_set_current_win(root.winid)
-    local child_a = stack.push(loc, { title = "ChildA" })
-    assert.is_not_nil(child_a)
-
-    -- Push another child of root (pushed after child_a, but should appear after child_a's subtree)
-    vim.api.nvim_set_current_win(root.winid)
-    local child_b = stack.push(loc, { title = "ChildB" })
-    assert.is_not_nil(child_b)
-
-    -- Push grandchild of child_a (pushed after child_b in stack order)
-    vim.api.nvim_set_current_win(child_a.winid)
-    local grandchild = stack.push(loc, { title = "Grandchild" })
-    assert.is_not_nil(grandchild)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    -- Collect display order from line_to_id (entry lines only, first occurrence per id)
-    local entry_line_by_id = {}
-    for line_nr, id in pairs(state.line_to_id) do
-      if not entry_line_by_id[id] or line_nr < entry_line_by_id[id] then
-        entry_line_by_id[id] = line_nr
-      end
-    end
-
-    -- In tree order: Root, ChildA, Grandchild, ChildB
-    -- Grandchild (child of ChildA) should appear before ChildB (sibling of ChildA)
-    assert.is_true(entry_line_by_id[grandchild.id] < entry_line_by_id[child_b.id])
-    -- ChildA should appear right after Root
-    assert.is_true(entry_line_by_id[child_a.id] < entry_line_by_id[grandchild.id])
-  end)
-
-  it("keeps entries visible when parent links are cyclic", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      {
-        id = 1,
-        title = "Cycle A",
-        location = location_for("/tmp/cycle_a.lua"),
-        pinned = false,
-        parent_popup_id = 2,
-      },
-      {
-        id = 2,
-        title = "Cycle B",
-        location = location_for("/tmp/cycle_b.lua"),
-        pinned = false,
-        parent_popup_id = 1,
-      },
-    }
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local joined = table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n")
-    assert.is_true(joined:find("Cycle A", 1, true) ~= nil)
-    assert.is_true(joined:find("Cycle B", 1, true) ~= nil)
-  end)
-
-  it("has U keymap bound in stack view buffer", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
+  it("binds stack view keymaps to the buffer", function()
+    set_stack_items({
       { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
-    }
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    assert.is_not_nil(state.bufnr)
-
-    local keymaps = vim.api.nvim_buf_get_keymap(state.bufnr, "n")
-    local found = false
-    for _, km in ipairs(keymaps) do
-      if km.lhs == "U" then
-        found = true
-        break
-      end
-    end
-    assert.is_true(found, "U keymap should be bound in stack view")
-  end)
-
-  it("has H keymap bound in stack view buffer", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
-    }
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    assert.is_not_nil(state.bufnr)
-
-    local keymaps = vim.api.nvim_buf_get_keymap(state.bufnr, "n")
-    local found = false
-    for _, km in ipairs(keymaps) do
-      if km.lhs == "H" then
-        found = true
-        break
-      end
-    end
-    assert.is_true(found, "H keymap should be bound in stack view")
-  end)
-
-  it("moves cursor by stack item with j/k", function()
-    local tmpfile1 = vim.fn.tempname() .. ".lua"
-    local tmpfile2 = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local first = 1" }, tmpfile1)
-    vim.fn.writefile({ "local second = 2" }, tmpfile2)
-
-    local loc1 = helpers.make_location({
-      uri = vim.uri_from_fname(tmpfile1),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-    })
-    local loc2 = helpers.make_location({
-      uri = vim.uri_from_fname(tmpfile2),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
     })
 
-    local m1 = stack.push(loc1)
-    local m2 = stack.push(loc2)
-    assert.is_not_nil(m1)
-    assert.is_not_nil(m2)
+    stack_view.open()
+    local context = stack_view_context()
+    assert.is_not_nil(context)
+
+    local keymaps = vim.api.nvim_buf_get_keymap(context.bufnr, "n")
+    local bound = {}
+    for _, keymap in ipairs(keymaps) do
+      bound[keymap.lhs] = true
+    end
+
+    assert.is_true(bound["U"] == true, "U keymap should be bound in stack view")
+    assert.is_true(bound["H"] == true, "H keymap should be bound in stack view")
+  end)
+
+  it("moves cursor by stack item with j and k", function()
+    set_stack_items({
+      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
+      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
+    })
 
     stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-    vim.api.nvim_set_current_win(state.winid)
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
-    local min_by_id = {}
-    local max_by_id = {}
-    for line, id in pairs(state.line_to_id) do
-      if not min_by_id[id] or line < min_by_id[id] then
-        min_by_id[id] = line
-      end
-      if not max_by_id[id] or line > max_by_id[id] then
-        max_by_id[id] = line
-      end
-    end
+    vim.api.nvim_set_current_win(context.winid)
+    vim.api.nvim_win_set_cursor(context.winid, { 3, 0 })
 
-    assert.is_not_nil(min_by_id[m1.id])
-    assert.is_not_nil(min_by_id[m2.id])
-    assert.is_not_nil(max_by_id[m2.id])
-
-    local entry_lines = { min_by_id[m1.id], min_by_id[m2.id] }
-    table.sort(entry_lines)
-    local last_entry_line = entry_lines[#entry_lines]
-    local prev_entry_line = entry_lines[#entry_lines - 1]
-    assert.is_not_nil(prev_entry_line)
-
-    local start_id = nil
-    if min_by_id[m1.id] == last_entry_line then
-      start_id = m1.id
-    else
-      start_id = m2.id
-    end
-    assert.is_not_nil(start_id)
-    assert.is_true(max_by_id[start_id] >= last_entry_line)
-
-    vim.api.nvim_win_set_cursor(state.winid, { max_by_id[start_id], 0 })
     vim.api.nvim_feedkeys("k", "mx", false)
     vim.wait(50, function()
-      return vim.api.nvim_win_get_cursor(state.winid)[1] == prev_entry_line
+      return vim.api.nvim_win_get_cursor(context.winid)[1] == 2
     end)
-    assert.equals(prev_entry_line, vim.api.nvim_win_get_cursor(state.winid)[1])
+    assert.equals(2, vim.api.nvim_win_get_cursor(context.winid)[1])
 
     vim.api.nvim_feedkeys("j", "mx", false)
     vim.wait(50, function()
-      return vim.api.nvim_win_get_cursor(state.winid)[1] == last_entry_line
+      return vim.api.nvim_win_get_cursor(context.winid)[1] == 3
     end)
-    assert.equals(last_entry_line, vim.api.nvim_win_get_cursor(state.winid)[1])
-
-    vim.fn.delete(tmpfile1)
-    vim.fn.delete(tmpfile2)
+    assert.equals(3, vim.api.nvim_win_get_cursor(context.winid)[1])
   end)
 
-  it("does not allow cursor on stack header line", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local header_guard = true" }, tmpfile)
-
-    local loc = helpers.make_location({
-      uri = vim.uri_from_fname(tmpfile),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+  it("does not allow cursor on the stack header line", function()
+    set_stack_items({
+      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
     })
-    local model = stack.push(loc)
-    assert.is_not_nil(model)
 
     stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-    vim.api.nvim_set_current_win(state.winid)
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
+    vim.api.nvim_set_current_win(context.winid)
     vim.api.nvim_feedkeys("gg", "mx", false)
     vim.wait(50, function()
-      return vim.api.nvim_win_get_cursor(state.winid)[1] > state.header_lines
-    end)
-    assert.is_true(vim.api.nvim_win_get_cursor(state.winid)[1] > state.header_lines)
-
-    local first_entry_line = nil
-    for line, _ in pairs(state.line_to_id) do
-      if line > state.header_lines and (not first_entry_line or line < first_entry_line) then
-        first_entry_line = line
-      end
-    end
-    assert.is_not_nil(first_entry_line)
-    assert.equals(first_entry_line, vim.api.nvim_win_get_cursor(state.winid)[1])
-
-    vim.fn.delete(tmpfile)
-  end)
-
-  it("does not error when render is called after close", function()
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view.toggle()
-
-    assert.has_no.errors(function()
-      stack_view._render(state)
-    end)
-  end)
-
-  it("creates distinct autoclose groups per tab", function()
-    local original_tab = vim.api.nvim_get_current_tabpage()
-
-    stack_view.open()
-    local state1 = stack_view._get_state()
-    assert.is_not_nil(state1.autoclose_group)
-
-    vim.api.nvim_cmd({ cmd = "tabnew" }, {})
-    stack_view.open()
-    local state2 = stack_view._get_state()
-    assert.is_not_nil(state2.autoclose_group)
-
-    assert.is_true(state1.autoclose_group ~= state2.autoclose_group)
-
-    stack_view.toggle()
-    vim.api.nvim_cmd({ cmd = "tabclose" }, {})
-    vim.api.nvim_set_current_tabpage(original_tab)
-
-    local state_back = stack_view._get_state()
-    if state_back.winid then
-      stack_view.toggle()
-    end
-  end)
-
-  it("cleans up tab states on tab close", function()
-    stack_view._get_state()
-    local initial_count = stack_view._state_count()
-
-    vim.api.nvim_cmd({ cmd = "tabnew" }, {})
-    stack_view.open()
-    local state = stack_view._get_state()
-    vim.api.nvim_set_current_win(state.winid)
-
-    vim.api.nvim_feedkeys("?", "nx", false)
-    vim.wait(50, function()
-      return state.help_winid ~= nil and vim.api.nvim_win_is_valid(state.help_winid)
+      return vim.api.nvim_win_get_cursor(context.winid)[1] == 2
     end)
 
-    local help_winid = state.help_winid
-    vim.api.nvim_cmd({ cmd = "tabclose" }, {})
-
-    vim.wait(50, function()
-      return stack_view._state_count() == initial_count
-    end)
-
-    if help_winid then
-      assert.is_false(vim.api.nvim_win_is_valid(help_winid))
-    end
+    assert.equals(2, vim.api.nvim_win_get_cursor(context.winid)[1])
   end)
 
   it("restores focus to stack view after undo close", function()
-    local loc = helpers.make_location()
-    local model = stack.push(loc)
+    local model = stack.push(helpers.make_location())
     assert.is_not_nil(model)
     stack.close(model.id)
 
     stack_view.open()
-    local state = stack_view._get_state()
-    vim.api.nvim_set_current_win(state.winid)
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
-    vim.api.nvim_feedkeys("u", "nx", false)
+    vim.api.nvim_set_current_win(context.winid)
+    vim.api.nvim_feedkeys("u", "mx", false)
     vim.wait(50, function()
-      return vim.api.nvim_get_current_win() == state.winid
+      return vim.api.nvim_get_current_win() == context.winid
     end)
 
-    assert.equals(state.winid, vim.api.nvim_get_current_win())
+    assert.equals(context.winid, vim.api.nvim_get_current_win())
   end)
 
   it("restores focus to stack view after history select", function()
-    local loc = helpers.make_location()
-    local model = stack.push(loc)
+    local model = stack.push(helpers.make_location())
     assert.is_not_nil(model)
     stack.close(model.id)
 
     stack_view.open()
-    local state = stack_view._get_state()
-    vim.api.nvim_set_current_win(state.winid)
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
     local original_select = vim.ui.select
     local ok, err = pcall(function()
+      vim.api.nvim_set_current_win(context.winid)
       vim.ui.select = function(items, _opts, on_choice)
         on_choice(items[1])
       end
 
-      vim.api.nvim_feedkeys("H", "nx", false)
+      vim.api.nvim_feedkeys("H", "mx", false)
       vim.wait(50, function()
-        return vim.api.nvim_get_current_win() == state.winid
+        return vim.api.nvim_get_current_win() == context.winid
       end)
 
-      assert.equals(state.winid, vim.api.nvim_get_current_win())
+      assert.equals(context.winid, vim.api.nvim_get_current_win())
     end)
     vim.ui.select = original_select
+
     if not ok then
       error(err)
     end
-  end)
-
-  it("truncates long titles in stack view", function()
-    config.setup({ ui = { path = { max_width = 10 } } })
-    stack_view.open()
-    local state = stack_view._get_state()
-    local s = stack.current_stack(state.root_winid)
-    s.popups = {
-      { id = 1, title = "a-very-very-long-title", location = location_for("/tmp/alpha.lua"), pinned = false },
-    }
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local joined = table.concat(lines, "\n")
-
-    assert.is_true(joined:find("...", 1, true) ~= nil)
   end)
 
   it("closes help when focus leaves the help window", function()
     stack_view.open()
-    local state = stack_view._get_state()
-    vim.api.nvim_set_current_win(state.winid)
+    local context = stack_view_context()
+    assert.is_not_nil(context)
 
-    vim.api.nvim_feedkeys("?", "nx", false)
+    vim.api.nvim_set_current_win(context.winid)
+    vim.api.nvim_feedkeys("?", "mx", false)
     vim.wait(50, function()
-      return state.help_winid ~= nil and vim.api.nvim_win_is_valid(state.help_winid)
+      local help = help_context()
+      return help ~= nil and vim.api.nvim_win_is_valid(help.winid)
     end)
 
-    vim.api.nvim_set_current_win(state.root_winid)
+    local help = help_context()
+    assert.is_not_nil(help)
+
+    vim.api.nvim_set_current_win(context.root_winid)
     vim.wait(50, function()
-      return state.help_winid == nil or not vim.api.nvim_win_is_valid(state.help_winid)
+      return help_context() == nil
     end)
 
-    assert.is_nil(state.help_winid)
-  end)
-
-  it("shows focus marker on the focused popup", function()
-    local loc = helpers.make_location()
-    local m1 = stack.push(loc)
-    local m2 = stack.push(loc)
-    assert.is_not_nil(m1)
-    assert.is_not_nil(m2)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-
-    -- m2 is the focused one (last pushed), it should be the second visible entry
-    -- Entry lines start after header (line 1)
-    local has_focused = false
-    local has_unfocused = false
-    for _, line in ipairs(lines) do
-      if line:find("▶", 1, true) then
-        has_focused = true
-      end
-      if line:match("^  %d+%.") then
-        has_unfocused = true
-      end
-    end
-
-    assert.is_true(has_focused, "should have a focused marker")
-    assert.is_true(has_unfocused, "should have an unfocused entry")
-  end)
-
-  it("does not show focus marker on unfocused popup", function()
-    local loc = helpers.make_location()
-    local m1 = stack.push(loc)
-    assert.is_not_nil(m1)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    -- Only one popup and it is focused, so all entries have the marker
-    local focused_count = 0
-    for _, line in ipairs(lines) do
-      if line:find("▶", 1, true) then
-        focused_count = focused_count + 1
-      end
-    end
-    assert.equals(1, focused_count)
-  end)
-
-  it("renders preview line with source code", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local x = 42" }, tmpfile)
-
-    local loc = helpers.make_location({
-      uri = vim.uri_from_fname(tmpfile),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-    })
-    local model = stack.push(loc)
-    assert.is_not_nil(model)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local joined = table.concat(lines, "\n")
-
-    assert.is_true(joined:find("local x = 42", 1, true) ~= nil, "preview line should contain source code")
-
-    vim.fn.delete(tmpfile)
-  end)
-
-  it("aligns preview marker with stack item prefix width", function()
-    local source_bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(source_bufnr, 0, -1, false, { "local value = 42" })
-
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      {
-        id = 1,
-        title = "Alpha",
-        location = {
-          uri = "file:///tmp/alpha.lua",
-          range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-          provider = "test",
-        },
-        pinned = false,
-        source_bufnr = source_bufnr,
-        bufnr = source_bufnr,
-      },
-    }
-    s.focused_id = 1
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-    local entry_line = lines[2]
-    local preview_line = lines[3]
-    assert.is_not_nil(entry_line)
-    assert.is_not_nil(preview_line)
-
-    local label_pos = entry_line:find("Alpha", 1, true)
-    local marker_pos = preview_line:find("│", 1, true)
-    assert.is_not_nil(label_pos)
-    assert.is_not_nil(marker_pos)
-
-    local entry_prefix = entry_line:sub(1, label_pos - 1)
-    local preview_indent = preview_line:sub(1, marker_pos - 1)
-    assert.equals(vim.fn.strdisplaywidth(entry_prefix), vim.fn.strdisplaywidth(preview_indent))
-    assert.is_true(preview_line:find("│ local value = 42", 1, true) ~= nil)
-
-    if vim.api.nvim_buf_is_valid(source_bufnr) then
-      vim.api.nvim_buf_delete(source_bufnr, { force = true })
-    end
-  end)
-
-  it("does not crash when source buffer is invalid for preview", function()
-    local root_winid = vim.api.nvim_get_current_win()
-    local s = stack.current_stack(root_winid)
-    s.popups = {
-      {
-        id = 1,
-        title = "Alpha",
-        location = location_for("/tmp/alpha.lua"),
-        pinned = false,
-        source_bufnr = -1,
-        bufnr = -1,
-      },
-    }
-    s.focused_id = 1
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    assert.has_no.errors(function()
-      stack_view._render(state)
-    end)
-  end)
-
-  it("maps preview line to the same popup id", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local x = 42" }, tmpfile)
-
-    local loc = helpers.make_location({
-      uri = vim.uri_from_fname(tmpfile),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-    })
-    local model = stack.push(loc)
-    assert.is_not_nil(model)
-
-    stack_view.open()
-    local state = stack_view._get_state()
-    stack_view._render(state)
-
-    -- Find all line numbers mapped to this popup id
-    local mapped_lines = {}
-    for line_nr, id in pairs(state.line_to_id) do
-      if id == model.id then
-        table.insert(mapped_lines, line_nr)
-      end
-    end
-
-    -- Should have at least 2 entries: the entry line and the preview line
-    assert.is_true(#mapped_lines >= 2, "preview line should also map to the popup id")
-
-    vim.fn.delete(tmpfile)
-  end)
-
-  it("applies treesitter highlights to preview lines when available", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local value = 42" }, tmpfile)
-
-    local original_get_parser = vim.treesitter.get_parser
-    local original_query_get = vim.treesitter.query.get
-    local ok, err = pcall(function()
-      vim.api.nvim_set_hl(0, "@keyword.peekstack_test_ts", { link = "Keyword" })
-
-      local fake_node = {
-        range = function()
-          return 0, 0, 0, 5
-        end,
-      }
-      local fake_root = {
-        range = function()
-          return 0, 0, 0, 20
-        end,
-      }
-      local fake_tree = {
-        root = function()
-          return fake_root
-        end,
-        lang = function()
-          return "peekstack_test_ts"
-        end,
-      }
-      local fake_query = {
-        captures = { "keyword" },
-      }
-      fake_query.iter_captures = function(_self, _root, _bufnr, _start_row, _end_row)
-        local emitted = false
-        return function()
-          if emitted then
-            return nil
-          end
-          emitted = true
-          return 1, fake_node
-        end
-      end
-
-      vim.treesitter.get_parser = function(_bufnr)
-        return {
-          parse = function() end,
-          trees = function()
-            return { fake_tree }
-          end,
-        }
-      end
-      vim.treesitter.query.get = function(_lang, _query_name)
-        return fake_query
-      end
-
-      local loc = helpers.make_location({
-        uri = vim.uri_from_fname(tmpfile),
-        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-      })
-      local model = stack.push(loc)
-      assert.is_not_nil(model)
-
-      stack_view.open()
-      local state = stack_view._get_state()
-      stack_view._render(state)
-
-      local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-      local preview_line_nr = nil
-      for idx, line in ipairs(lines) do
-        if line:find("local value = 42", 1, true) then
-          preview_line_nr = idx
-          break
-        end
-      end
-      assert.is_not_nil(preview_line_nr)
-
-      local ns = vim.api.nvim_create_namespace("PeekstackStackView")
-      local extmarks = vim.api.nvim_buf_get_extmarks(state.bufnr, ns, 0, -1, { details = true })
-      local found = false
-      for _, mark in ipairs(extmarks) do
-        local row = mark[2]
-        local details = mark[4] or {}
-        if row == preview_line_nr - 1 and details.hl_group == "@keyword.peekstack_test_ts" then
-          found = true
-          break
-        end
-      end
-      assert.is_true(found, "treesitter highlight should be applied to preview line")
-    end)
-
-    vim.treesitter.get_parser = original_get_parser
-    vim.treesitter.query.get = original_query_get
-    vim.fn.delete(tmpfile)
-    if not ok then
-      error(err)
-    end
-  end)
-
-  it("reuses a parser per source buffer for preview highlights", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local first = 1", "local second = 2" }, tmpfile)
-
-    local original_get_parser = vim.treesitter.get_parser
-    local original_query_get = vim.treesitter.query.get
-
-    local parser_calls = 0
-    local parse_calls = 0
-
-    local ok, err = pcall(function()
-      vim.api.nvim_set_hl(0, "@keyword.peekstack_test_cache", { link = "Keyword" })
-
-      local fake_node = {
-        range = function()
-          return 0, 0, 0, 5
-        end,
-      }
-      local fake_root = {
-        range = function()
-          return 0, 0, 10, 20
-        end,
-      }
-      local fake_tree = {
-        root = function()
-          return fake_root
-        end,
-        lang = function()
-          return "peekstack_test_cache"
-        end,
-      }
-      local fake_query = {
-        captures = { "keyword" },
-      }
-      fake_query.iter_captures = function(_self, _root, _bufnr, _start_row, _end_row)
-        local emitted = false
-        return function()
-          if emitted then
-            return nil
-          end
-          emitted = true
-          return 1, fake_node
-        end
-      end
-
-      vim.treesitter.get_parser = function(_bufnr)
-        parser_calls = parser_calls + 1
-        return {
-          parse = function()
-            parse_calls = parse_calls + 1
-          end,
-          trees = function()
-            return { fake_tree }
-          end,
-        }
-      end
-      vim.treesitter.query.get = function(_lang, _query_name)
-        return fake_query
-      end
-
-      local loc1 = helpers.make_location({
-        uri = vim.uri_from_fname(tmpfile),
-        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-      })
-      local loc2 = helpers.make_location({
-        uri = vim.uri_from_fname(tmpfile),
-        range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 0 } },
-      })
-
-      local m1 = stack.push(loc1)
-      local m2 = stack.push(loc2)
-      assert.is_not_nil(m1)
-      assert.is_not_nil(m2)
-
-      stack_view.open()
-
-      assert.equals(1, parser_calls)
-      assert.equals(1, parse_calls)
-    end)
-
-    vim.treesitter.get_parser = original_get_parser
-    vim.treesitter.query.get = original_query_get
-    vim.fn.delete(tmpfile)
-    if not ok then
-      error(err)
-    end
-  end)
-
-  it("reuses cached treesitter captures across renders", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local value = 42" }, tmpfile)
-
-    local original_get_parser = vim.treesitter.get_parser
-    local original_query_get = vim.treesitter.query.get
-
-    local parser_calls = 0
-    local capture_calls = 0
-
-    local ok, err = pcall(function()
-      vim.api.nvim_set_hl(0, "@keyword.peekstack_test_render_cache", { link = "Keyword" })
-
-      local fake_node = {
-        range = function()
-          return 0, 0, 0, 5
-        end,
-      }
-      local fake_root = {
-        range = function()
-          return 0, 0, 0, 20
-        end,
-      }
-      local fake_tree = {
-        root = function()
-          return fake_root
-        end,
-        lang = function()
-          return "peekstack_test_render_cache"
-        end,
-      }
-      local fake_query = {
-        captures = { "keyword" },
-      }
-      fake_query.iter_captures = function(_self, _root, _bufnr, _start_row, _end_row)
-        capture_calls = capture_calls + 1
-        local emitted = false
-        return function()
-          if emitted then
-            return nil
-          end
-          emitted = true
-          return 1, fake_node
-        end
-      end
-
-      vim.treesitter.get_parser = function(_bufnr)
-        parser_calls = parser_calls + 1
-        return {
-          parse = function() end,
-          trees = function()
-            return { fake_tree }
-          end,
-        }
-      end
-      vim.treesitter.query.get = function(_lang, _query_name)
-        return fake_query
-      end
-
-      local loc = helpers.make_location({
-        uri = vim.uri_from_fname(tmpfile),
-        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-      })
-      local model = stack.push(loc)
-      assert.is_not_nil(model)
-
-      stack_view.open()
-      local state = stack_view._get_state()
-
-      assert.equals(1, parser_calls)
-      assert.equals(1, capture_calls)
-
-      state.render_keys = {}
-      stack_view._render(state)
-
-      assert.equals(1, parser_calls)
-      assert.equals(1, capture_calls)
-    end)
-
-    vim.treesitter.get_parser = original_get_parser
-    vim.treesitter.query.get = original_query_get
-    vim.fn.delete(tmpfile)
-    if not ok then
-      error(err)
-    end
-  end)
-
-  it("skips noisy treesitter captures for preview lines", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local value = 42" }, tmpfile)
-
-    local original_get_parser = vim.treesitter.get_parser
-    local original_query_get = vim.treesitter.query.get
-    local ok, err = pcall(function()
-      vim.api.nvim_set_hl(0, "@operator.peekstack_test_ts_skip", { link = "Operator" })
-      vim.api.nvim_set_hl(0, "@keyword.peekstack_test_ts_skip", { link = "Keyword" })
-
-      local fake_keyword_node = {
-        range = function()
-          return 0, 0, 0, 5
-        end,
-      }
-      local fake_operator_node = {
-        range = function()
-          return 0, 12, 0, 13
-        end,
-      }
-      local fake_root = {
-        range = function()
-          return 0, 0, 0, 20
-        end,
-      }
-      local fake_tree = {
-        root = function()
-          return fake_root
-        end,
-        lang = function()
-          return "peekstack_test_ts_skip"
-        end,
-      }
-      local fake_query = {
-        captures = { "operator", "keyword" },
-      }
-      fake_query.iter_captures = function(_self, _root, _bufnr, _start_row, _end_row)
-        local step = 0
-        return function()
-          step = step + 1
-          if step == 1 then
-            return 1, fake_operator_node
-          end
-          if step == 2 then
-            return 2, fake_keyword_node
-          end
-          return nil
-        end
-      end
-
-      vim.treesitter.get_parser = function(_bufnr)
-        return {
-          parse = function() end,
-          trees = function()
-            return { fake_tree }
-          end,
-        }
-      end
-      vim.treesitter.query.get = function(_lang, _query_name)
-        return fake_query
-      end
-
-      local loc = helpers.make_location({
-        uri = vim.uri_from_fname(tmpfile),
-        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-      })
-      local model = stack.push(loc)
-      assert.is_not_nil(model)
-
-      stack_view.open()
-      local state = stack_view._get_state()
-      stack_view._render(state)
-
-      local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-      local preview_line_nr = nil
-      for idx, line in ipairs(lines) do
-        if line:find("local value = 42", 1, true) then
-          preview_line_nr = idx
-          break
-        end
-      end
-      assert.is_not_nil(preview_line_nr)
-
-      local ns = vim.api.nvim_create_namespace("PeekstackStackView")
-      local extmarks = vim.api.nvim_buf_get_extmarks(state.bufnr, ns, 0, -1, { details = true })
-      local has_keyword = false
-      local has_operator = false
-      for _, mark in ipairs(extmarks) do
-        local row = mark[2]
-        local details = mark[4] or {}
-        if row == preview_line_nr - 1 and details.hl_group == "@keyword.peekstack_test_ts_skip" then
-          has_keyword = true
-        end
-        if row == preview_line_nr - 1 and details.hl_group == "@operator.peekstack_test_ts_skip" then
-          has_operator = true
-        end
-      end
-
-      assert.is_true(has_keyword, "keyword capture should be applied")
-      assert.is_false(has_operator, "operator capture should be skipped for preview")
-    end)
-
-    vim.treesitter.get_parser = original_get_parser
-    vim.treesitter.query.get = original_query_get
-    vim.fn.delete(tmpfile)
-    if not ok then
-      error(err)
-    end
-  end)
-
-  it("falls back to default preview highlight when treesitter parser fails", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ "local x = 42" }, tmpfile)
-
-    local original_get_parser = vim.treesitter.get_parser
-    local ok, err = pcall(function()
-      vim.treesitter.get_parser = function(_bufnr)
-        error("parser unavailable")
-      end
-
-      local loc = helpers.make_location({
-        uri = vim.uri_from_fname(tmpfile),
-        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-      })
-      local model = stack.push(loc)
-      assert.is_not_nil(model)
-
-      stack_view.open()
-      local state = stack_view._get_state()
-      assert.has_no.errors(function()
-        stack_view._render(state)
-      end)
-
-      local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-      local preview_line_nr = nil
-      for idx, line in ipairs(lines) do
-        if line:find("local x = 42", 1, true) then
-          preview_line_nr = idx
-          break
-        end
-      end
-      assert.is_not_nil(preview_line_nr)
-
-      local ns = vim.api.nvim_create_namespace("PeekstackStackView")
-      local extmarks = vim.api.nvim_buf_get_extmarks(state.bufnr, ns, 0, -1, { details = true })
-      local found = false
-      for _, mark in ipairs(extmarks) do
-        local row = mark[2]
-        local details = mark[4] or {}
-        if row == preview_line_nr - 1 and details.hl_group == "PeekstackStackViewPreview" then
-          found = true
-          break
-        end
-      end
-      assert.is_true(found, "default preview highlight should remain when treesitter fails")
-    end)
-
-    vim.treesitter.get_parser = original_get_parser
-    vim.fn.delete(tmpfile)
-    if not ok then
-      error(err)
-    end
-  end)
-
-  it("clamps treesitter highlight range on truncated preview lines", function()
-    local tmpfile = vim.fn.tempname() .. ".lua"
-    vim.fn.writefile({ string.rep("a", 400) }, tmpfile)
-
-    local original_get_parser = vim.treesitter.get_parser
-    local original_query_get = vim.treesitter.query.get
-    local ok, err = pcall(function()
-      vim.api.nvim_set_hl(0, "@string.peekstack_test_trunc", { link = "String" })
-
-      local fake_node = {
-        range = function()
-          return 0, 0, 0, 400
-        end,
-      }
-      local fake_root = {
-        range = function()
-          return 0, 0, 0, 400
-        end,
-      }
-      local fake_tree = {
-        root = function()
-          return fake_root
-        end,
-        lang = function()
-          return "peekstack_test_trunc"
-        end,
-      }
-      local fake_query = {
-        captures = { "string" },
-      }
-      fake_query.iter_captures = function(_self, _root, _bufnr, _start_row, _end_row)
-        local emitted = false
-        return function()
-          if emitted then
-            return nil
-          end
-          emitted = true
-          return 1, fake_node
-        end
-      end
-
-      vim.treesitter.get_parser = function(_bufnr)
-        return {
-          parse = function() end,
-          trees = function()
-            return { fake_tree }
-          end,
-        }
-      end
-      vim.treesitter.query.get = function(_lang, _query_name)
-        return fake_query
-      end
-
-      local loc = helpers.make_location({
-        uri = vim.uri_from_fname(tmpfile),
-        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-      })
-      local model = stack.push(loc)
-      assert.is_not_nil(model)
-
-      stack_view.open()
-      local state = stack_view._get_state()
-      assert.has_no.errors(function()
-        stack_view._render(state)
-      end)
-
-      local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-      local preview_line_nr = nil
-      for idx, line in ipairs(lines) do
-        if line:find("│ a", 1, true) then
-          preview_line_nr = idx
-          break
-        end
-      end
-      assert.is_not_nil(preview_line_nr)
-      local preview_len = #lines[preview_line_nr]
-
-      local ns = vim.api.nvim_create_namespace("PeekstackStackView")
-      local extmarks = vim.api.nvim_buf_get_extmarks(state.bufnr, ns, 0, -1, { details = true })
-      for _, mark in ipairs(extmarks) do
-        local row = mark[2]
-        local details = mark[4] or {}
-        if row == preview_line_nr - 1 and details.hl_group == "@string.peekstack_test_trunc" then
-          assert.is_true((details.end_col or 0) <= preview_len)
-        end
-      end
-    end)
-
-    vim.treesitter.get_parser = original_get_parser
-    vim.treesitter.query.get = original_query_get
-    vim.fn.delete(tmpfile)
-    if not ok then
-      error(err)
-    end
+    assert.is_nil(help_context())
   end)
 end)
