@@ -298,6 +298,32 @@ describe("peekstack.ui.stack_view", function()
     end
   end)
 
+  it("resolves correct root winid from a floating popup window", function()
+    local window = require("peekstack.ui.stack_view.window")
+
+    -- Create two splits
+    local win_a = vim.api.nvim_get_current_win()
+    vim.api.nvim_cmd({ cmd = "vsplit" }, {})
+    local win_b = vim.api.nvim_get_current_win()
+
+    -- Push a popup from win_a
+    vim.api.nvim_set_current_win(win_a)
+    local model = stack.push(helpers.make_location())
+    assert.is_not_nil(model)
+
+    -- Focus the popup (a floating window)
+    vim.api.nvim_set_current_win(model.winid)
+
+    -- find_root_winid should resolve to win_a (the root that owns the popup),
+    -- not to win_b (an unrelated split)
+    local resolved = window.find_root_winid()
+    assert.equals(win_a, resolved)
+
+    -- Cleanup
+    stack.close(model.id)
+    pcall(vim.api.nvim_win_close, win_b, true)
+  end)
+
   it("closes help when focus leaves the help window", function()
     stack_view.open()
     local context = stack_view_context()

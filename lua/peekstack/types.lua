@@ -26,6 +26,10 @@
 ---@field title? string
 ---@field provider? string
 ---@field ts integer
+---@field popup_id? integer
+---@field pinned? boolean
+---@field buffer_mode? "copy"|"source"
+---@field parent_popup_id? integer
 
 ---@class PeekstackSessionMeta
 ---@field created_at integer
@@ -126,6 +130,7 @@
 ---@field display_col? integer
 
 ---@class PeekstackHistoryEntry
+---@field popup_id integer
 ---@field location PeekstackLocation
 ---@field title? string
 ---@field title_chunks? PeekstackTitleChunk[]

@@ -4,6 +4,7 @@ local M = {}
 
 ---@type PeekstackConfigFieldRule[]
 local PERSIST_RULES = {
+  { key = "enabled", validate = shared.field_type("boolean") },
   { key = "max_items", validate = shared.field_number_range({ min = 1 }) },
 }
 
@@ -34,9 +35,11 @@ function M.validate(cfg, defaults)
 
   shared.apply_rules(persist, "persist", defaults.persist, PERSIST_RULES)
 
-  local session = shared.as_table(persist.session)
-  if session then
-    shared.apply_rules(session, "persist.session", defaults.persist.session, PERSIST_SESSION_RULES)
+  if persist.session ~= nil then
+    local session = shared.ensure_table_field(persist, "session", "persist.session", defaults.persist.session)
+    if session then
+      shared.apply_rules(session, "persist.session", defaults.persist.session, PERSIST_SESSION_RULES)
+    end
   end
 
   if persist.auto ~= nil then

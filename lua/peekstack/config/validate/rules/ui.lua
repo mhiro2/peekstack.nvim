@@ -61,6 +61,37 @@ local QUICK_PEEK_RULES = {
 }
 
 ---@type PeekstackConfigFieldRule[]
+local POPUP_AUTO_CLOSE_RULES = {
+  { key = "enabled", validate = shared.field_type("boolean") },
+  { key = "idle_ms", validate = shared.field_number_range({ min = 1 }) },
+  { key = "check_interval_ms", validate = shared.field_number_range({ min = 1 }) },
+  { key = "ignore_pinned", validate = shared.field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local FEEDBACK_RULES = {
+  { key = "highlight_origin_on_close", validate = shared.field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local PROMOTE_RULES = {
+  { key = "close_popup", validate = shared.field_type("boolean") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local TITLE_RULES = {
+  { key = "enabled", validate = shared.field_type("boolean") },
+  { key = "format", validate = shared.field_type("string") },
+}
+
+---@type PeekstackConfigFieldRule[]
+local TITLE_CONTEXT_RULES = {
+  { key = "enabled", validate = shared.field_type("boolean") },
+  { key = "max_depth", validate = shared.field_number_range({ min = 1 }) },
+  { key = "separator", validate = shared.field_type("string") },
+}
+
+---@type PeekstackConfigFieldRule[]
 local TITLE_ICON_RULES = {
   { key = "enabled", validate = shared.field_type("boolean") },
 }
@@ -119,28 +150,45 @@ end
 ---@param ui table
 ---@param defaults PeekstackConfigUI
 local function validate_popup(ui, defaults)
-  local popup = shared.as_table(ui.popup)
+  if ui.popup == nil then
+    return
+  end
+  local popup = shared.ensure_table_field(ui, "popup", "ui.popup", defaults.popup)
   if not popup then
     return
   end
 
   shared.apply_rules(popup, "ui.popup", defaults.popup, POPUP_RULES)
 
-  local source = shared.as_table(popup.source)
-  if source then
-    shared.apply_rules(source, "ui.popup.source", defaults.popup.source, POPUP_SOURCE_RULES)
+  if popup.source ~= nil then
+    local source = shared.ensure_table_field(popup, "source", "ui.popup.source", defaults.popup.source)
+    if source then
+      shared.apply_rules(source, "ui.popup.source", defaults.popup.source, POPUP_SOURCE_RULES)
+    end
   end
 
-  local history = shared.as_table(popup.history)
-  if history then
-    shared.apply_rules(history, "ui.popup.history", defaults.popup.history, POPUP_HISTORY_RULES)
+  if popup.history ~= nil then
+    local history = shared.ensure_table_field(popup, "history", "ui.popup.history", defaults.popup.history)
+    if history then
+      shared.apply_rules(history, "ui.popup.history", defaults.popup.history, POPUP_HISTORY_RULES)
+    end
+  end
+
+  if popup.auto_close ~= nil then
+    local auto_close = shared.ensure_table_field(popup, "auto_close", "ui.popup.auto_close", defaults.popup.auto_close)
+    if auto_close then
+      shared.apply_rules(auto_close, "ui.popup.auto_close", defaults.popup.auto_close, POPUP_AUTO_CLOSE_RULES)
+    end
   end
 end
 
 ---@param ui table
 ---@param defaults PeekstackConfigUI
 local function validate_path(ui, defaults)
-  local path = shared.as_table(ui.path)
+  if ui.path == nil then
+    return
+  end
+  local path = shared.ensure_table_field(ui, "path", "ui.path", defaults.path)
   if path then
     shared.apply_rules(path, "ui.path", defaults.path, UI_PATH_RULES)
   end
@@ -162,24 +210,33 @@ end
 ---@param ui table
 ---@param defaults PeekstackConfigUI
 local function validate_preview(ui, defaults)
-  local inline_preview = shared.as_table(ui.inline_preview)
-  if inline_preview then
-    shared.apply_rules(inline_preview, "ui.inline_preview", defaults.inline_preview, INLINE_PREVIEW_RULES)
+  if ui.inline_preview ~= nil then
+    local inline_preview = shared.ensure_table_field(ui, "inline_preview", "ui.inline_preview", defaults.inline_preview)
+    if inline_preview then
+      shared.apply_rules(inline_preview, "ui.inline_preview", defaults.inline_preview, INLINE_PREVIEW_RULES)
+    end
   end
 
-  local quick_peek = shared.as_table(ui.quick_peek)
-  if quick_peek then
-    shared.apply_rules(quick_peek, "ui.quick_peek", defaults.quick_peek, QUICK_PEEK_RULES)
+  if ui.quick_peek ~= nil then
+    local quick_peek = shared.ensure_table_field(ui, "quick_peek", "ui.quick_peek", defaults.quick_peek)
+    if quick_peek then
+      shared.apply_rules(quick_peek, "ui.quick_peek", defaults.quick_peek, QUICK_PEEK_RULES)
+    end
   end
 end
 
 ---@param ui table
 ---@param defaults PeekstackConfigTitle
 local function validate_title(ui, defaults)
-  local title = shared.as_table(ui.title)
+  if ui.title == nil then
+    return
+  end
+  local title = shared.ensure_table_field(ui, "title", "ui.title", defaults)
   if not title then
     return
   end
+
+  shared.apply_rules(title, "ui.title", defaults, TITLE_RULES)
 
   if title.icons ~= nil and type(title.icons) ~= "table" then
     notify.warn("ui.title.icons must be a table, got " .. type(title.icons) .. ". Falling back to defaults")
@@ -193,6 +250,13 @@ local function validate_title(ui, defaults)
     if icons.map ~= nil and type(icons.map) ~= "table" then
       notify.warn("ui.title.icons.map must be a table, got " .. type(icons.map) .. ". Falling back to defaults")
       icons.map = vim.deepcopy(defaults.icons.map)
+    end
+  end
+
+  if title.context ~= nil then
+    local context = shared.ensure_table_field(title, "context", "ui.title.context", defaults.context)
+    if context then
+      shared.apply_rules(context, "ui.title.context", defaults.context, TITLE_CONTEXT_RULES)
     end
   end
 end
@@ -248,6 +312,20 @@ function M.validate(cfg, defaults)
   validate_preview(ui, defaults.ui)
   validate_title(ui, defaults.ui.title)
   validate_layout(ui, defaults.ui)
+
+  if ui.feedback ~= nil then
+    local feedback = shared.ensure_table_field(ui, "feedback", "ui.feedback", defaults.ui.feedback)
+    if feedback then
+      shared.apply_rules(feedback, "ui.feedback", defaults.ui.feedback, FEEDBACK_RULES)
+    end
+  end
+
+  if ui.promote ~= nil then
+    local promote = shared.ensure_table_field(ui, "promote", "ui.promote", defaults.ui.promote)
+    if promote then
+      shared.apply_rules(promote, "ui.promote", defaults.ui.promote, PROMOTE_RULES)
+    end
+  end
 end
 
 return M

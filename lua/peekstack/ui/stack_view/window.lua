@@ -49,20 +49,7 @@ end
 
 ---@return integer
 function M.find_root_winid()
-  local winid = vim.api.nvim_get_current_win()
-  local cfg = vim.api.nvim_win_get_config(winid)
-  if cfg.relative == "" then
-    return winid
-  end
-
-  for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    local candidate_cfg = vim.api.nvim_win_get_config(candidate)
-    if candidate_cfg.relative == "" then
-      return candidate
-    end
-  end
-
-  return winid
+  return require("peekstack.core.stack").get_root_winid(vim.api.nvim_get_current_win())
 end
 
 ---@return integer
