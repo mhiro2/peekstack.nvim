@@ -75,6 +75,10 @@ local function collect_items(root_winid)
       title = popup.title,
       provider = popup.location.provider,
       ts = os.time(),
+      popup_id = popup.id,
+      pinned = popup.pinned or nil,
+      buffer_mode = popup.buffer_mode ~= "copy" and popup.buffer_mode or nil,
+      parent_popup_id = popup.parent_popup_id,
     }
   end
 
@@ -213,13 +217,35 @@ function M.restore(name, opts)
         return
       end
 
+      ---@type table<integer, integer>
+      local id_remap = {}
       for _, item in ipairs(session.items) do
         local loc = location.normalize({ uri = item.uri, range = item.range }, item.provider or "persist")
         if loc then
-          stack.push(loc, {
+          local parent_id = item.parent_popup_id
+          if parent_id then
+            if id_remap[parent_id] then
+              parent_id = id_remap[parent_id]
+            else
+              -- Parent was not restored (e.g. trimmed by max_items).
+              -- Drop the stale reference to avoid accidental collisions.
+              parent_id = nil
+            end
+          end
+          local model = stack.push(loc, {
             title = item.title,
+            buffer_mode = item.buffer_mode,
+            parent_popup_id = parent_id,
             defer_reflow = true,
           })
+          if model then
+            if item.pinned then
+              model.pinned = true
+            end
+            if item.popup_id then
+              id_remap[item.popup_id] = model.id
+            end
+          end
         end
       end
 

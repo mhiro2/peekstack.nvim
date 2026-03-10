@@ -633,6 +633,238 @@ describe("peekstack.persist.sessions", function()
     vim.notify = original_notify
   end)
 
+  it("should save pinned and buffer_mode in session items", function()
+    local path = make_file("pinned_mode", { "line1", "line2" })
+    local loc = make_location(path, 0)
+    local model = stack.push(loc, { title = "Pinned" })
+    assert.is_not_nil(model)
+    model.pinned = true
+
+    local source_model = stack.push(loc, { title = "Source", buffer_mode = "source" })
+    assert.is_not_nil(source_model)
+
+    persist.save_current("pinned_session", { silent = true, sync = true })
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    local items = data.sessions.pinned_session.items
+    assert.equals(2, #items)
+    assert.is_true(items[1].pinned)
+    assert.equals("source", items[2].buffer_mode)
+  end)
+
+  it("should save parent_popup_id in session items", function()
+    local path = make_file("parent_child", { "line1", "line2" })
+    local parent = stack.push(make_location(path, 0), { title = "Parent" })
+    assert.is_not_nil(parent)
+    vim.api.nvim_set_current_win(parent.winid)
+
+    local child = stack.push(make_location(path, 1), { title = "Child" })
+    assert.is_not_nil(child)
+    assert.equals(parent.id, child.parent_popup_id)
+
+    persist.save_current("parent_child_session", { silent = true, sync = true })
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    local items = data.sessions.parent_child_session.items
+    assert.equals(2, #items)
+    assert.is_not_nil(items[1].popup_id)
+    assert.equals(items[1].popup_id, items[2].parent_popup_id)
+  end)
+
+  it("should restore pinned and buffer_mode from session", function()
+    local original_push = stack.push
+    local original_reflow = stack.reflow
+
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        restore_fields = {
+          items = {
+            {
+              uri = "file:///tmp/a.lua",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+              pinned = true,
+              buffer_mode = "source",
+              popup_id = 10,
+            },
+          },
+          meta = { created_at = os.time(), updated_at = os.time() },
+        },
+      },
+    })
+
+    local pushed_opts = {}
+    local pushed_models = {}
+
+    local ok, err = pcall(function()
+      stack.push = function(_loc, opts)
+        table.insert(pushed_opts, vim.deepcopy(opts or {}))
+        local model = { id = #pushed_opts }
+        table.insert(pushed_models, model)
+        return model
+      end
+      stack.reflow = function() end
+
+      local restored = nil
+      persist.restore("restore_fields", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+
+      assert.is_true(restored)
+      assert.equals(1, #pushed_opts)
+      assert.equals("source", pushed_opts[1].buffer_mode)
+      assert.is_true(pushed_models[1].pinned)
+    end)
+
+    stack.push = original_push
+    stack.reflow = original_reflow
+
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("should remap parent_popup_id when restoring session", function()
+    local original_push = stack.push
+    local original_reflow = stack.reflow
+
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        remap_parent = {
+          items = {
+            {
+              uri = "file:///tmp/parent.lua",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+              popup_id = 100,
+            },
+            {
+              uri = "file:///tmp/child.lua",
+              range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+              popup_id = 101,
+              parent_popup_id = 100,
+            },
+          },
+          meta = { created_at = os.time(), updated_at = os.time() },
+        },
+      },
+    })
+
+    local pushed_opts = {}
+    local next_model_id = 200
+
+    local ok, err = pcall(function()
+      stack.push = function(_loc, opts)
+        table.insert(pushed_opts, vim.deepcopy(opts or {}))
+        local model = { id = next_model_id }
+        next_model_id = next_model_id + 1
+        return model
+      end
+      stack.reflow = function() end
+
+      local restored = nil
+      persist.restore("remap_parent", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+
+      assert.is_true(restored)
+      assert.equals(2, #pushed_opts)
+      -- First item (parent) should have no parent_popup_id
+      assert.is_nil(pushed_opts[1].parent_popup_id)
+      -- Second item (child) should have remapped parent_popup_id (200, not 100)
+      assert.equals(200, pushed_opts[2].parent_popup_id)
+    end)
+
+    stack.push = original_push
+    stack.reflow = original_reflow
+
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("should drop orphaned parent_popup_id when parent is not in session", function()
+    local original_push = stack.push
+    local original_reflow = stack.reflow
+
+    -- Session where the parent (popup_id=50) is NOT present in items
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        orphan_parent = {
+          items = {
+            {
+              uri = "file:///tmp/orphan.lua",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+              popup_id = 51,
+              parent_popup_id = 50,
+            },
+          },
+          meta = { created_at = os.time(), updated_at = os.time() },
+        },
+      },
+    })
+
+    local pushed_opts = {}
+
+    local ok, err = pcall(function()
+      stack.push = function(_loc, opts)
+        table.insert(pushed_opts, vim.deepcopy(opts or {}))
+        return { id = 999 }
+      end
+      stack.reflow = function() end
+
+      local restored = nil
+      persist.restore("orphan_parent", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+
+      assert.is_true(restored)
+      assert.equals(1, #pushed_opts)
+      -- parent_popup_id should be nil (orphaned), not 50
+      assert.is_nil(pushed_opts[1].parent_popup_id)
+    end)
+
+    stack.push = original_push
+    stack.reflow = original_reflow
+
+    if not ok then
+      error(err)
+    end
+  end)
+
   it("should save the root stack when stack view is active", function()
     local stack_view = require("peekstack.ui.stack_view")
 

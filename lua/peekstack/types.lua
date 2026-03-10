@@ -26,6 +26,10 @@
 ---@field title? string
 ---@field provider? string
 ---@field ts integer
+---@field popup_id? integer
+---@field pinned? boolean
+---@field buffer_mode? "copy"|"source"
+---@field parent_popup_id? integer
 
 ---@class PeekstackSessionMeta
 ---@field created_at integer
