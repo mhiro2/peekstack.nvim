@@ -325,7 +325,8 @@ if you do not pass a name. If `persist.session.prompt_if_missing = true`, you'll
 for a name instead of using the default.
 
 > [!WARNING]
-> Persistence target is fixed to the current git repository.
+> Persistence uses repository storage when the current working directory is inside a git repository.
+> Outside a git repository, sessions fall back to cwd-based storage.
 
 ### Auto persist (optional)
 
@@ -337,6 +338,14 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 
 Auto persist only runs inside a git repository and always uses the repository session storage. Make sure
 `persist.enabled = true` as well.
+
+## 🔁 Re-running setup
+
+Calling `require("peekstack").setup()` again replaces config, re-registers providers, commands,
+autocmds, picker backends, and auto-persist hooks.
+
+It does not migrate existing popup windows, stack entries, or history in place. Updated settings apply
+to future actions, and to existing stacks only after those popups are reopened, restored, or recreated.
 
 ## 🪟 Popup buffer modes
 
