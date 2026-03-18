@@ -1,5 +1,25 @@
 describe("peekstack.providers.grep", function()
   local grep = require("peekstack.providers.grep")
+  local original_notify
+  local original_system
+  local original_input
+  local notifications
+
+  before_each(function()
+    original_notify = vim.notify
+    original_system = vim.system
+    original_input = vim.ui.input
+    notifications = {}
+    vim.notify = function(msg, level)
+      table.insert(notifications, { msg = msg, level = level })
+    end
+  end)
+
+  after_each(function()
+    vim.notify = original_notify
+    vim.system = original_system
+    vim.ui.input = original_input
+  end)
 
   it("parses vimgrep output with Unix paths", function()
     local output = "/tmp/sample.lua:3:5:hello"
@@ -22,5 +42,42 @@ describe("peekstack.providers.grep", function()
     assert.equals(33, items[1].range.start.character)
     assert.equals("hit", items[1].text)
     assert.is_true(items[1].uri:find("sample.lua", 1, true) ~= nil)
+  end)
+
+  it("formats ignore-file failures with a targeted hint", function()
+    local message = grep._format_failure_message("error reading .gitignore: invalid UTF-8")
+
+    assert.equals(
+      "rg failed; check .gitignore/.ignore patterns or encoding: error reading .gitignore: invalid UTF-8",
+      message
+    )
+  end)
+
+  it("warns with the ignore hint when rg reports ignore file issues", function()
+    local items = nil
+
+    vim.ui.input = function(_, cb)
+      cb("sample")
+    end
+    vim.system = function(_, _, cb)
+      cb({
+        code = 2,
+        stdout = "",
+        stderr = "error reading .ignore: invalid UTF-8",
+      })
+    end
+
+    grep.search({}, function(result)
+      items = result
+    end)
+
+    vim.wait(100, function()
+      return items ~= nil
+    end)
+
+    assert.equals(0, #items)
+    assert.equals(1, #notifications)
+    assert.equals(vim.log.levels.WARN, notifications[1].level)
+    assert.is_true(notifications[1].msg:find("check .gitignore/.ignore patterns or encoding", 1, true) ~= nil)
   end)
 end)
