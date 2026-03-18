@@ -280,11 +280,13 @@ describe("stack.handle_origin_wipeout", function()
         id = 1,
         origin = { bufnr = 10 },
         origin_is_popup = true,
+        location = helpers.make_location(),
       },
       {
         id = 2,
         origin = { bufnr = 10 },
         origin_is_popup = false,
+        location = helpers.make_location(),
       },
     }
 
@@ -292,6 +294,67 @@ describe("stack.handle_origin_wipeout", function()
 
     assert.equals(1, #s.popups)
     assert.equals(1, s.popups[1].id)
+  end)
+
+  it("pushes history and emits events when the origin buffer is wiped", function()
+    local received = {}
+    local group = vim.api.nvim_create_augroup("PeekstackOriginWipeoutEvents", { clear = true })
+    vim.api.nvim_create_autocmd("User", {
+      group = group,
+      pattern = { "PeekstackClose", "PeekstackHistoryPush" },
+      callback = function(args)
+        table.insert(received, args.match)
+      end,
+    })
+
+    local model = stack.push(helpers.make_location())
+    assert.is_not_nil(model)
+
+    stack.handle_origin_wipeout(model.origin.bufnr)
+
+    local history = stack.history_list()
+    assert.equals(1, #history)
+    assert.equals(model.id, history[1].popup_id)
+    assert.is_nil(stack.find_by_id(model.id))
+    assert.same({ "PeekstackClose", "PeekstackHistoryPush" }, received)
+
+    pcall(vim.api.nvim_del_augroup_by_id, group)
+  end)
+end)
+
+describe("stack.handle_buf_wipeout", function()
+  before_each(function()
+    stack._reset()
+    config.setup({})
+  end)
+
+  after_each(function()
+    stack._reset()
+  end)
+
+  it("pushes history and emits events when the popup buffer is wiped", function()
+    local received = {}
+    local group = vim.api.nvim_create_augroup("PeekstackBufWipeoutEvents", { clear = true })
+    vim.api.nvim_create_autocmd("User", {
+      group = group,
+      pattern = { "PeekstackClose", "PeekstackHistoryPush" },
+      callback = function(args)
+        table.insert(received, args.match)
+      end,
+    })
+
+    local model = stack.push(helpers.make_location())
+    assert.is_not_nil(model)
+
+    stack.handle_buf_wipeout(model.bufnr)
+
+    local history = stack.history_list()
+    assert.equals(1, #history)
+    assert.equals(model.id, history[1].popup_id)
+    assert.is_nil(stack.find_by_id(model.id))
+    assert.same({ "PeekstackClose", "PeekstackHistoryPush" }, received)
+
+    pcall(vim.api.nvim_del_augroup_by_id, group)
   end)
 end)
 

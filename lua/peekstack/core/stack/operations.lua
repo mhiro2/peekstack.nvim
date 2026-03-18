@@ -432,27 +432,43 @@ function M.close_stale(now_ms, opts)
   end
 end
 
-function M.close_ephemerals()
+---@param winid? integer
+function M.close_ephemerals(winid)
   deps()
+  local target_root_winid = nil
+  if winid ~= nil or vim.api.nvim_get_current_win() ~= nil then
+    target_root_winid = state.get_root_winid(winid)
+  end
+
   for _, stack in pairs(state.stacks) do
-    local removed = false
-    for idx = #stack.popups, 1, -1 do
-      local item = stack.popups[idx]
-      if item.ephemeral then
-        popup.close(item)
-        state.unindex_popup(item)
-        table.remove(stack.popups, idx)
-        removed = true
+    if target_root_winid == nil or stack.root_winid == target_root_winid then
+      local removed = false
+      for idx = #stack.popups, 1, -1 do
+        local item = stack.popups[idx]
+        if item.ephemeral then
+          popup.close(item)
+          state.unindex_popup(item)
+          table.remove(stack.popups, idx)
+          removed = true
+        end
       end
-    end
-    if removed then
-      layout.reflow(stack)
+      if removed then
+        layout.reflow(stack)
+      end
     end
   end
 
   for id, item in pairs(state.ephemerals) do
-    popup.close(item)
-    state.unregister_ephemeral(id)
+    local entry = state.lookup_by_id(item.id)
+    local root_winid = entry and entry.root_winid or nil
+    if target_root_winid == nil or root_winid == target_root_winid then
+      popup.close(item)
+      state.unregister_ephemeral(id)
+      user_events.emit(
+        "PeekstackClose",
+        user_events.build_popup_data(item, item.origin and item.origin.winid or 0, { ephemeral = true })
+      )
+    end
   end
 end
 
