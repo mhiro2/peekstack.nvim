@@ -92,4 +92,58 @@ describe("peekstack.providers.file", function()
     vim.api.nvim_buf_delete(bufnr, { force = true })
     vim.fn.delete(tmpdir, "rf")
   end)
+
+  it("resolves path suffix with line and column", function()
+    local tmpdir = vim.fn.tempname()
+    vim.fn.mkdir(tmpdir, "p")
+    local target = tmpdir .. "/target.lua"
+    vim.fn.writefile({ "first", "second", "third", "fourth" }, target)
+    local source = tmpdir .. "/source.lua"
+    vim.fn.writefile({ "target.lua:3:4" }, source)
+
+    local bufnr = vim.fn.bufadd(source)
+    vim.fn.bufload(bufnr)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+    local result = nil
+    file_provider.under_cursor(make_ctx({ bufnr = bufnr }), function(locations)
+      result = locations
+    end)
+
+    assert.is_table(result)
+    assert.equals(1, #result)
+    assert.equals(2, result[1].range.start.line)
+    assert.equals(3, result[1].range.start.character)
+
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+    vim.fn.delete(tmpdir, "rf")
+  end)
+
+  it("defaults column to 1 when only a line number is present", function()
+    local tmpdir = vim.fn.tempname()
+    vim.fn.mkdir(tmpdir, "p")
+    local target = tmpdir .. "/target.lua"
+    vim.fn.writefile({ "first", "second", "third" }, target)
+    local source = tmpdir .. "/source.lua"
+    vim.fn.writefile({ "target.lua:2" }, source)
+
+    local bufnr = vim.fn.bufadd(source)
+    vim.fn.bufload(bufnr)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+    local result = nil
+    file_provider.under_cursor(make_ctx({ bufnr = bufnr }), function(locations)
+      result = locations
+    end)
+
+    assert.is_table(result)
+    assert.equals(1, #result)
+    assert.equals(1, result[1].range.start.line)
+    assert.equals(0, result[1].range.start.character)
+
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+    vim.fn.delete(tmpdir, "rf")
+  end)
 end)
