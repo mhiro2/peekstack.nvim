@@ -3,12 +3,14 @@ describe("peekstack.providers.grep", function()
   local original_notify
   local original_system
   local original_input
+  local original_executable
   local notifications
 
   before_each(function()
     original_notify = vim.notify
     original_system = vim.system
     original_input = vim.ui.input
+    original_executable = vim.fn.executable
     notifications = {}
     vim.notify = function(msg, level)
       table.insert(notifications, { msg = msg, level = level })
@@ -19,6 +21,7 @@ describe("peekstack.providers.grep", function()
     vim.notify = original_notify
     vim.system = original_system
     vim.ui.input = original_input
+    vim.fn.executable = original_executable
   end)
 
   it("parses vimgrep output with Unix paths", function()
@@ -58,6 +61,9 @@ describe("peekstack.providers.grep", function()
 
     vim.ui.input = function(_, cb)
       cb("sample")
+    end
+    vim.fn.executable = function(_)
+      return 1
     end
     vim.system = function(_, _, cb)
       cb({
