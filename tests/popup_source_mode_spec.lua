@@ -313,6 +313,36 @@ describe("popup source mode", function()
     vim.fn.delete(temp)
   end)
 
+  it("keeps the remaining source popup focused when the active one closes", function()
+    local temp = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "print('peekstack')" }, temp)
+    vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+    local source_bufnr = vim.api.nvim_get_current_buf()
+    local close_key = config.get().ui.keys.close
+    local loc = {
+      uri = vim.uri_from_fname(temp),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+      provider = "test",
+    }
+
+    local first = stack.push(loc, { buffer_mode = "source" })
+    local second = stack.push(loc, { buffer_mode = "source" })
+    assert.is_not_nil(first)
+    assert.is_not_nil(second)
+    assert.equals(second.winid, vim.api.nvim_get_current_win())
+    assert.equals("Peekstack close", get_buffer_map(source_bufnr, close_key).desc)
+
+    stack.close(second.id)
+
+    assert.is_false(vim.api.nvim_win_is_valid(second.winid))
+    assert.is_true(vim.api.nvim_win_is_valid(first.winid))
+    assert.equals(first.winid, vim.api.nvim_get_current_win())
+    assert.equals("Peekstack close", get_buffer_map(source_bufnr, close_key).desc)
+
+    stack.close(first.id)
+    vim.fn.delete(temp)
+  end)
+
   it("deletes copy-mode scratch buffer when render.open fails", function()
     local render = require("peekstack.ui.render")
     local loc = make_location()
