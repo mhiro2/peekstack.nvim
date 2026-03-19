@@ -1,9 +1,11 @@
 local location = require("peekstack.core.location")
 local notify = require("peekstack.util.notify")
+local timer = require("peekstack.util.timer")
 
 local M = {}
 
 ---@alias PeekstackLspResultMapper fun(result: any, provider: string, ctx: PeekstackProviderContext): PeekstackLocation[]
+local REQUEST_TIMEOUT_MS = 1500
 
 ---@param symbol table
 ---@param uri string
@@ -103,6 +105,29 @@ local function request(ctx, method, provider, params_modifier, result_mapper, cb
   local all_locations = {}
   local remaining = #clients
   local mapper = result_mapper or default_result_mapper
+  local finished = false
+  local timeout_ms = M._request_timeout_ms or REQUEST_TIMEOUT_MS
+  local timeout_handle = vim.uv.new_timer()
+
+  local function finish(timed_out)
+    if finished then
+      return
+    end
+    finished = true
+    timer.close(timeout_handle)
+    if timed_out then
+      notify.warn("LSP request timed out; opening partial results")
+    end
+    cb(all_locations)
+  end
+
+  if timeout_handle then
+    timeout_handle:start(timeout_ms, 0, function()
+      vim.schedule(function()
+        finish(true)
+      end)
+    end)
+  end
 
   for _, client in ipairs(clients) do
     local params = {
@@ -116,6 +141,9 @@ local function request(ctx, method, provider, params_modifier, result_mapper, cb
       params_modifier(params)
     end
     client:request(method, params, function(err, result)
+      if finished then
+        return
+      end
       if not err and result then
         local ok, locs = pcall(mapper, result, provider, ctx)
         if ok and type(locs) == "table" then
@@ -124,7 +152,7 @@ local function request(ctx, method, provider, params_modifier, result_mapper, cb
       end
       remaining = remaining - 1
       if remaining == 0 then
-        cb(all_locations)
+        finish(false)
       end
     end, bufnr)
   end
@@ -151,5 +179,6 @@ end)
 M.symbols_document = create_provider("textDocument/documentSymbol", "lsp.symbols_document", function(params)
   params.position = nil
 end, document_symbol_result_mapper)
+M._request_timeout_ms = REQUEST_TIMEOUT_MS
 
 return M
