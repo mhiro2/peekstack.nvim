@@ -47,6 +47,24 @@ describe("peekstack.providers.grep", function()
     assert.is_true(items[1].uri:find("sample.lua", 1, true) ~= nil)
   end)
 
+  it("prefers the actual file path when text also contains colon-separated numbers", function()
+    local tmpdir = vim.fn.tempname()
+    vim.fn.mkdir(tmpdir, "p")
+    local target = tmpdir .. "/sample:12:34.lua"
+    vim.fn.writefile({ "first", "second", "third" }, target)
+
+    local output = target .. ":2:6:match:9:8:payload"
+    local items = grep._parse_output(output)
+
+    assert.equals(1, #items)
+    assert.equals("grep.search", items[1].provider)
+    assert.equals(1, items[1].range.start.line)
+    assert.equals(5, items[1].range.start.character)
+    assert.equals("match:9:8:payload", items[1].text)
+
+    vim.fn.delete(tmpdir, "rf")
+  end)
+
   it("formats ignore-file failures with a targeted hint", function()
     local message = grep._format_failure_message("error reading .gitignore: invalid UTF-8")
 

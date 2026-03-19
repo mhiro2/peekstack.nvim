@@ -37,11 +37,38 @@ end
 ---@param line string
 ---@return string?, integer?, integer?, string?
 local function parse_rg_line(line)
-  local path, lnum, col, text = line:match("^(.*):(%d+):(%d+):(.*)$")
-  if not path then
+  local candidates = {}
+  local search_from = 1
+
+  while true do
+    local start_idx, end_idx, lnum, col = line:find(":(%d+):(%d+):", search_from)
+    if not start_idx then
+      break
+    end
+    table.insert(candidates, {
+      path = line:sub(1, start_idx - 1),
+      lnum = tonumber(lnum),
+      col = tonumber(col),
+      text = line:sub(end_idx + 1),
+    })
+    search_from = end_idx + 1
+  end
+
+  if #candidates == 0 then
     return nil, nil, nil, nil
   end
-  return path, tonumber(lnum), tonumber(col), text
+
+  for i = #candidates, 1, -1 do
+    local candidate = candidates[i]
+    local resolved = vim.fn.fnamemodify(vim.fn.expand(candidate.path), ":p")
+    local stat = vim.uv.fs_stat(resolved)
+    if stat and stat.type == "file" then
+      return candidate.path, candidate.lnum, candidate.col, candidate.text
+    end
+  end
+
+  local candidate = candidates[1]
+  return candidate.path, candidate.lnum, candidate.col, candidate.text
 end
 
 ---@param output string
