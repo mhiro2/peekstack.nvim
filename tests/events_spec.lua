@@ -133,4 +133,41 @@ describe("peekstack.core.events", function()
     assert.equals(1, #buf_leave)
     assert.equals(2, #win_leave)
   end)
+
+  it("closes quick peek popups only for the current root window", function()
+    local location = {
+      uri = vim.uri_from_bufnr(0),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+      provider = "test",
+    }
+
+    config.setup({
+      ui = {
+        quick_peek = { close_events = { "CursorMoved" } },
+        popup = { auto_close = { enabled = false } },
+      },
+    })
+    events.setup()
+
+    local left_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_cmd({ cmd = "vsplit" }, {})
+    local right_win = vim.api.nvim_get_current_win()
+
+    vim.api.nvim_set_current_win(left_win)
+    local left_popup = stack.push(location, { stack = false })
+    assert.is_not_nil(left_popup)
+
+    vim.api.nvim_set_current_win(right_win)
+    local right_popup = stack.push(location, { stack = false })
+    assert.is_not_nil(right_popup)
+
+    vim.api.nvim_set_current_win(left_win)
+    vim.api.nvim_exec_autocmds("CursorMoved", { modeline = false })
+
+    assert.is_nil(stack._ephemerals()[left_popup.id])
+    assert.is_not_nil(stack._ephemerals()[right_popup.id])
+
+    stack.close(right_popup.id)
+    vim.api.nvim_cmd({ cmd = "only" }, {})
+  end)
 end)

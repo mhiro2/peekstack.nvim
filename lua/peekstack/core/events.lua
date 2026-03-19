@@ -55,9 +55,9 @@ local function ensure_popup_cursor_tracking(group, bufnr)
   })
 end
 
----Close all ephemeral popups across all stacks and reflow
+---Close ephemeral popups that belong to the current root window.
 local function close_ephemeral_popups()
-  stack.close_ephemerals()
+  stack.close_ephemerals(vim.api.nvim_get_current_win())
 end
 
 ---Check if a window is a floating popup

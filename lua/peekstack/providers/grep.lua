@@ -4,6 +4,36 @@ local notify = require("peekstack.util.notify")
 
 local M = {}
 
+---@param text string?
+---@return string
+local function compact_message(text)
+  local message = (text or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if message == "" then
+    return "unknown error"
+  end
+  return message
+end
+
+---@param stderr string?
+---@return boolean
+local function is_ignore_file_error(stderr)
+  local message = compact_message(stderr):lower()
+  return message:find(".gitignore", 1, true) ~= nil
+    or message:find(".ignore", 1, true) ~= nil
+    or message:find(".rgignore", 1, true) ~= nil
+    or (message:find("ignore", 1, true) ~= nil and message:find("glob", 1, true) ~= nil)
+end
+
+---@param stderr string?
+---@return string
+local function format_failure_message(stderr)
+  local message = compact_message(stderr)
+  if is_ignore_file_error(stderr) then
+    return "rg failed; check .gitignore/.ignore patterns or encoding: " .. message
+  end
+  return "rg failed: " .. message
+end
+
 ---@param line string
 ---@return string?, integer?, integer?, string?
 local function parse_rg_line(line)
@@ -56,7 +86,7 @@ function M.search(_, cb)
     vim.system({ "rg", "--vimgrep", "--max-count=1000", "--", query }, { text = true }, function(result)
       vim.schedule(function()
         if result.code ~= 0 and result.code ~= 1 then
-          notify.warn("rg failed: " .. (result.stderr or "unknown error"))
+          notify.warn(format_failure_message(result.stderr))
           cb({})
           return
         end
@@ -68,5 +98,6 @@ end
 
 ---Expose parser for tests.
 M._parse_output = parse_rg_output
+M._format_failure_message = format_failure_message
 
 return M

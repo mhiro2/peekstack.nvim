@@ -1,4 +1,5 @@
 local ext = require("peekstack.extensions")
+local notify = require("peekstack.util.notify")
 
 ---@param entry table
 ---@param opts? table
@@ -21,7 +22,7 @@ local function open_builtin(builtin_name, provider, opts)
   local builtin = require("telescope.builtin")
   local fn = builtin[builtin_name]
   if not fn then
-    vim.notify("telescope.builtin." .. builtin_name .. " not found", vim.log.levels.WARN)
+    notify.warn("telescope.builtin." .. builtin_name .. " not found")
     return
   end
 
