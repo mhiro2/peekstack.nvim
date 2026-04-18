@@ -9,7 +9,7 @@ peekstack.nvim provides a peek stack UI for LSP, diagnostics, files, marks,
 and grep results. Pop open floating windows that stack visually, navigate
 between them, promote to splits, and optionally persist sessions.
 
-Requires Neovim >= 0.10.
+Requires Neovim >= 0.12.
 
 ==============================================================================
 SETUP                                                      *peekstack-setup*
@@ -580,7 +580,7 @@ Other highlights:
 HEALTH                                                   *peekstack-health*
 
 Run `:checkhealth peekstack` to verify requirements:
-- Neovim >= 0.10
+- Neovim >= 0.12
 - `rg` executable (optional, for grep.search)
 - Configured picker backend availability (telescope / fzf-lua / snacks)
 - Persist setup and git repository detection

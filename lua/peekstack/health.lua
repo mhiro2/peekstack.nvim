@@ -10,10 +10,10 @@ local PICKER_MODULES = {
 function M.check()
   vim.health.start("peekstack")
 
-  if vim.fn.has("nvim-0.10") == 1 then
-    vim.health.ok("nvim >= 0.10")
+  if vim.fn.has("nvim-0.12") == 1 then
+    vim.health.ok("nvim >= 0.12")
   else
-    vim.health.error("nvim >= 0.10 is required (vim.lsp.get_clients, vim.islist, vim.system)")
+    vim.health.error("nvim >= 0.12 is required")
   end
 
   if vim.fn.executable("rg") == 1 then
@@ -62,8 +62,8 @@ function M.check()
   -- Tree-sitter context
   local title = cfg.ui and cfg.ui.title
   if title and title.context and title.context.enabled then
-    local ts_ok = pcall(vim.treesitter.get_parser, 0)
-    if ts_ok then
+    local parser = vim.treesitter.get_parser(0)
+    if parser then
       vim.health.ok("tree-sitter context enabled (parser available for current buffer)")
     else
       vim.health.info("tree-sitter context enabled but no parser for the current buffer filetype")

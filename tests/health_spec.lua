@@ -9,6 +9,7 @@ describe("peekstack.health", function()
   local original_health_info
   local original_executable
   local original_has
+  local original_get_parser
 
   ---@type string[]
   local messages
@@ -22,6 +23,7 @@ describe("peekstack.health", function()
     original_health_info = vim.health.info
     original_executable = vim.fn.executable
     original_has = vim.fn.has
+    original_get_parser = vim.treesitter.get_parser
 
     vim.health.start = function() end
     vim.health.ok = function(msg)
@@ -46,6 +48,7 @@ describe("peekstack.health", function()
     vim.health.info = original_health_info
     vim.fn.executable = original_executable
     vim.fn.has = original_has
+    vim.treesitter.get_parser = original_get_parser
     config.setup({})
   end)
 
@@ -60,7 +63,7 @@ describe("peekstack.health", function()
 
     health.check()
 
-    assert.is_true(vim.list_contains(messages, "ok:nvim >= 0.10"))
+    assert.is_true(vim.list_contains(messages, "ok:nvim >= 0.12"))
     assert.is_true(vim.list_contains(messages, "ok:rg available"))
   end)
 
@@ -122,5 +125,32 @@ describe("peekstack.health", function()
       end
     end
     assert.is_true(found_persist)
+  end)
+
+  it("reports tree-sitter info when context is enabled without a parser", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    vim.treesitter.get_parser = function()
+      return nil
+    end
+    config.setup({
+      ui = {
+        title = {
+          context = {
+            enabled = true,
+          },
+        },
+      },
+    })
+
+    health.check()
+
+    assert.is_true(
+      vim.list_contains(messages, "info:tree-sitter context enabled but no parser for the current buffer filetype")
+    )
   end)
 end)

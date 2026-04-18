@@ -29,9 +29,13 @@ function M.context_at(bufnr, line, col, opts)
     return nil
   end
 
-  -- Check if parser is available
-  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
-  if not ok or not parser then
+  if bufnr ~= 0 and not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil
+  end
+
+  -- Nvim 0.12+ returns nil when a parser cannot be created.
+  local parser = vim.treesitter.get_parser(bufnr)
+  if not parser then
     return nil
   end
 

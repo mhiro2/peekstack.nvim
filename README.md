@@ -40,7 +40,7 @@ peekstack.nvim focuses on preserving the _trail_ of your exploration.
 
 ## 📦 Requirements
 
-- Neovim ≥ 0.10
+- Neovim ≥ 0.12
 - `rg` (only if you use `grep.search`)
 - Optional: `telescope.nvim` / `fzf-lua` / `snacks.nvim` (if you switch picker backends)
 - Optional: Tree-sitter parsers (for `ui.title.context` and stack view preview syntax highlighting; Neovim bundles the runtime, but parsers are separate)
