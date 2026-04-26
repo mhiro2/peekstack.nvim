@@ -149,17 +149,18 @@ describe("peekstack.providers.lsp", function()
     assert.equals("lsp.symbols_document", received[1].provider)
   end)
 
-  it("warns when no lsp clients are attached", function()
+  it("warns and invokes callback with empty list when no lsp clients are attached", function()
     vim.lsp.get_clients = function(_opts)
       return {}
     end
 
-    local called = false
-    lsp_provider.symbols_document(make_ctx(), function(_locations)
-      called = true
+    local received
+    lsp_provider.symbols_document(make_ctx(), function(locations)
+      received = locations
     end)
 
-    assert.is_false(called)
+    assert.is_table(received)
+    assert.equals(0, #received)
     local found = false
     for _, item in ipairs(notifications) do
       if tostring(item.msg):find("No LSP clients attached", 1, true) then
@@ -168,6 +169,20 @@ describe("peekstack.providers.lsp", function()
       end
     end
     assert.is_true(found)
+  end)
+
+  it("invokes callback with empty list when get_clients returns nil", function()
+    vim.lsp.get_clients = function(_opts)
+      return nil
+    end
+
+    local received
+    lsp_provider.definition(make_ctx(), function(locations)
+      received = locations
+    end)
+
+    assert.is_table(received)
+    assert.equals(0, #received)
   end)
 
   it("opens partial results when one client never responds", function()

@@ -99,6 +99,7 @@ local function request(ctx, method, provider, params_modifier, result_mapper, cb
   local clients = vim.lsp.get_clients({ bufnr = bufnr, method = method })
   if not clients or vim.tbl_isempty(clients) then
     notify.warn("No LSP clients attached")
+    cb({})
     return
   end
 
