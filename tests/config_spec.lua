@@ -62,6 +62,26 @@ describe("config", function()
       config.setup({})
       assert.equals("builtin", config.get().picker.backend)
     end)
+
+    it("falls back to defaults when opts is not a table", function()
+      local function has_message(pattern)
+        for _, item in ipairs(notifications) do
+          if tostring(item.msg):find(pattern, 1, true) then
+            return true
+          end
+        end
+        return false
+      end
+
+      for _, value in ipairs({ true, false, "string", 42 }) do
+        notifications = {}
+        local ok, cfg = pcall(config.setup, value)
+        assert.is_true(ok, "setup(" .. type(value) .. ") should not error")
+        assert.is_true(has_message("setup(opts) expects a table"))
+        assert.equals("builtin", cfg.picker.backend)
+        assert.equals(false, cfg.persist.enabled)
+      end
+    end)
   end)
 
   describe("defaults", function()
