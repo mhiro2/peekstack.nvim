@@ -3,6 +3,7 @@ local origin = require("peekstack.core.popup.origin")
 local window = require("peekstack.core.popup.window")
 local diagnostics_ui = require("peekstack.ui.diagnostics")
 local keymaps = require("peekstack.ui.keymaps")
+local viewport_ui = require("peekstack.ui.viewport")
 
 local M = {}
 
@@ -55,6 +56,7 @@ function M.create(location, opts)
     pinned = false,
     buffer_mode = prepared.buffer_mode,
     line_offset = prepared.line_offset,
+    viewport = prepared.viewport,
     created_at = os.time(),
     last_active_at = vim.uv.now(),
     ephemeral = opts.ephemeral or false,
@@ -67,6 +69,7 @@ function M.create(location, opts)
   vim.w[opened.winid].peekstack_popup_id = id
 
   popup.diagnostics = diagnostics_ui.decorate(popup)
+  popup.viewport_marks = viewport_ui.decorate(popup)
 
   return popup
 end
@@ -87,6 +90,7 @@ function M.close(popup)
   -- leak into normal editing of the shared buffer.
   require("peekstack.ui.keymaps").remove_popup(popup)
   diagnostics_ui.clear(popup.diagnostics)
+  viewport_ui.clear(popup.viewport_marks)
   if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
     vim.api.nvim_win_close(popup.winid, true)
   end

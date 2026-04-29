@@ -15,6 +15,7 @@ local HIGHLIGHT_LINKS = {
   PeekstackStackViewEmpty = "Comment",
   PeekstackStackViewCursorLine = "CursorLine",
   PeekstackInlinePreview = "Comment",
+  PeekstackViewportTruncated = "NonText",
   PeekstackTitleProvider = "Type",
   PeekstackTitlePath = "Directory",
   PeekstackTitleIcon = "Special",
