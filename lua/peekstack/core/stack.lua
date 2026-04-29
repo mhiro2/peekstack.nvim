@@ -1,42 +1,54 @@
 local state = require("peekstack.core.stack.state")
-local operations = require("peekstack.core.stack.operations")
 local events = require("peekstack.core.stack.events")
+local push_ops = require("peekstack.core.stack.operations.push")
+local close_ops = require("peekstack.core.stack.operations.close")
+local focus_ops = require("peekstack.core.stack.operations.focus")
+local history_ops = require("peekstack.core.stack.operations.history")
+local visibility_ops = require("peekstack.core.stack.operations.visibility")
+local cleanup_ops = require("peekstack.core.stack.operations.cleanup")
+local query_ops = require("peekstack.core.stack.operations.query")
 
 local M = {}
 
 M._register_stack_view_win = state.register_stack_view_win
 M.current_stack = state.ensure_stack
 
-M.push = operations.push
-M.reflow = operations.reflow
-M.list = operations.list
-M.current = operations.current
-M.close_by_id = operations.close_by_id
-M.close = operations.close
-M.restore_last = operations.restore_last
-M.restore_all = operations.restore_all
-M.restore_from_history = operations.restore_from_history
-M.history_list = operations.history_list
-M.clear_history = operations.clear_history
-M.close_current = operations.close_current
-M.find_by_winid = operations.find_by_winid
-M.find_by_id = operations.find_by_id
-M.focus_by_id = operations.focus_by_id
-M.reopen_by_id = operations.reopen_by_id
-M.focus_next = operations.focus_next
-M.focus_prev = operations.focus_prev
-M.rename_by_id = operations.rename_by_id
-M.toggle_pin_by_id = operations.toggle_pin_by_id
-M.touch = operations.touch
-M.close_stale = operations.close_stale
-M.close_ephemerals = operations.close_ephemerals
-M.reflow_all = operations.reflow_all
-M.toggle = operations.toggle
-M.is_hidden = operations.is_hidden
-M.toggle_zoom = operations.toggle_zoom
-M.is_zoomed = operations.is_zoomed
-M.close_all = operations.close_all
-M.focused_id = operations.focused_id
+M.push = push_ops.push
+
+M.close = close_ops.close
+M.close_by_id = close_ops.close_by_id
+M.close_current = close_ops.close_current
+M.close_all = close_ops.close_all
+
+M.focus_by_id = focus_ops.focus_by_id
+M.focus_next = focus_ops.focus_next
+M.focus_prev = focus_ops.focus_prev
+M.reopen_by_id = focus_ops.reopen_by_id
+
+M.restore_last = history_ops.restore_last
+M.restore_all = history_ops.restore_all
+M.restore_from_history = history_ops.restore_from_history
+M.history_list = history_ops.history_list
+M.clear_history = history_ops.clear_history
+
+M.reflow = visibility_ops.reflow
+M.reflow_all = visibility_ops.reflow_all
+M.toggle = visibility_ops.toggle
+M.is_hidden = visibility_ops.is_hidden
+M.toggle_zoom = visibility_ops.toggle_zoom
+M.is_zoomed = visibility_ops.is_zoomed
+
+M.close_stale = cleanup_ops.close_stale
+M.close_ephemerals = cleanup_ops.close_ephemerals
+
+M.list = query_ops.list
+M.current = query_ops.current
+M.focused_id = query_ops.focused_id
+M.find_by_winid = query_ops.find_by_winid
+M.find_by_id = query_ops.find_by_id
+M.touch = query_ops.touch
+M.rename_by_id = query_ops.rename_by_id
+M.toggle_pin_by_id = query_ops.toggle_pin_by_id
 
 M.handle_win_closed = events.handle_win_closed
 M.handle_buf_wipeout = events.handle_buf_wipeout

@@ -1,6 +1,7 @@
 local config = require("peekstack.config")
 local promote = require("peekstack.core.promote")
 local stack_view = require("peekstack.ui.stack_view")
+local keymap_spec = require("peekstack.ui.keymap_spec")
 
 local M = {}
 
@@ -15,17 +16,6 @@ local M = {}
 --- shared source buffer keeps its original mappings in normal editing.
 ---@type PeekstackSourcePopupMapState?
 local active_source_maps = nil
-
----@param bufnr integer
----@param lhs string?
----@param rhs string|function
----@param desc string
-local function map(bufnr, lhs, rhs, desc)
-  if not lhs or lhs == "" then
-    return
-  end
-  vim.keymap.set("n", lhs, rhs, { buffer = bufnr, nowait = true, silent = true, desc = desc })
-end
 
 --- Navigate from a popup to an adjacent split window.
 --- Moves focus back to the root (non-floating) window first, then executes
@@ -52,10 +42,10 @@ local function resolve_current_popup()
   return popup
 end
 
----@return { lhs: string, rhs: function, desc: string }[]
+---@return PeekstackKeymapSpec[]
 local function mapping_specs()
   local keys = config.get().ui.keys
-  ---@type { lhs: string, rhs: function, desc: string }[]
+  ---@type PeekstackKeymapSpec[]
   local raw = {
     {
       lhs = keys.close,
@@ -173,25 +163,7 @@ local function mapping_specs()
     },
   }
 
-  ---@type table<string, { lhs: string, rhs: function, desc: string }>
-  local by_lhs = {}
-  ---@type string[]
-  local order = {}
-  for _, spec in ipairs(raw) do
-    if spec.lhs and spec.lhs ~= "" then
-      if not by_lhs[spec.lhs] then
-        order[#order + 1] = spec.lhs
-      end
-      by_lhs[spec.lhs] = spec
-    end
-  end
-
-  ---@type { lhs: string, rhs: function, desc: string }[]
-  local specs = {}
-  for _, lhs in ipairs(order) do
-    specs[#specs + 1] = by_lhs[lhs]
-  end
-  return specs
+  return keymap_spec.normalize(raw)
 end
 
 ---@param bufnr integer
@@ -269,7 +241,7 @@ local function activate_source_popup(popup)
 
   for _, spec in ipairs(specs) do
     original[spec.lhs] = get_buffer_map(popup.bufnr, spec.lhs)
-    map(popup.bufnr, spec.lhs, spec.rhs, spec.desc)
+    keymap_spec.set(popup.bufnr, spec)
     lhs_list[#lhs_list + 1] = spec.lhs
   end
 
@@ -288,9 +260,7 @@ function M.apply_popup(popup)
     return
   end
 
-  for _, spec in ipairs(mapping_specs()) do
-    map(popup.bufnr, spec.lhs, spec.rhs, spec.desc)
-  end
+  keymap_spec.apply(popup.bufnr, mapping_specs())
 end
 
 ---@param target integer|PeekstackPopupModel
