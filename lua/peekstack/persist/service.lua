@@ -50,7 +50,7 @@ function M.save_current(name, opts)
   local items = sessions.collect_items(opts and opts.root_winid or nil)
 
   if sync then
-    local data = sessions.upsert(orchestrator.ensure_data(orchestrator.read_sync()), resolved_name, items)
+    local data = sessions.upsert(orchestrator.read_sync(), resolved_name, items)
     local success = orchestrator.write_sync(data)
     notify_save_result(success, resolved_name, items, silent)
     finish(success)
@@ -84,7 +84,7 @@ function M.restore(name, opts)
   end
 
   local resolved_name = sessions.resolve_name(name)
-  orchestrator.read_async(function(data)
+  orchestrator.refresh_cache_async(function(data)
     local session = data.sessions[resolved_name]
 
     if not session or not session.items or #session.items == 0 then
@@ -158,11 +158,11 @@ function M.list_sessions(opts)
   end
 
   if on_done then
-    orchestrator.read_async(function(data)
+    orchestrator.refresh_cache_async(function(data)
       on_done(data.sessions or {})
     end)
   elseif not orchestrator.cache_loaded() then
-    orchestrator.read_sync()
+    orchestrator.refresh_cache_sync()
   end
 
   return orchestrator.cache_sessions()

@@ -19,13 +19,6 @@ function M.ensure_data(data)
   return migrate.ensure(data)
 end
 
----Migrate read data and refresh the in-memory cache.
----@param read_data PeekstackStoreData
----@return PeekstackStoreData
-function M.update_cache(read_data)
-  return cache.update(M.ensure_data(read_data))
-end
-
 ---Check if persistence is enabled, optionally notifying when disabled.
 ---@param silent? boolean
 ---@return boolean
@@ -39,20 +32,42 @@ function M.ensure_enabled(silent)
   return true
 end
 
----Asynchronously read store data, refresh cache, and pass migrated data to `on_done`.
+---Asynchronously read store data and pass migrated data to `on_done`.
+---Does NOT touch the cache; callers that want to refresh it should use
+---`refresh_cache_async` instead. This keeps save/delete/rename flows from
+---updating the cache before a successful write.
 ---@param on_done fun(data: PeekstackStoreData)
 function M.read_async(on_done)
   store.read(SCOPE, {
     on_done = function(read_data)
-      on_done(M.update_cache(read_data))
+      on_done(M.ensure_data(read_data))
     end,
   })
 end
 
----Synchronously read store data and refresh cache.
+---Synchronously read and migrate store data without touching the cache.
 ---@return PeekstackStoreData
 function M.read_sync()
-  return M.update_cache(store.read_sync(SCOPE))
+  return M.ensure_data(store.read_sync(SCOPE))
+end
+
+---Asynchronously read store data and refresh the cache from disk.
+---Used by read-only flows (restore, list_sessions) that should reflect the
+---latest persisted state in memory.
+---@param on_done fun(data: PeekstackStoreData)
+function M.refresh_cache_async(on_done)
+  M.read_async(function(data)
+    cache.update(data)
+    on_done(data)
+  end)
+end
+
+---Synchronously read store data and refresh the cache from disk.
+---@return PeekstackStoreData
+function M.refresh_cache_sync()
+  local data = M.read_sync()
+  cache.update(data)
+  return data
 end
 
 ---Asynchronously write data; on success refresh cache before calling `on_done`.
