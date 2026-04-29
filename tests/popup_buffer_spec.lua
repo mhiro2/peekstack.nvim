@@ -85,6 +85,41 @@ describe("peekstack.core.popup.buffer", function()
     assert.equals(500, vim.api.nvim_buf_line_count(prepared.bufnr))
     assert.equals("line101", vim.api.nvim_buf_get_lines(prepared.bufnr, 0, 1, false)[1])
     assert.equals("line600", vim.api.nvim_buf_get_lines(prepared.bufnr, 499, 500, false)[1])
+    assert.is_not_nil(prepared.viewport)
+    assert.equals(600, prepared.viewport.total)
+    assert.equals(100, prepared.viewport.skipped_before)
+    assert.equals(0, prepared.viewport.skipped_after)
+  end)
+
+  it("reports trailing skipped lines when the target sits near the start", function()
+    local lines = {}
+    for i = 1, 600 do
+      lines[i] = "line" .. i
+    end
+
+    local path = make_file(lines)
+    local prepared = buffer.prepare(make_location(path, 10), { buffer_mode = "copy" })
+
+    assert.is_not_nil(prepared)
+    temp_bufnrs[#temp_bufnrs + 1] = prepared.bufnr
+    temp_bufnrs[#temp_bufnrs + 1] = prepared.source_bufnr
+
+    assert.equals(0, prepared.line_offset)
+    assert.is_not_nil(prepared.viewport)
+    assert.equals(600, prepared.viewport.total)
+    assert.equals(0, prepared.viewport.skipped_before)
+    assert.equals(100, prepared.viewport.skipped_after)
+  end)
+
+  it("does not report a viewport when the source fits in copy mode", function()
+    local path = make_file({ "alpha", "beta", "gamma" })
+    local prepared = buffer.prepare(make_location(path, 1), { buffer_mode = "copy" })
+
+    assert.is_not_nil(prepared)
+    temp_bufnrs[#temp_bufnrs + 1] = prepared.bufnr
+    temp_bufnrs[#temp_bufnrs + 1] = prepared.source_bufnr
+
+    assert.is_nil(prepared.viewport)
   end)
 
   it("reuses the source buffer in source mode", function()
@@ -98,5 +133,6 @@ describe("peekstack.core.popup.buffer", function()
     assert.equals(prepared.source_bufnr, prepared.bufnr)
     assert.equals(0, prepared.line_offset)
     assert.is_not.equals("nofile", vim.bo[prepared.bufnr].buftype)
+    assert.is_nil(prepared.viewport)
   end)
 end)

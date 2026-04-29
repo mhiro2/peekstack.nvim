@@ -449,6 +449,17 @@ Auto persistence (`persist.auto`) requires `persist.enabled = true`:
 Auto persistence runs only inside a git repository and always uses
 the repository session storage.
 
+PRIVACY NOTE                                      *peekstack-persist-privacy*
+
+Sessions are written as plain JSON under
+`vim.fn.stdpath("state") .. "/peekstack/"`. Each entry stores the file
+URI, line/column range, title, provider name, pin/buffer-mode flags,
+parent popup id, and the timestamp the entry was captured. Each session
+also tracks `created_at` and `updated_at` metadata. Any path you peek at
+while persistence is enabled is recorded on disk in cleartext, so avoid
+enabling persistence on shared machines or for repositories whose file
+paths or symbol names are sensitive.
+
 ==============================================================================
 SETUP RELOAD                                            *peekstack-setup-reload*
 

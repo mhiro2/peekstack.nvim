@@ -15,10 +15,11 @@ local MAX_VIEWPORT_LINES = 500
 ---@return integer start_line 0-indexed inclusive
 ---@return integer end_line 0-indexed exclusive (-1 means all)
 ---@return integer line_offset lines skipped from the start
+---@return integer total total line count of the source buffer
 function M.compute_viewport(source_bufnr, target_line)
   local total = vim.api.nvim_buf_line_count(source_bufnr)
   if total <= MAX_VIEWPORT_LINES then
-    return 0, -1, 0
+    return 0, -1, 0, total
   end
 
   local half = math.floor(MAX_VIEWPORT_LINES / 2)
@@ -28,7 +29,7 @@ function M.compute_viewport(source_bufnr, target_line)
     start_line = math.max(0, end_line - MAX_VIEWPORT_LINES)
   end
 
-  return start_line, end_line, start_line
+  return start_line, end_line, start_line, total
 end
 
 ---@param bufnr integer
@@ -59,7 +60,7 @@ end
 
 ---@param location PeekstackLocation
 ---@param opts? table
----@return { bufnr: integer, source_bufnr: integer, buffer_mode: "copy"|"source", line_offset: integer }?
+---@return { bufnr: integer, source_bufnr: integer, buffer_mode: "copy"|"source", line_offset: integer, viewport?: PeekstackPopupViewport }?
 function M.prepare(location, opts)
   local buffer_mode = M.resolve_buffer_mode(opts or {})
 
@@ -95,7 +96,7 @@ function M.prepare(location, opts)
   vim.bo[bufnr].readonly = false
 
   local target_line = location.range.start.line or 0
-  local vp_start, vp_end, line_offset = M.compute_viewport(source_bufnr, target_line)
+  local vp_start, vp_end, line_offset, total = M.compute_viewport(source_bufnr, target_line)
   local ok_lines, lines = pcall(vim.api.nvim_buf_get_lines, source_bufnr, vp_start, vp_end, false)
   if not ok_lines then
     notify.warn("Failed to read buffer contents: " .. fname)
@@ -106,11 +107,25 @@ function M.prepare(location, opts)
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
   configure_popup_buffer(bufnr, source_bufnr, opts)
 
+  ---@type PeekstackPopupViewport?
+  local viewport = nil
+  local effective_end = vp_end == -1 and total or vp_end
+  local skipped_before = vp_start
+  local skipped_after = math.max(0, total - effective_end)
+  if skipped_before > 0 or skipped_after > 0 then
+    viewport = {
+      total = total,
+      skipped_before = skipped_before,
+      skipped_after = skipped_after,
+    }
+  end
+
   return {
     bufnr = bufnr,
     source_bufnr = source_bufnr,
     buffer_mode = buffer_mode,
     line_offset = line_offset,
+    viewport = viewport,
   }
 end
 

@@ -39,6 +39,11 @@
 ---@field items PeekstackSessionItem[]
 ---@field meta PeekstackSessionMeta
 
+---@class PeekstackPopupViewport
+---@field total integer total line count of the source buffer
+---@field skipped_before integer lines hidden above the popup viewport
+---@field skipped_after integer lines hidden below the popup viewport
+
 ---@class PeekstackPopupModel
 ---@field id integer
 ---@field bufnr integer
@@ -46,6 +51,7 @@
 ---@field winid integer?
 ---@field location PeekstackLocation
 ---@field diagnostics? PeekstackDiagnosticExtmarks
+---@field viewport_marks? PeekstackViewportExtmarks
 ---@field origin { winid: integer, bufnr: integer, row: integer, col: integer }
 ---@field origin_bufnr integer
 ---@field origin_is_popup boolean
@@ -55,6 +61,7 @@
 ---@field pinned boolean
 ---@field buffer_mode "copy"|"source"
 ---@field line_offset integer
+---@field viewport? PeekstackPopupViewport
 ---@field created_at integer
 ---@field last_active_at integer
 ---@field ephemeral boolean
