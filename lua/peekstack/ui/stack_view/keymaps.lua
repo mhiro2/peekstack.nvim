@@ -2,6 +2,7 @@ local config = require("peekstack.config")
 local location = require("peekstack.core.location")
 local str = require("peekstack.util.str")
 local notify = require("peekstack.util.notify")
+local keymap_spec = require("peekstack.ui.keymap_spec")
 
 local M = {}
 
@@ -248,231 +249,270 @@ local function toggle_help(s, deps)
     end,
   })
 
-  vim.keymap.set("n", "q", function()
+  local close_help = function()
     M.close_help(s, nil, deps)
-  end, { buffer = s.help_bufnr, nowait = true, silent = true })
-  vim.keymap.set("n", "<Esc>", function()
-    M.close_help(s, nil, deps)
-  end, { buffer = s.help_bufnr, nowait = true, silent = true })
-  vim.keymap.set("n", "?", function()
-    M.close_help(s, nil, deps)
-  end, { buffer = s.help_bufnr, nowait = true, silent = true })
+  end
+  keymap_spec.apply(s.help_bufnr, {
+    { lhs = "q", rhs = close_help },
+    { lhs = "<Esc>", rhs = close_help },
+    { lhs = "?", rhs = close_help },
+  })
+end
+
+---@param s PeekstackStackViewState
+---@param deps PeekstackStackViewKeymapDeps
+---@return PeekstackKeymapSpec[]
+local function build_specs(s, deps)
+  return {
+    {
+      lhs = "<CR>",
+      rhs = function()
+        local line = vim.api.nvim_win_get_cursor(s.winid)[1]
+        local id = s.line_to_id[line]
+        if id then
+          local stack = require("peekstack.core.stack")
+          stack.focus_by_id(id, s.root_winid)
+        end
+      end,
+    },
+    {
+      lhs = "dd",
+      rhs = function()
+        local line = vim.api.nvim_win_get_cursor(s.winid)[1]
+        local id = s.line_to_id[line]
+        if id then
+          local stack = require("peekstack.core.stack")
+          stack.close_by_id(id, s.root_winid)
+          deps.render(s)
+        end
+      end,
+    },
+    {
+      lhs = "u",
+      rhs = function()
+        suspend_autoclose(s)
+        local stack = require("peekstack.core.stack")
+        focus_root_win(s)
+        local restored = stack.restore_last(s.root_winid)
+        if restored then
+          deps.render(s)
+        else
+          if #stack.history_list(s.root_winid) > 0 then
+            notify.warn("Failed to restore popup")
+          else
+            notify.info("No closed popups to restore")
+          end
+        end
+        refocus_and_resume(s, deps)
+      end,
+    },
+    {
+      lhs = "r",
+      rhs = function()
+        local line = vim.api.nvim_win_get_cursor(s.winid)[1]
+        local id = s.line_to_id[line]
+        if not id then
+          return
+        end
+        suspend_autoclose(s)
+        vim.ui.input({ prompt = "Rename" }, function(input)
+          if not input or input == "" then
+            refocus_and_resume(s, deps)
+            return
+          end
+          local stack = require("peekstack.core.stack")
+          stack.rename_by_id(id, input, s.root_winid)
+          deps.render(s)
+          refocus_and_resume(s, deps)
+        end)
+      end,
+    },
+    {
+      lhs = "p",
+      rhs = function()
+        local line = vim.api.nvim_win_get_cursor(s.winid)[1]
+        local id = s.line_to_id[line]
+        if not id then
+          return
+        end
+        local stack = require("peekstack.core.stack")
+        stack.toggle_pin_by_id(id, s.root_winid)
+        deps.render(s)
+      end,
+    },
+    {
+      lhs = "/",
+      rhs = function()
+        suspend_autoclose(s)
+        vim.ui.input({ prompt = "Filter" }, function(input)
+          if input == nil then
+            refocus_and_resume(s, deps)
+            return
+          end
+          if input == "" then
+            s.filter = nil
+          else
+            s.filter = input
+          end
+          deps.render(s)
+          refocus_and_resume(s, deps)
+        end)
+      end,
+    },
+    {
+      lhs = "gg",
+      rhs = function()
+        local lines = entry_lines(s)
+        if #lines == 0 then
+          M.ensure_non_header_cursor(s)
+          return
+        end
+        vim.api.nvim_win_set_cursor(s.winid, { lines[1], 0 })
+      end,
+    },
+    {
+      lhs = "G",
+      rhs = function()
+        local lines = entry_lines(s)
+        if #lines == 0 then
+          M.ensure_non_header_cursor(s)
+          return
+        end
+        vim.api.nvim_win_set_cursor(s.winid, { lines[#lines], 0 })
+      end,
+    },
+    {
+      lhs = "j",
+      rhs = function()
+        local count = vim.v.count1
+        for _ = 1, count do
+          move_cursor_by_stack_item(s, 1)
+        end
+      end,
+    },
+    {
+      lhs = "k",
+      rhs = function()
+        local count = vim.v.count1
+        for _ = 1, count do
+          move_cursor_by_stack_item(s, -1)
+        end
+      end,
+    },
+    {
+      lhs = "U",
+      rhs = function()
+        suspend_autoclose(s)
+        local stack = require("peekstack.core.stack")
+        focus_root_win(s)
+        local restored = stack.restore_all(s.root_winid)
+        if #restored > 0 then
+          deps.render(s)
+        end
+        local remaining = stack.history_list(s.root_winid)
+        if #remaining > 0 then
+          notify.warn("Some popups could not be restored")
+        elseif #restored == 0 then
+          notify.info("No closed popups to restore")
+        end
+        refocus_and_resume(s, deps)
+      end,
+    },
+    {
+      lhs = "H",
+      rhs = function()
+        local stack = require("peekstack.core.stack")
+        local history = stack.history_list(s.root_winid)
+        if #history == 0 then
+          notify.info("No history entries")
+          return
+        end
+
+        suspend_autoclose(s)
+        local ui_path = config.get().ui.path or {}
+        local max_width = ui_path.max_width or 0
+        if max_width == 0 then
+          max_width = math.floor(vim.o.columns * 0.7)
+        end
+
+        local items = {}
+        for i = #history, 1, -1 do
+          local entry = history[i]
+          local label = entry.title and str.truncate_middle(entry.title, max_width)
+            or location.display_text(entry.location, 0, {
+              path_base = ui_path.base,
+              max_width = max_width,
+            })
+          table.insert(items, { idx = i, label = label, entry = entry })
+        end
+
+        vim.ui.select(items, {
+          prompt = "History",
+          format_item = function(item)
+            return item.label
+          end,
+        }, function(selected, idx)
+          if selected or idx then
+            local restore_idx = nil
+            if type(selected) == "table" and selected.idx then
+              restore_idx = selected.idx
+            elseif type(idx) == "number" and items[idx] then
+              restore_idx = items[idx].idx
+            elseif type(selected) == "string" then
+              for _, item in ipairs(items) do
+                if item.label == selected then
+                  restore_idx = item.idx
+                  break
+                end
+              end
+            end
+
+            if restore_idx then
+              focus_root_win(s)
+              local restored = stack.restore_from_history(restore_idx, s.root_winid)
+              if restored then
+                deps.render(s)
+              else
+                notify.warn("Failed to restore history entry")
+              end
+            else
+              notify.warn("Failed to restore history entry")
+            end
+          end
+
+          refocus_and_resume(s, deps)
+          if not selected then
+            return
+          end
+        end)
+      end,
+    },
+    {
+      lhs = "z",
+      rhs = function()
+        local stack = require("peekstack.core.stack")
+        stack.toggle_zoom(s.root_winid)
+      end,
+    },
+    {
+      lhs = "?",
+      rhs = function()
+        toggle_help(s, deps)
+      end,
+    },
+    {
+      lhs = "q",
+      rhs = function()
+        deps.toggle()
+      end,
+    },
+  }
 end
 
 ---@param s PeekstackStackViewState
 ---@param deps PeekstackStackViewKeymapDeps
 function M.apply(s, deps)
-  vim.keymap.set("n", "<CR>", function()
-    local line = vim.api.nvim_win_get_cursor(s.winid)[1]
-    local id = s.line_to_id[line]
-    if id then
-      local stack = require("peekstack.core.stack")
-      stack.focus_by_id(id, s.root_winid)
-    end
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "dd", function()
-    local line = vim.api.nvim_win_get_cursor(s.winid)[1]
-    local id = s.line_to_id[line]
-    if id then
-      local stack = require("peekstack.core.stack")
-      stack.close_by_id(id, s.root_winid)
-      deps.render(s)
-    end
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "u", function()
-    suspend_autoclose(s)
-    local stack = require("peekstack.core.stack")
-    focus_root_win(s)
-    local restored = stack.restore_last(s.root_winid)
-    if restored then
-      deps.render(s)
-    else
-      if #stack.history_list(s.root_winid) > 0 then
-        notify.warn("Failed to restore popup")
-      else
-        notify.info("No closed popups to restore")
-      end
-    end
-    refocus_and_resume(s, deps)
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "r", function()
-    local line = vim.api.nvim_win_get_cursor(s.winid)[1]
-    local id = s.line_to_id[line]
-    if not id then
-      return
-    end
-    suspend_autoclose(s)
-    vim.ui.input({ prompt = "Rename" }, function(input)
-      if not input or input == "" then
-        refocus_and_resume(s, deps)
-        return
-      end
-      local stack = require("peekstack.core.stack")
-      stack.rename_by_id(id, input, s.root_winid)
-      deps.render(s)
-      refocus_and_resume(s, deps)
-    end)
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "p", function()
-    local line = vim.api.nvim_win_get_cursor(s.winid)[1]
-    local id = s.line_to_id[line]
-    if not id then
-      return
-    end
-    local stack = require("peekstack.core.stack")
-    stack.toggle_pin_by_id(id, s.root_winid)
-    deps.render(s)
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "/", function()
-    suspend_autoclose(s)
-    vim.ui.input({ prompt = "Filter" }, function(input)
-      if input == nil then
-        refocus_and_resume(s, deps)
-        return
-      end
-      if input == "" then
-        s.filter = nil
-      else
-        s.filter = input
-      end
-      deps.render(s)
-      refocus_and_resume(s, deps)
-    end)
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "gg", function()
-    local lines = entry_lines(s)
-    if #lines == 0 then
-      M.ensure_non_header_cursor(s)
-      return
-    end
-    vim.api.nvim_win_set_cursor(s.winid, { lines[1], 0 })
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "G", function()
-    local lines = entry_lines(s)
-    if #lines == 0 then
-      M.ensure_non_header_cursor(s)
-      return
-    end
-    vim.api.nvim_win_set_cursor(s.winid, { lines[#lines], 0 })
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "j", function()
-    local count = vim.v.count1
-    for _ = 1, count do
-      move_cursor_by_stack_item(s, 1)
-    end
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "k", function()
-    local count = vim.v.count1
-    for _ = 1, count do
-      move_cursor_by_stack_item(s, -1)
-    end
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "U", function()
-    suspend_autoclose(s)
-    local stack = require("peekstack.core.stack")
-    focus_root_win(s)
-    local restored = stack.restore_all(s.root_winid)
-    if #restored > 0 then
-      deps.render(s)
-    end
-    local remaining = stack.history_list(s.root_winid)
-    if #remaining > 0 then
-      notify.warn("Some popups could not be restored")
-    elseif #restored == 0 then
-      notify.info("No closed popups to restore")
-    end
-    refocus_and_resume(s, deps)
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "H", function()
-    local stack = require("peekstack.core.stack")
-    local history = stack.history_list(s.root_winid)
-    if #history == 0 then
-      notify.info("No history entries")
-      return
-    end
-
-    suspend_autoclose(s)
-    local ui_path = config.get().ui.path or {}
-    local max_width = ui_path.max_width or 0
-    if max_width == 0 then
-      max_width = math.floor(vim.o.columns * 0.7)
-    end
-
-    local items = {}
-    for i = #history, 1, -1 do
-      local entry = history[i]
-      local label = entry.title and str.truncate_middle(entry.title, max_width)
-        or location.display_text(entry.location, 0, {
-          path_base = ui_path.base,
-          max_width = max_width,
-        })
-      table.insert(items, { idx = i, label = label, entry = entry })
-    end
-
-    vim.ui.select(items, {
-      prompt = "History",
-      format_item = function(item)
-        return item.label
-      end,
-    }, function(selected, idx)
-      if selected or idx then
-        local restore_idx = nil
-        if type(selected) == "table" and selected.idx then
-          restore_idx = selected.idx
-        elseif type(idx) == "number" and items[idx] then
-          restore_idx = items[idx].idx
-        elseif type(selected) == "string" then
-          for _, item in ipairs(items) do
-            if item.label == selected then
-              restore_idx = item.idx
-              break
-            end
-          end
-        end
-
-        if restore_idx then
-          focus_root_win(s)
-          local restored = stack.restore_from_history(restore_idx, s.root_winid)
-          if restored then
-            deps.render(s)
-          else
-            notify.warn("Failed to restore history entry")
-          end
-        else
-          notify.warn("Failed to restore history entry")
-        end
-      end
-
-      refocus_and_resume(s, deps)
-      if not selected then
-        return
-      end
-    end)
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "z", function()
-    local stack = require("peekstack.core.stack")
-    stack.toggle_zoom(s.root_winid)
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "?", function()
-    toggle_help(s, deps)
-  end, { buffer = s.bufnr, nowait = true, silent = true })
-
-  vim.keymap.set("n", "q", function()
-    deps.toggle()
-  end, { buffer = s.bufnr, nowait = true, silent = true })
+  keymap_spec.apply(s.bufnr, build_specs(s, deps))
 end
 
 return M
