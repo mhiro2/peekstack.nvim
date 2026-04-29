@@ -170,8 +170,7 @@ local function report_treesitter(cfg)
 end
 
 function M.check()
-  vim.health.start("peekstack")
-
+  vim.health.start("peekstack: environment")
   report_environment()
 
   local ok, cfg_mod = pcall(require, "peekstack.config")
@@ -181,9 +180,16 @@ function M.check()
   end
   local cfg = cfg_mod.get()
 
+  vim.health.start("peekstack: providers")
   report_providers(cfg)
+
+  vim.health.start("peekstack: picker")
   report_picker(cfg)
+
+  vim.health.start("peekstack: persist")
   report_persist(cfg)
+
+  vim.health.start("peekstack: ui")
   report_close_events(cfg)
   report_treesitter(cfg)
 end
