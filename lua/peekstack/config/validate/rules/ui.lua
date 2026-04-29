@@ -100,6 +100,7 @@ local TITLE_ICON_RULES = {
 local LAYOUT_RULES = {
   { key = "style", validate = shared.field_enum(KNOWN_LAYOUT_STYLES), require_truthy = true },
   { key = "max_ratio", validate = shared.field_ratio() },
+  { key = "zindex_base", validate = shared.field_number_range({ min = 1 }) },
 }
 
 ---@type PeekstackConfigFieldRule[]
@@ -119,6 +120,74 @@ local LAYOUT_OFFSET_RULES = {
   { key = "row", validate = shared.field_number_range({ min = 0 }) },
   { key = "col", validate = shared.field_number_range({ min = 0 }) },
 }
+
+---@param map table
+local function sanitize_icon_map(map)
+  local invalid_keys = {}
+  for key, value in pairs(map) do
+    if type(key) ~= "string" or type(value) ~= "string" then
+      invalid_keys[#invalid_keys + 1] = key
+    end
+  end
+  for _, key in ipairs(invalid_keys) do
+    notify.warn(
+      string.format(
+        "ui.title.icons.map[%s] must be a string mapping to a string. Dropping invalid entry",
+        tostring(key)
+      )
+    )
+    map[key] = nil
+  end
+end
+
+---@param node_types table
+local function sanitize_node_types(node_types)
+  local invalid_keys = {}
+  for filetype, list in pairs(node_types) do
+    if type(filetype) ~= "string" then
+      notify.warn(
+        string.format("ui.title.context.node_types has non-string key %s. Dropping invalid entry", tostring(filetype))
+      )
+      invalid_keys[#invalid_keys + 1] = filetype
+    elseif type(list) ~= "table" then
+      notify.warn(
+        string.format(
+          "ui.title.context.node_types[%q] must be a list of strings, got %s. Dropping invalid entry",
+          filetype,
+          type(list)
+        )
+      )
+      invalid_keys[#invalid_keys + 1] = filetype
+    else
+      local sanitized = {}
+      local dropped = 0
+      for _, node_type in ipairs(list) do
+        if type(node_type) == "string" and node_type ~= "" then
+          sanitized[#sanitized + 1] = node_type
+        else
+          dropped = dropped + 1
+        end
+      end
+      if dropped > 0 then
+        notify.warn(
+          string.format(
+            "ui.title.context.node_types[%q] contains %d invalid entries. Ignoring invalid values",
+            filetype,
+            dropped
+          )
+        )
+      end
+      if #sanitized == 0 then
+        invalid_keys[#invalid_keys + 1] = filetype
+      else
+        node_types[filetype] = sanitized
+      end
+    end
+  end
+  for _, key in ipairs(invalid_keys) do
+    node_types[key] = nil
+  end
+end
 
 ---@param ui table
 ---@param defaults PeekstackConfigUI
@@ -250,6 +319,8 @@ local function validate_title(ui, defaults)
     if icons.map ~= nil and type(icons.map) ~= "table" then
       notify.warn("ui.title.icons.map must be a table, got " .. type(icons.map) .. ". Falling back to defaults")
       icons.map = vim.deepcopy(defaults.icons.map)
+    elseif type(icons.map) == "table" then
+      sanitize_icon_map(icons.map)
     end
   end
 
@@ -257,6 +328,18 @@ local function validate_title(ui, defaults)
     local context = shared.ensure_table_field(title, "context", "ui.title.context", defaults.context)
     if context then
       shared.apply_rules(context, "ui.title.context", defaults.context, TITLE_CONTEXT_RULES)
+      if context.node_types ~= nil then
+        if type(context.node_types) ~= "table" then
+          notify.warn(
+            "ui.title.context.node_types must be a table, got "
+              .. type(context.node_types)
+              .. ". Falling back to defaults"
+          )
+          context.node_types = vim.deepcopy(defaults.context.node_types)
+        else
+          sanitize_node_types(context.node_types)
+        end
+      end
     end
   end
 end

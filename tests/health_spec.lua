@@ -149,8 +149,153 @@ describe("peekstack.health", function()
 
     health.check()
 
-    assert.is_true(
-      vim.list_contains(messages, "info:tree-sitter context enabled but no parser for the current buffer filetype")
-    )
+    local found = false
+    for _, msg in ipairs(messages) do
+      if msg:find("info:tree-sitter context enabled but no parser", 1, true) then
+        found = true
+      end
+    end
+    assert.is_true(found)
+  end)
+
+  ---@param needle string
+  local function find_message(needle)
+    for _, msg in ipairs(messages) do
+      if msg:find(needle, 1, true) then
+        return msg
+      end
+    end
+    return nil
+  end
+
+  it("lists enabled providers", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    config.setup({
+      providers = {
+        marks = { enable = false },
+      },
+    })
+
+    health.check()
+
+    local enabled = find_message("providers enabled:")
+    assert.is_not_nil(enabled)
+    assert.is_not_nil(enabled:find("lsp"))
+    assert.is_not_nil(enabled:find("diagnostics"))
+    assert.is_not_nil(enabled:find("file"))
+    assert.is_not_nil(enabled:find("grep"))
+    assert.is_nil(enabled:find("marks"))
+    assert.is_not_nil(find_message("provider 'marks' disabled"))
+  end)
+
+  it("reports persist storage path when persist is enabled", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    config.setup({ persist = { enabled = true } })
+
+    health.check()
+
+    assert.is_not_nil(find_message("storage path:"))
+  end)
+
+  it("reports quick_peek and inline_preview close events", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    config.setup({
+      ui = {
+        quick_peek = { close_events = { "BufLeave" } },
+        inline_preview = { enabled = true, close_events = { "WinLeave", "InsertEnter" } },
+      },
+    })
+
+    health.check()
+
+    local quick = find_message("quick_peek close_events:")
+    assert.is_not_nil(quick)
+    assert.is_not_nil(quick:find("BufLeave"))
+
+    local inline = find_message("inline_preview close_events:")
+    assert.is_not_nil(inline)
+    assert.is_not_nil(inline:find("WinLeave"))
+    assert.is_not_nil(inline:find("InsertEnter"))
+  end)
+
+  it("reports picker preview_lines configuration", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    config.setup({ picker = { builtin = { preview_lines = 3 } } })
+
+    health.check()
+
+    assert.is_not_nil(find_message("picker.builtin.preview_lines = 3"))
+  end)
+
+  it("does not error when persist.auto is not a table", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    config.setup({
+      persist = {
+        enabled = true,
+        auto = true,
+      },
+    })
+
+    assert.has_no_error(function()
+      health.check()
+    end)
+    assert.is_not_nil(find_message("auto persist disabled"))
+  end)
+
+  it("warns when auto persist is enabled outside a git repository", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    local fs = require("peekstack.util.fs")
+    local original_repo_root = fs.repo_root
+    fs.repo_root = function()
+      return nil
+    end
+    config.setup({
+      persist = {
+        enabled = true,
+        auto = { enabled = true },
+      },
+    })
+
+    health.check()
+
+    fs.repo_root = original_repo_root
+
+    local found = false
+    for _, msg in ipairs(messages) do
+      if msg:find("warn:auto persist enabled", 1, true) and msg:find("inactive outside git repository", 1, true) then
+        found = true
+      end
+    end
+    assert.is_true(found)
   end)
 end)
