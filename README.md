@@ -331,6 +331,14 @@ for a name instead of using the default.
 > Persistence uses repository storage when the current working directory is inside a git repository.
 > Outside a git repository, sessions fall back to cwd-based storage.
 
+> [!IMPORTANT]
+> Sessions are written as plain JSON under `vim.fn.stdpath("state") .. "/peekstack/"`. Each entry
+> stores the file URI, line/column range, title, provider name, pin/buffer-mode flags, parent
+> popup id, and the timestamp the entry was captured. Each session also tracks `created_at` and
+> `updated_at` metadata. Any path you peek at while persistence is enabled is recorded on disk in
+> cleartext, so avoid enabling persistence on shared machines or for repositories whose file paths
+> or symbol names are sensitive.
+
 ### Auto persist (optional)
 
 When `persist.auto.enabled = true`, peekstack can automatically restore and save a session:
