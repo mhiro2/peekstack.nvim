@@ -899,4 +899,118 @@ describe("peekstack.persist.sessions", function()
 
     stack_view.toggle()
   end)
+
+  it("should not update cache when sync save write fails", function()
+    push_popup("write_fail_sync", { title = "Sync fail" })
+
+    local original_write_sync = store.write_sync
+    local ok, err = pcall(function()
+      store.write_sync = function(_scope, _data)
+        return false
+      end
+
+      local saved = nil
+      persist.save_current("write_fail_sync_session", {
+        silent = true,
+        sync = true,
+        on_done = function(success)
+          saved = success
+        end,
+      })
+
+      assert.is_false(saved)
+      local sessions = persist.list_sessions({ silent = true })
+      assert.is_nil(sessions["write_fail_sync_session"])
+    end)
+
+    store.write_sync = original_write_sync
+
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("should not update cache when async save write fails", function()
+    push_popup("write_fail_async", { title = "Async fail" })
+
+    local original_write = store.write
+    local ok, err = pcall(function()
+      store.write = function(_scope, _data, opts)
+        if opts and opts.on_done then
+          vim.schedule(function()
+            opts.on_done(false)
+          end)
+        end
+      end
+
+      local saved = nil
+      persist.save_current("write_fail_async_session", {
+        silent = true,
+        on_done = function(success)
+          saved = success
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return saved ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for save callback")
+      assert.is_false(saved)
+
+      local listed = nil
+      persist.list_sessions({
+        silent = true,
+        on_done = function(sessions)
+          listed = sessions
+        end,
+      })
+      local list_waited = vim.wait(wait_timeout_ms, function()
+        return listed ~= nil
+      end, wait_interval_ms)
+      assert.is_true(list_waited, "Timed out waiting for list callback")
+      assert.is_nil(listed["write_fail_async_session"])
+    end)
+
+    store.write = original_write
+
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("should not update cache when delete write fails", function()
+    push_popup("delete_write_fail", { title = "To delete" })
+    persist.save_current("delete_write_fail_session", { silent = true, sync = true })
+    wait_for_session("delete_write_fail_session", true)
+
+    local original_write = store.write
+    local write_done = false
+    local ok, err = pcall(function()
+      store.write = function(_scope, _data, opts)
+        if opts and opts.on_done then
+          vim.schedule(function()
+            opts.on_done(false)
+            write_done = true
+          end)
+        end
+      end
+
+      persist.delete_session("delete_write_fail_session")
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return write_done
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for delete write attempt")
+
+      -- Cache should still hold the session because the write failed.
+      local cached = persist.list_sessions({ silent = true })
+      assert.is_not_nil(cached["delete_write_fail_session"])
+    end)
+
+    store.write = original_write
+
+    if not ok then
+      error(err)
+    end
+  end)
 end)
