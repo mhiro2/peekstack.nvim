@@ -482,6 +482,129 @@ describe("config", function()
       assert.equals("table", type(cfg.ui.title.icons.map))
     end)
 
+    it("drops invalid entries from ui.title.icons.map", function()
+      local cfg = config.setup({
+        ui = {
+          title = {
+            icons = {
+              map = {
+                lsp = " ",
+                diagnostics = 42,
+                grep = false,
+              },
+            },
+          },
+        },
+      })
+      assert.is_true(has_message("ui.title.icons.map[diagnostics]"))
+      assert.is_true(has_message("ui.title.icons.map[grep]"))
+      assert.equals(" ", cfg.ui.title.icons.map.lsp)
+      assert.is_nil(cfg.ui.title.icons.map.diagnostics)
+      assert.is_nil(cfg.ui.title.icons.map.grep)
+    end)
+
+    it("falls back when ui.title.context.node_types is not a table", function()
+      local cfg = config.setup({
+        ui = { title = { context = { node_types = "invalid" } } },
+      })
+      assert.is_true(has_message("ui.title.context.node_types must be a table"))
+      assert.same(config.defaults.ui.title.context.node_types, cfg.ui.title.context.node_types)
+    end)
+
+    it("sanitizes invalid entries inside ui.title.context.node_types", function()
+      local cfg = config.setup({
+        ui = {
+          title = {
+            context = {
+              node_types = {
+                lua = { "function_declaration", "", 42, "method_declaration" },
+                python = "function_definition",
+              },
+            },
+          },
+        },
+      })
+      assert.same({ "function_declaration", "method_declaration" }, cfg.ui.title.context.node_types.lua)
+      assert.is_nil(cfg.ui.title.context.node_types.python)
+      assert.is_true(has_message('ui.title.context.node_types["lua"]'))
+      assert.is_true(has_message('ui.title.context.node_types["python"]'))
+    end)
+
+    it("drops ui.title.context.node_types entries that become empty after sanitize", function()
+      local cfg = config.setup({
+        ui = {
+          title = {
+            context = {
+              node_types = {
+                lua = { 1, "" },
+              },
+            },
+          },
+        },
+      })
+      assert.is_nil(cfg.ui.title.context.node_types.lua)
+    end)
+
+    it("warns and drops non-string keys inside ui.title.context.node_types", function()
+      local cfg = config.setup({
+        ui = {
+          title = {
+            context = {
+              node_types = {
+                [true] = { "function_declaration" },
+                lua = { "function_declaration" },
+              },
+            },
+          },
+        },
+      })
+      assert.is_true(has_message("ui.title.context.node_types has non-string key"))
+      assert.is_nil(cfg.ui.title.context.node_types[true])
+      assert.same({ "function_declaration" }, cfg.ui.title.context.node_types.lua)
+    end)
+
+    it("falls back on invalid ui.layout.zindex_base", function()
+      local cfg = config.setup({
+        ui = { layout = { zindex_base = 0 } },
+      })
+      assert.is_true(has_message("ui.layout.zindex_base"))
+      assert.equals(config.defaults.ui.layout.zindex_base, cfg.ui.layout.zindex_base)
+
+      cfg = config.setup({
+        ui = { layout = { zindex_base = "high" } },
+      })
+      assert.is_true(has_message("ui.layout.zindex_base"))
+      assert.equals(config.defaults.ui.layout.zindex_base, cfg.ui.layout.zindex_base)
+    end)
+
+    it("falls back on invalid picker.builtin.preview_lines", function()
+      local cfg = config.setup({
+        picker = { builtin = { preview_lines = -1 } },
+      })
+      assert.is_true(has_message("picker.builtin.preview_lines"))
+      assert.equals(config.defaults.picker.builtin.preview_lines, cfg.picker.builtin.preview_lines)
+
+      cfg = config.setup({
+        picker = { builtin = { preview_lines = "many" } },
+      })
+      assert.is_true(has_message("picker.builtin.preview_lines"))
+      assert.equals(config.defaults.picker.builtin.preview_lines, cfg.picker.builtin.preview_lines)
+    end)
+
+    it("falls back when persist.auto.debounce_ms is out of range", function()
+      local cfg = config.setup({
+        persist = { auto = { debounce_ms = -1 } },
+      })
+      assert.is_true(has_message("persist.auto.debounce_ms"))
+      assert.equals(config.defaults.persist.auto.debounce_ms, cfg.persist.auto.debounce_ms)
+
+      cfg = config.setup({
+        persist = { auto = { debounce_ms = 999999999 } },
+      })
+      assert.is_true(has_message("persist.auto.debounce_ms"))
+      assert.equals(config.defaults.persist.auto.debounce_ms, cfg.persist.auto.debounce_ms)
+    end)
+
     it("falls back on invalid auto_close config", function()
       local cfg = config.setup({
         ui = {
