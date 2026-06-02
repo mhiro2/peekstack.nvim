@@ -7,6 +7,56 @@ local notify = require("peekstack.util.notify")
 
 local M = {}
 
+---Validate the coarse shape of a session item read from disk.
+---Deeper structural validation (range fields) happens in location.normalize.
+---@param item any
+---@return boolean
+local function is_valid_item(item)
+  return type(item) == "table" and type(item.uri) == "string" and type(item.range) == "table"
+end
+
+---Restore a single session item into the current stack.
+---Records the original->restored popup id mapping so children can re-link to
+---their parent. Assumes the item already passed is_valid_item.
+---@param item PeekstackSessionItem
+---@param id_remap table<integer, integer>
+---@return boolean restored whether a popup was actually created
+local function restore_item(item, id_remap)
+  local loc = location.normalize({ uri = item.uri, range = item.range }, item.provider or "persist")
+  if not loc then
+    return false
+  end
+
+  local parent_id = item.parent_popup_id
+  if parent_id then
+    if id_remap[parent_id] then
+      parent_id = id_remap[parent_id]
+    else
+      -- Parent was not restored (e.g. trimmed by max_items).
+      -- Drop the stale reference to avoid accidental collisions.
+      parent_id = nil
+    end
+  end
+
+  local model = stack.push(loc, {
+    title = item.title,
+    buffer_mode = item.buffer_mode,
+    parent_popup_id = parent_id,
+    defer_reflow = true,
+  })
+  if not model then
+    return false
+  end
+
+  if item.pinned then
+    model.pinned = true
+  end
+  if item.popup_id then
+    id_remap[item.popup_id] = model.id
+  end
+  return true
+end
+
 ---@param success boolean
 ---@param name string
 ---@param items PeekstackSessionItem[]
@@ -97,47 +147,35 @@ function M.restore(name, opts)
 
     ---@type table<integer, integer>
     local id_remap = {}
+    local restored_count = 0
     for _, item in ipairs(session.items) do
-      local loc = location.normalize({ uri = item.uri, range = item.range }, item.provider or "persist")
-      if loc then
-        local parent_id = item.parent_popup_id
-        if parent_id then
-          if id_remap[parent_id] then
-            parent_id = id_remap[parent_id]
-          else
-            -- Parent was not restored (e.g. trimmed by max_items).
-            -- Drop the stale reference to avoid accidental collisions.
-            parent_id = nil
-          end
-        end
-        local model = stack.push(loc, {
-          title = item.title,
-          buffer_mode = item.buffer_mode,
-          parent_popup_id = parent_id,
-          defer_reflow = true,
-        })
-        if model then
-          if item.pinned then
-            model.pinned = true
-          end
-          if item.popup_id then
-            id_remap[item.popup_id] = model.id
-          end
+      -- Isolate each item: a single corrupt entry (bad type or a push failure)
+      -- must not abort restoring the rest of the session.
+      if is_valid_item(item) then
+        local ok, restored = pcall(restore_item, item, id_remap)
+        if ok and restored then
+          restored_count = restored_count + 1
         end
       end
     end
 
     stack.reflow()
 
+    local skipped = #session.items - restored_count
+
     if not silent then
-      notify.info("Session restored: " .. resolved_name)
+      if skipped > 0 then
+        notify.warn(string.format("Session restored with %d skipped item(s): %s", skipped, resolved_name))
+      else
+        notify.info("Session restored: " .. resolved_name)
+      end
     end
 
     user_events.emit("PeekstackRestore", {
       session = resolved_name,
-      item_count = #session.items,
+      item_count = restored_count,
     })
-    finish(true)
+    finish(restored_count > 0)
   end)
 end
 

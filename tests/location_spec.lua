@@ -85,6 +85,53 @@ describe("location", function()
     end)
   end)
 
+  describe("normalize range hardening", function()
+    it("falls back to a zero range when range is not a table", function()
+      local result = location.normalize({ uri = "file:///tmp/foo.lua", range = "corrupt" }, "persist")
+      assert.is_not_nil(result)
+      assert.same({ line = 0, character = 0 }, result.range.start)
+      assert.same({ line = 0, character = 0 }, result.range["end"])
+    end)
+
+    it("fills in defaults for an empty range table", function()
+      local result = location.normalize({ uri = "file:///tmp/foo.lua", range = {} }, "persist")
+      assert.is_not_nil(result)
+      assert.same({ line = 0, character = 0 }, result.range.start)
+      assert.same({ line = 0, character = 0 }, result.range["end"])
+    end)
+
+    it("coerces non-numeric line and character fields to zero", function()
+      local result = location.normalize({
+        uri = "file:///tmp/foo.lua",
+        range = { start = { line = "x", character = {} }, ["end"] = "bad" },
+      }, "persist")
+      assert.is_not_nil(result)
+      assert.same({ line = 0, character = 0 }, result.range.start)
+      -- A non-table end mirrors start (a zero-width range), not crashes.
+      assert.same({ line = 0, character = 0 }, result.range["end"])
+    end)
+
+    it("defaults a missing end to the start position", function()
+      local result = location.normalize({
+        uri = "file:///tmp/foo.lua",
+        range = { start = { line = 7, character = 3 } },
+      }, "persist")
+      assert.is_not_nil(result)
+      assert.same({ line = 7, character = 3 }, result.range.start)
+      assert.same({ line = 7, character = 3 }, result.range["end"])
+    end)
+
+    it("preserves a well-formed range unchanged", function()
+      local result = location.normalize({
+        uri = "file:///tmp/foo.lua",
+        range = { start = { line = 2, character = 1 }, ["end"] = { line = 4, character = 9 } },
+      }, "persist")
+      assert.is_not_nil(result)
+      assert.same({ line = 2, character = 1 }, result.range.start)
+      assert.same({ line = 4, character = 9 }, result.range["end"])
+    end)
+  end)
+
   describe("list_from_lsp", function()
     it("returns empty table for nil result", function()
       local items = location.list_from_lsp(nil, "lsp.definition")
