@@ -276,6 +276,11 @@ Configure via `require("peekstack").setup({ ... })`.
 
 </details>
 
+> [!NOTE]
+> `setup()` never throws on bad config. Invalid values fall back to defaults
+> with a `vim.notify` warning, and unknown or mistyped keys (e.g. `ui.popups`
+> instead of `ui.popup`) are reported the same way so typos are easy to spot.
+
 ## 🧺 Picker backends (telescope / fzf-lua / snacks.nvim)
 
 peekstack uses a picker when multiple locations are returned (e.g. references). The
