@@ -3,6 +3,7 @@ local location = require("peekstack.core.location")
 local str = require("peekstack.util.str")
 local notify = require("peekstack.util.notify")
 local keymap_spec = require("peekstack.ui.keymap_spec")
+local state = require("peekstack.ui.stack_view.state")
 
 local M = {}
 
@@ -58,24 +59,6 @@ local function entry_lines(s)
 end
 
 ---@param s PeekstackStackViewState
-function M.ensure_non_header_cursor(s)
-  if not (s.winid and vim.api.nvim_win_is_valid(s.winid) and s.bufnr and vim.api.nvim_buf_is_valid(s.bufnr)) then
-    return
-  end
-
-  local line_count = vim.api.nvim_buf_line_count(s.bufnr)
-  if line_count <= 0 then
-    return
-  end
-
-  local min_line = math.min((s.header_lines or 0) + 1, line_count)
-  local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
-  if cursor < min_line then
-    vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
-  end
-end
-
----@param s PeekstackStackViewState
 ---@param step integer
 local function move_cursor_by_stack_item(s, step)
   if not (s.winid and vim.api.nvim_win_is_valid(s.winid)) then
@@ -84,7 +67,7 @@ local function move_cursor_by_stack_item(s, step)
 
   local lines = entry_lines(s)
   if #lines == 0 then
-    M.ensure_non_header_cursor(s)
+    state.ensure_non_header_cursor(s)
     return
   end
 
@@ -364,7 +347,7 @@ local function build_specs(s, deps)
       rhs = function()
         local lines = entry_lines(s)
         if #lines == 0 then
-          M.ensure_non_header_cursor(s)
+          state.ensure_non_header_cursor(s)
           return
         end
         vim.api.nvim_win_set_cursor(s.winid, { lines[1], 0 })
@@ -375,7 +358,7 @@ local function build_specs(s, deps)
       rhs = function()
         local lines = entry_lines(s)
         if #lines == 0 then
-          M.ensure_non_header_cursor(s)
+          state.ensure_non_header_cursor(s)
           return
         end
         vim.api.nvim_win_set_cursor(s.winid, { lines[#lines], 0 })

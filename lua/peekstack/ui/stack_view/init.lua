@@ -54,7 +54,7 @@ function M.open()
       keymaps.close_help(s, opts, keymap_deps())
     end,
     ensure_non_header_cursor = function()
-      keymaps.ensure_non_header_cursor(s)
+      state.ensure_non_header_cursor(s)
     end,
   })
 

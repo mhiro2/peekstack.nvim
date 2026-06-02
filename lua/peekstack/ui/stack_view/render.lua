@@ -2,26 +2,9 @@ local config = require("peekstack.config")
 local location = require("peekstack.core.location")
 local diff = require("peekstack.ui.stack_view.diff")
 local pipeline = require("peekstack.ui.stack_view.pipeline")
+local state = require("peekstack.ui.stack_view.state")
 
 local M = {}
-
----@param s PeekstackStackViewState
-local function ensure_non_header_cursor(s)
-  if not (s.winid and vim.api.nvim_win_is_valid(s.winid) and s.bufnr and vim.api.nvim_buf_is_valid(s.bufnr)) then
-    return
-  end
-
-  local line_count = vim.api.nvim_buf_line_count(s.bufnr)
-  if line_count <= s.header_lines then
-    return
-  end
-
-  local min_line = s.header_lines + 1
-  local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
-  if cursor < min_line then
-    vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
-  end
-end
 
 ---@param s PeekstackStackViewState
 ---@param is_ready fun(s: PeekstackStackViewState): boolean
@@ -59,7 +42,7 @@ function M.render(s, is_ready)
   s.line_to_id = model.line_to_id
   s.header_lines = model.header_lines
   s.render_keys = diff.apply(s.bufnr, s.render_keys or {}, model, s.preview_ts_cache)
-  ensure_non_header_cursor(s)
+  state.ensure_non_header_cursor(s)
 end
 
 return M
