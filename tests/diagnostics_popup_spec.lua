@@ -53,6 +53,33 @@ describe("peekstack.ui.diagnostics", function()
     vim.fn.delete(tmpfile)
   end)
 
+  it("does not error when diagnostic end_col exceeds the line length", function()
+    local diagnostics = require("peekstack.ui.diagnostics")
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "ab" })
+
+    local model = {
+      bufnr = bufnr,
+      line_offset = 0,
+      location = {
+        provider = "diagnostics.under_cursor",
+        text = "boom",
+        kind = vim.diagnostic.severity.ERROR,
+        range = {
+          start = { line = 0, character = 0 },
+          ["end"] = { line = 0, character = 999 },
+        },
+      },
+    }
+
+    local ok, result = pcall(diagnostics.decorate, model)
+    assert.is_true(ok)
+    -- The virt_lines marker is still added even though the underline is dropped.
+    assert.is_not_nil(result)
+
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+  end)
+
   it("clears diagnostic extmarks on close in source mode", function()
     local tmpfile = vim.fn.tempname() .. ".lua"
     vim.fn.writefile({ "line1", "line2" }, tmpfile)

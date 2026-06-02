@@ -16,8 +16,14 @@ function M.highlight_origin(origin)
   if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
-  local row = math.max((origin.row or 1) - 1, 0)
-  vim.api.nvim_buf_set_extmark(bufnr, ns, row, 0, {
+  local line_count = vim.api.nvim_buf_line_count(bufnr)
+  if line_count == 0 then
+    return
+  end
+  -- Clamp the origin row in case the buffer shrank since the popup opened.
+  local row = math.min(math.max((origin.row or 1) - 1, 0), line_count - 1)
+  -- Guard against transient API failures (e.g. concurrent buffer edits).
+  pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, row, 0, {
     end_row = row + 1,
     hl_group = "PeekstackOrigin",
   })

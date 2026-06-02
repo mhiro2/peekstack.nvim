@@ -87,21 +87,28 @@ function M.decorate(popup)
   end
 
   if #virt_lines > 0 then
-    local id = vim.api.nvim_buf_set_extmark(bufnr, NS, line, 0, {
+    -- pcall guards against out-of-range coordinates raised by the API.
+    local ok, id = pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, line, 0, {
       virt_lines = virt_lines,
       virt_lines_above = true,
     })
-    table.insert(ids, id)
+    if ok then
+      table.insert(ids, id)
+    end
   end
 
   local underline = severity_hl(location.kind, "DiagnosticUnderline")
   if underline ~= "" then
-    local id = vim.api.nvim_buf_set_extmark(bufnr, NS, line, col, {
+    -- end_col may exceed the line length when the popup buffer is truncated;
+    -- pcall keeps decoration best-effort instead of erroring on the whole popup.
+    local ok, id = pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, line, col, {
       end_row = end_line,
       end_col = end_col,
       hl_group = underline,
     })
-    table.insert(ids, id)
+    if ok then
+      table.insert(ids, id)
+    end
   end
 
   if #ids == 0 then

@@ -45,19 +45,24 @@ function M.decorate(popup)
   local ids = {}
 
   if viewport.skipped_before and viewport.skipped_before > 0 then
-    local id = vim.api.nvim_buf_set_extmark(bufnr, NS, 0, 0, {
+    -- pcall guards against out-of-range coordinates raised by the API.
+    local ok, id = pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, 0, 0, {
       virt_lines = { { { format_marker(viewport.skipped_before, "above"), "PeekstackViewportTruncated" } } },
       virt_lines_above = true,
     })
-    ids[#ids + 1] = id
+    if ok then
+      ids[#ids + 1] = id
+    end
   end
 
   if viewport.skipped_after and viewport.skipped_after > 0 then
     local last = line_count - 1
-    local id = vim.api.nvim_buf_set_extmark(bufnr, NS, last, 0, {
+    local ok, id = pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, last, 0, {
       virt_lines = { { { format_marker(viewport.skipped_after, "below"), "PeekstackViewportTruncated" } } },
     })
-    ids[#ids + 1] = id
+    if ok then
+      ids[#ids + 1] = id
+    end
   end
 
   if #ids == 0 then
