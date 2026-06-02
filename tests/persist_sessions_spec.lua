@@ -865,6 +865,216 @@ describe("peekstack.persist.sessions", function()
     end
   end)
 
+  it("should skip corrupt items and still restore valid ones", function()
+    local original_push = stack.push
+    local original_reflow = stack.reflow
+
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        corrupt_items = {
+          items = {
+            {
+              uri = "file:///tmp/valid_a.lua",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+            -- Missing uri: fails the coarse type check.
+            {
+              range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+            -- Non-table range: fails the coarse type check.
+            {
+              uri = "file:///tmp/corrupt.lua",
+              range = 42,
+              provider = "test",
+              ts = os.time(),
+            },
+            {
+              uri = "file:///tmp/valid_b.lua",
+              range = { start = { line = 2, character = 0 }, ["end"] = { line = 2, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+          },
+          meta = { created_at = os.time(), updated_at = os.time() },
+        },
+      },
+    })
+
+    local pushed = {}
+    local reflow_calls = 0
+
+    local ok, err = pcall(function()
+      stack.push = function(loc, _opts)
+        table.insert(pushed, loc.uri)
+        return { id = #pushed }
+      end
+      stack.reflow = function()
+        reflow_calls = reflow_calls + 1
+      end
+
+      local restored = nil
+      persist.restore("corrupt_items", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+
+      assert.is_true(restored)
+      assert.equals(2, #pushed)
+      assert.equals("file:///tmp/valid_a.lua", pushed[1])
+      assert.equals("file:///tmp/valid_b.lua", pushed[2])
+      assert.equals(1, reflow_calls)
+    end)
+
+    stack.push = original_push
+    stack.reflow = original_reflow
+
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("should isolate a push failure to a single item when restoring", function()
+    local original_push = stack.push
+    local original_reflow = stack.reflow
+
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        push_failure = {
+          items = {
+            {
+              uri = "file:///tmp/ok1.lua",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+            {
+              uri = "file:///tmp/boom.lua",
+              range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+            {
+              uri = "file:///tmp/ok2.lua",
+              range = { start = { line = 2, character = 0 }, ["end"] = { line = 2, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+          },
+          meta = { created_at = os.time(), updated_at = os.time() },
+        },
+      },
+    })
+
+    local pushed = {}
+    local reflow_calls = 0
+
+    local ok, err = pcall(function()
+      stack.push = function(loc, _opts)
+        if loc.uri == "file:///tmp/boom.lua" then
+          error("simulated push failure")
+        end
+        table.insert(pushed, loc.uri)
+        return { id = #pushed }
+      end
+      stack.reflow = function()
+        reflow_calls = reflow_calls + 1
+      end
+
+      local restored = nil
+      persist.restore("push_failure", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+
+      -- The failing item is isolated; the surrounding valid items still restore.
+      assert.is_true(restored)
+      assert.equals(2, #pushed)
+      assert.equals("file:///tmp/ok1.lua", pushed[1])
+      assert.equals("file:///tmp/ok2.lua", pushed[2])
+      assert.equals(1, reflow_calls)
+    end)
+
+    stack.push = original_push
+    stack.reflow = original_reflow
+
+    if not ok then
+      error(err)
+    end
+  end)
+
+  it("should report restore as unsuccessful when no item could be restored", function()
+    local original_push = stack.push
+    local original_reflow = stack.reflow
+
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        all_fail = {
+          items = {
+            {
+              uri = "file:///tmp/unrestorable.lua",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
+              provider = "test",
+              ts = os.time(),
+            },
+          },
+          meta = { created_at = os.time(), updated_at = os.time() },
+        },
+      },
+    })
+
+    local ok, err = pcall(function()
+      -- A nil return means the popup was not actually created.
+      stack.push = function()
+        return nil
+      end
+      stack.reflow = function() end
+
+      local restored = nil
+      persist.restore("all_fail", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+
+      -- Session existed but nothing materialized, so restore reports false.
+      assert.is_false(restored)
+    end)
+
+    stack.push = original_push
+    stack.reflow = original_reflow
+
+    if not ok then
+      error(err)
+    end
+  end)
+
   it("should save the root stack when stack view is active", function()
     local stack_view = require("peekstack.ui.stack_view")
 

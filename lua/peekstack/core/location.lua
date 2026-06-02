@@ -120,13 +120,34 @@ local function resolve_realpath(fname, cache)
   return resolved
 end
 
+---Normalize a single position, falling back to {0, 0} for corrupt fields.
+---@param pos any
+---@return { line: integer, character: integer }
+local function normalize_position(pos)
+  if type(pos) ~= "table" then
+    return { line = 0, character = 0 }
+  end
+  return {
+    line = type(pos.line) == "number" and pos.line or 0,
+    character = type(pos.character) == "number" and pos.character or 0,
+  }
+end
+
+---Normalize a range into a well-formed PeekstackRange.
+---This is the validation chokepoint for untrusted data (e.g. ranges read from
+---disk): a corrupt shape (non-table range/start/end, non-numeric line/character)
+---is coerced to a safe default instead of crashing downstream consumers.
 ---@param range? PeekstackRange
 ---@return PeekstackRange
 local function normalize_range(range)
-  if not range then
+  if type(range) ~= "table" then
     return { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } }
   end
-  return range
+  local start = normalize_position(range.start)
+  -- Default a missing/non-table end to start so it stays a coherent zero-width range.
+  local finish = type(range["end"]) == "table" and normalize_position(range["end"])
+    or { line = start.line, character = start.character }
+  return { start = start, ["end"] = finish }
 end
 
 ---@param loc table
