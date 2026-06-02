@@ -3,6 +3,7 @@ local fs = require("peekstack.util.fs")
 local notify = require("peekstack.util.notify")
 
 local NS_NAME = "PeekstackInlinePreviewNS"
+local AUGROUP_NAME = "PeekstackInlinePreview"
 ---@type integer?
 local namespace_id = nil
 
@@ -45,6 +46,11 @@ function M.close()
 
     state = nil
   end
+
+  -- Disarm any leftover close-event autocmds. When close() is triggered by one
+  -- of the `once` close events, the remaining events in the group stay armed and
+  -- would fire on unrelated later activity. Deleting the group clears them.
+  pcall(vim.api.nvim_del_augroup_by_name, AUGROUP_NAME)
 end
 
 ---Render preview lines from a location
@@ -222,7 +228,7 @@ function M.setup_close_events()
   local cfg = config.get()
   local close_events = cfg.ui.inline_preview.close_events or { "CursorMoved", "InsertEnter", "BufLeave", "WinLeave" }
 
-  local group = vim.api.nvim_create_augroup("PeekstackInlinePreview", { clear = true })
+  local group = vim.api.nvim_create_augroup(AUGROUP_NAME, { clear = true })
 
   for _, event in ipairs(close_events) do
     vim.api.nvim_create_autocmd(event, {

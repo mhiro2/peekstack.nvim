@@ -149,6 +149,30 @@ describe("peekstack.ui.inline_preview", function()
     assert.equals(1, get_namespaces_calls)
   end)
 
+  it("clears the close-event augroup on close to avoid leaking armed autocmds", function()
+    local location = {
+      uri = vim.uri_from_fname(temp_file),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+    }
+
+    inline_preview.open(location)
+
+    -- Close-event autocmds are registered while the preview is open.
+    local armed = vim.api.nvim_get_autocmds({ group = "PeekstackInlinePreview" })
+    assert.is_true(#armed > 0)
+
+    inline_preview.close()
+
+    -- After close the augroup must be gone so no `once` autocmds stay armed and
+    -- fire on unrelated later events. Querying a deleted group raises.
+    local ok, remaining = pcall(vim.api.nvim_get_autocmds, { group = "PeekstackInlinePreview" })
+    if ok then
+      assert.equals(0, #remaining)
+    else
+      assert.is_false(ok)
+    end
+  end)
+
   it("falls back to default close events when config is invalid", function()
     config.setup({
       ui = {
