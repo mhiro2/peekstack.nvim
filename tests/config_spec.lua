@@ -778,5 +778,58 @@ describe("config", function()
       assert.is_true(has_message("persist.session must be a table"))
       assert.equals("table", type(cfg.persist.session))
     end)
+
+    describe("unknown keys", function()
+      it("warns on an unknown top-level key", function()
+        config.setup({ unknown_top = true })
+        assert.is_true(has_message("Unknown config key"))
+        assert.is_true(has_message("unknown_top"))
+      end)
+
+      it("warns on a mistyped nested section key", function()
+        config.setup({ ui = { popups = { editable = true } } })
+        assert.is_true(has_message("ui.popups"))
+      end)
+
+      it("warns on a mistyped keymap action name", function()
+        config.setup({ ui = { keys = { focus_nxt = "<C-n>" } } })
+        assert.is_true(has_message("ui.keys.focus_nxt"))
+      end)
+
+      it("does not warn for valid config", function()
+        config.setup({
+          ui = { popup = { editable = true }, keys = { close = "x" } },
+          picker = { backend = "telescope", builtin = { preview_lines = 3 } },
+          providers = { marks = { enable = true } },
+          persist = { enabled = true, auto = { enabled = true } },
+        })
+        assert.is_false(has_message("Unknown config key"))
+      end)
+
+      it("allows custom provider icons in ui.title.icons.map", function()
+        config.setup({
+          ui = { title = { icons = { map = { custom_provider = "" } } } },
+        })
+        assert.is_false(has_message("Unknown config key"))
+      end)
+
+      it("allows custom filetypes in ui.title.context.node_types", function()
+        config.setup({
+          ui = { title = { context = { node_types = { mylang = { "func" } } } } },
+        })
+        assert.is_false(has_message("Unknown config key"))
+      end)
+
+      it("does not flag extended close_events list entries", function()
+        config.setup({
+          ui = {
+            inline_preview = {
+              close_events = { "CursorMoved", "InsertEnter", "BufLeave", "WinLeave", "FocusLost" },
+            },
+          },
+        })
+        assert.is_false(has_message("Unknown config key"))
+      end)
+    end)
   end)
 end)

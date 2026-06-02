@@ -59,6 +59,27 @@ function M.reset_open_state(s)
   s.preview_ts_cache = {}
 end
 
+---Move the cursor below the header rows when it would otherwise sit on a
+---header line. No-op when the buffer holds only header lines.
+---@param s PeekstackStackViewState
+function M.ensure_non_header_cursor(s)
+  if not (s.winid and vim.api.nvim_win_is_valid(s.winid) and s.bufnr and vim.api.nvim_buf_is_valid(s.bufnr)) then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(s.bufnr)
+  local header_lines = s.header_lines or 0
+  if line_count <= header_lines then
+    return
+  end
+
+  local min_line = header_lines + 1
+  local cursor = vim.api.nvim_win_get_cursor(s.winid)[1]
+  if cursor < min_line then
+    vim.api.nvim_win_set_cursor(s.winid, { min_line, 0 })
+  end
+end
+
 local function cleanup_invalid_states()
   for tabpage, s in pairs(states) do
     if not vim.api.nvim_tabpage_is_valid(tabpage) then
