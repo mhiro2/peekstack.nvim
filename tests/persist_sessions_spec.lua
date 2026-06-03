@@ -64,21 +64,15 @@ describe("peekstack.persist.sessions", function()
     return { path = path, model = model }
   end
 
+  ---Write store data synchronously for deterministic test setup/teardown.
+  ---The async `store.write` path is exercised separately by the save/restore
+  ---tests below; using the sync path for fixture writes avoids a transient
+  ---libuv fs race (`fs_open`/`fs_write`/`fs_rename` callback chain) that made
+  ---the nightly CI job flaky during `before_each`/`after_each` cleanup writes.
   ---@param scope string
   ---@param data PeekstackStoreData
   local function write_and_wait(scope, data)
-    local done = false
-    local success = false
-    store.write(scope, data, {
-      on_done = function(ok)
-        done = true
-        success = ok
-      end,
-    })
-    local ok = vim.wait(wait_timeout_ms, function()
-      return done
-    end, wait_interval_ms)
-    assert.is_true(ok, "Timed out waiting for store write")
+    local success = store.write_sync(scope, data)
     assert.is_true(success, "Store write failed")
   end
 
