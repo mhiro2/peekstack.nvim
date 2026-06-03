@@ -279,8 +279,9 @@ Commands are registered after `setup()` is called.
 :PeekstackListSessions                       *:PeekstackListSessions*
     List all saved sessions. Select one to view its summary.
 
-:PeekstackDeleteSession {name}               *:PeekstackDeleteSession*
-    Delete a saved session by name. Prompts for confirmation.
+:PeekstackDeleteSession [name]               *:PeekstackDeleteSession*
+    Delete a saved session. Prompts for confirmation before deleting. When
+    no name is given, prompts to select one from the saved sessions.
 
 :PeekstackRestorePopup                        *:PeekstackRestorePopup*
     Restore the last closed popup from history (undo close).

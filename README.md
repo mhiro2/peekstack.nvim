@@ -111,7 +111,7 @@ Built-in provider names:
 - `:PeekstackSaveSession` — save current stack (persist enabled)
 - `:PeekstackRestoreSession` — restore a saved session
 - `:PeekstackListSessions` — list all saved sessions
-- `:PeekstackDeleteSession {name}` — delete a saved session by name
+- `:PeekstackDeleteSession [name]` — delete a saved session (prompts to select when no name is given)
 - `:PeekstackRestorePopup` — restore the last closed popup (undo close)
 - `:PeekstackRestoreAllPopups` — restore all closed popups
 - `:PeekstackCloseAll` — close all popups in the current stack

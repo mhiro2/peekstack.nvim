@@ -4,6 +4,7 @@ describe("peekstack.commands", function()
   local peekstack = require("peekstack")
   local persist = require("peekstack.persist")
   local original_list_sessions = nil
+  local original_delete_session = nil
   local original_select = nil
   local original_notify = nil
   local original_strftime = nil
@@ -12,6 +13,7 @@ describe("peekstack.commands", function()
     config.setup({})
     commands._reset()
     original_list_sessions = persist.list_sessions
+    original_delete_session = persist.delete_session
     original_select = vim.ui.select
     original_notify = vim.notify
     original_strftime = vim.fn.strftime
@@ -21,6 +23,9 @@ describe("peekstack.commands", function()
     config.setup({})
     if original_list_sessions then
       persist.list_sessions = original_list_sessions
+    end
+    if original_delete_session then
+      persist.delete_session = original_delete_session
     end
     if original_select then
       vim.ui.select = original_select
@@ -52,6 +57,121 @@ describe("peekstack.commands", function()
 
     assert.same({ "alpha", "beta" }, names)
     assert.is_false(called_with_opts)
+  end)
+
+  it("filters session completion by ArgLead prefix", function()
+    persist.list_sessions = function()
+      return {
+        alpha = { items = {}, meta = { created_at = 1, updated_at = 1 } },
+        alpine = { items = {}, meta = { created_at = 1, updated_at = 1 } },
+        beta = { items = {}, meta = { created_at = 1, updated_at = 1 } },
+      }
+    end
+
+    commands.setup()
+    local names = vim.fn.getcompletion("PeekstackRestoreSession al", "cmdline")
+    table.sort(names)
+
+    assert.same({ "alpha", "alpine" }, names)
+  end)
+
+  it("filters quick peek completion by ArgLead prefix", function()
+    peekstack.setup({})
+    local names = vim.fn.getcompletion("PeekstackQuickPeek lsp.d", "cmdline")
+
+    assert.is_true(#names > 0)
+    for _, name in ipairs(names) do
+      assert.is_true(vim.startswith(name, "lsp.d"))
+    end
+    assert.is_true(vim.list_contains(names, "lsp.definition"))
+    assert.is_true(vim.list_contains(names, "lsp.declaration"))
+    assert.is_false(vim.list_contains(names, "lsp.references"))
+  end)
+
+  it("prompts to select a session when delete is invoked without a name", function()
+    local deleted = nil
+    local select_items = nil
+    persist.list_sessions = function(opts)
+      assert.is_truthy(opts)
+      assert.is_truthy(opts.on_done)
+      opts.on_done({
+        beta = { items = {}, meta = { created_at = 1, updated_at = 1 } },
+        alpha = { items = {}, meta = { created_at = 1, updated_at = 1 } },
+      })
+      return {}
+    end
+    persist.delete_session = function(name)
+      deleted = name
+    end
+
+    vim.ui.select = function(items, opts, on_choice)
+      if opts.prompt == "Delete session" then
+        select_items = vim.deepcopy(items)
+        on_choice("beta")
+        return
+      end
+      on_choice("Yes")
+    end
+
+    commands.setup()
+    vim.api.nvim_cmd({ cmd = "PeekstackDeleteSession" }, {})
+
+    assert.same({ "alpha", "beta" }, select_items)
+    assert.equals("beta", deleted)
+  end)
+
+  it("notifies when no sessions exist on nameless delete", function()
+    local deleted = false
+    local messages = {}
+    persist.list_sessions = function(opts)
+      opts.on_done({})
+      return {}
+    end
+    persist.delete_session = function()
+      deleted = true
+    end
+    vim.notify = function(msg)
+      table.insert(messages, msg)
+    end
+
+    commands.setup()
+    vim.api.nvim_cmd({ cmd = "PeekstackDeleteSession" }, {})
+
+    assert.is_true(vim.list_contains(messages, "[peekstack] No saved sessions"))
+    assert.is_false(deleted)
+  end)
+
+  it("confirms before deleting a named session", function()
+    local deleted = nil
+    local prompt = nil
+    persist.delete_session = function(name)
+      deleted = name
+    end
+    vim.ui.select = function(_items, opts, on_choice)
+      prompt = opts.prompt
+      on_choice("Yes")
+    end
+
+    commands.setup()
+    vim.api.nvim_cmd({ cmd = "PeekstackDeleteSession", args = { "alpha" } }, {})
+
+    assert.equals("Delete session 'alpha'?", prompt)
+    assert.equals("alpha", deleted)
+  end)
+
+  it("does not delete a named session when confirmation is declined", function()
+    local deleted = false
+    persist.delete_session = function()
+      deleted = true
+    end
+    vim.ui.select = function(_items, _opts, on_choice)
+      on_choice("No")
+    end
+
+    commands.setup()
+    vim.api.nvim_cmd({ cmd = "PeekstackDeleteSession", args = { "alpha" } }, {})
+
+    assert.is_false(deleted)
   end)
 
   it("handles missing session meta in list command", function()

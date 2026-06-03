@@ -46,6 +46,37 @@ local function list_session_names()
   return names
 end
 
+---Keep only candidates whose prefix matches the current argument.
+---Lua command completion behaves like `customlist`, so Neovim does not filter
+---the returned list against `ArgLead` for us.
+---@param candidates string[]
+---@param arg_lead string
+---@return string[]
+local function filter_by_prefix(candidates, arg_lead)
+  if not arg_lead or arg_lead == "" then
+    return candidates
+  end
+  return vim.tbl_filter(function(candidate)
+    return vim.startswith(candidate, arg_lead)
+  end, candidates)
+end
+
+---@param arg_lead string
+---@return string[]
+local function complete_session_names(arg_lead)
+  return filter_by_prefix(list_session_names(), arg_lead)
+end
+
+---Confirm and delete a named session.
+---@param name string
+local function confirm_delete_session(name)
+  vim.ui.select({ "Yes", "No" }, { prompt = "Delete session '" .. name .. "'?" }, function(choice)
+    if choice == "Yes" then
+      require("peekstack.persist").delete_session(name)
+    end
+  end)
+end
+
 function M.setup()
   if loaded then
     return
@@ -80,7 +111,7 @@ function M.setup()
     require("peekstack.persist").restore(name)
   end, {
     nargs = "?",
-    complete = list_session_names,
+    complete = complete_session_names,
   })
 
   vim.api.nvim_create_user_command("PeekstackListSessions", function()
@@ -115,19 +146,31 @@ function M.setup()
   end, {})
 
   vim.api.nvim_create_user_command("PeekstackDeleteSession", function(opts)
-    local name = opts.args
-    if not name or name == "" then
-      notify.warn("Usage: PeekstackDeleteSession <name>")
+    local name = opts.args and opts.args ~= "" and opts.args or nil
+    if name then
+      confirm_delete_session(name)
       return
     end
-    vim.ui.select({ "Yes", "No" }, { prompt = "Delete session '" .. name .. "'?" }, function(choice)
-      if choice == "Yes" then
-        require("peekstack.persist").delete_session(name)
-      end
-    end)
+
+    require("peekstack.persist").list_sessions({
+      on_done = function(sessions)
+        local names = vim.tbl_keys(sessions)
+        table.sort(names)
+        if #names == 0 then
+          notify.info("No saved sessions")
+          return
+        end
+        vim.ui.select(names, { prompt = "Delete session" }, function(selected)
+          if not selected then
+            return
+          end
+          confirm_delete_session(selected)
+        end)
+      end,
+    })
   end, {
-    nargs = 1,
-    complete = list_session_names,
+    nargs = "?",
+    complete = complete_session_names,
   })
 
   vim.api.nvim_create_user_command("PeekstackRestorePopup", function()
@@ -201,8 +244,8 @@ function M.setup()
     require("peekstack").peek(provider, { mode = "quick" })
   end, {
     nargs = "?",
-    complete = function()
-      return require("peekstack").list_providers()
+    complete = function(arg_lead)
+      return filter_by_prefix(require("peekstack").list_providers(), arg_lead)
     end,
   })
 end
