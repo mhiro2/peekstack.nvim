@@ -24,19 +24,10 @@ end
 ---@return integer
 function M.resolve_root_winid(root_winid)
   if root_winid and type(root_winid) == "number" and vim.api.nvim_win_is_valid(root_winid) then
-    return root_winid
+    return stack.get_root_winid(root_winid)
   end
 
-  local winid = vim.api.nvim_get_current_win()
-  local bufnr = vim.api.nvim_win_get_buf(winid)
-  if vim.bo[bufnr].filetype == "peekstack-stack" then
-    local ok, stack_root_winid = pcall(vim.api.nvim_win_get_var, winid, "peekstack_root_winid")
-    if ok and type(stack_root_winid) == "number" and vim.api.nvim_win_is_valid(stack_root_winid) then
-      return stack_root_winid
-    end
-  end
-
-  return winid
+  return stack.get_root_winid(vim.api.nvim_get_current_win())
 end
 
 ---Collect the current stack items (truncated to `persist.max_items`).

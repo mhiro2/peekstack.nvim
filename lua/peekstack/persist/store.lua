@@ -4,6 +4,15 @@ local notify = require("peekstack.util.notify")
 
 local M = {}
 
+local write_counter = 0
+
+---@param path string
+---@return string
+local function next_tmp_path(path)
+  write_counter = write_counter + 1
+  return string.format("%s.%d.%d.tmp", path, vim.uv.hrtime(), write_counter)
+end
+
 ---@param path string
 ---@return boolean
 local function ensure_parent_dir(path)
@@ -110,7 +119,7 @@ function M.write(scope, data, opts)
     return
   end
 
-  local tmp_path = path .. ".tmp"
+  local tmp_path = next_tmp_path(path)
   vim.uv.fs_open(tmp_path, "w", 438, function(open_err, fd)
     if open_err or not fd then
       vim.schedule(function()
@@ -159,7 +168,7 @@ function M.write_sync(scope, data)
     return false
   end
 
-  local tmp_path = path .. ".tmp"
+  local tmp_path = next_tmp_path(path)
   local fd = vim.uv.fs_open(tmp_path, "w", 438)
   if not fd then
     notify.warn("Failed to write session data: " .. path)
