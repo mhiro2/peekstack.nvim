@@ -192,6 +192,53 @@ describe("peekstack.persist.store", function()
     assert.same(data, store.read_sync(test_scope))
   end)
 
+  it("allows overlapping async writes to the same scope", function()
+    local first = {
+      version = 2,
+      sessions = {
+        first = {
+          items = {},
+          meta = { created_at = 1, updated_at = 1 },
+        },
+      },
+    }
+    local second = {
+      version = 2,
+      sessions = {
+        second = {
+          items = {},
+          meta = { created_at = 2, updated_at = 2 },
+        },
+      },
+    }
+
+    local done = 0
+    local successes = {}
+    store.write(test_scope, first, {
+      on_done = function(ok)
+        done = done + 1
+        successes[#successes + 1] = ok
+      end,
+    })
+    store.write(test_scope, second, {
+      on_done = function(ok)
+        done = done + 1
+        successes[#successes + 1] = ok
+      end,
+    })
+
+    local ok = vim.wait(wait_timeout_ms, function()
+      return done == 2
+    end, wait_interval_ms)
+    assert.is_true(ok, "Timed out waiting for overlapping store writes")
+    assert.is_true(successes[1])
+    assert.is_true(successes[2])
+
+    local result = read_and_wait(test_scope)
+    assert.equals(2, result.version)
+    assert.is_true(result.sessions.first ~= nil or result.sessions.second ~= nil)
+  end)
+
   it("write_sync returns false when payload cannot be encoded", function()
     local ok = store.write_sync(test_scope, {
       version = 2,
