@@ -20,8 +20,9 @@ end
 ---their parent. Assumes the item already passed is_valid_item.
 ---@param item PeekstackSessionItem
 ---@param id_remap table<integer, integer>
+---@param root_winid integer stack root frozen when the restore was requested
 ---@return boolean restored whether a popup was actually created
-local function restore_item(item, id_remap)
+local function restore_item(item, id_remap, root_winid)
   local loc = location.normalize({ uri = item.uri, range = item.range }, item.provider or "persist")
   if not loc then
     return false
@@ -43,6 +44,7 @@ local function restore_item(item, id_remap)
     buffer_mode = item.buffer_mode,
     parent_popup_id = parent_id,
     defer_reflow = true,
+    root_winid = root_winid,
   })
   if not model then
     return false
@@ -134,6 +136,9 @@ function M.restore(name, opts)
   end
 
   local resolved_name = sessions.resolve_name(name)
+  -- Freeze the target stack now: the read below is async and the user may
+  -- move to another window before the session is restored.
+  local root_winid = sessions.resolve_root_winid(opts and opts.root_winid or nil)
   orchestrator.refresh_cache_async(function(data)
     local session = data.sessions[resolved_name]
 
@@ -152,14 +157,16 @@ function M.restore(name, opts)
       -- Isolate each item: a single corrupt entry (bad type or a push failure)
       -- must not abort restoring the rest of the session.
       if is_valid_item(item) then
-        local ok, restored = pcall(restore_item, item, id_remap)
+        local ok, restored = pcall(restore_item, item, id_remap, root_winid)
         if ok and restored then
           restored_count = restored_count + 1
         end
       end
     end
 
-    stack.reflow()
+    if vim.api.nvim_win_is_valid(root_winid) then
+      stack.reflow(root_winid)
+    end
 
     local skipped = #session.items - restored_count
 
