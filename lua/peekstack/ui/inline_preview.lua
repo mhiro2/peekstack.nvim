@@ -168,11 +168,24 @@ function M.open(location, opts)
     return
   end
 
-  -- Close any existing preview
+  -- Anchor to the window that issued the request: an async provider may have
+  -- resolved after the user moved to another window.
+  local origin_winid = opts.origin_winid
+  if origin_winid ~= nil then
+    if type(origin_winid) ~= "number" or not vim.api.nvim_win_is_valid(origin_winid) then
+      -- The requesting window is gone; do not retarget a different window.
+      return
+    end
+  else
+    origin_winid = vim.api.nvim_get_current_win()
+  end
+
+  -- Close any existing preview only once this request is known to be valid,
+  -- so a stale callback cannot tear down a newer preview.
   M.close()
 
-  local current_bufnr = vim.api.nvim_get_current_buf()
-  local cursor_row = vim.api.nvim_win_get_cursor(0)[1] - 1
+  local current_bufnr = vim.api.nvim_win_get_buf(origin_winid)
+  local cursor_row = vim.api.nvim_win_get_cursor(origin_winid)[1] - 1
 
   local max_lines = cfg.ui.inline_preview.max_lines or 10
   local hl_group = cfg.ui.inline_preview.hl_group or "PeekstackInlinePreview"
