@@ -72,12 +72,10 @@ function M.close_ephemerals(winid)
     local entry = state.lookup_by_id(item.id)
     local root_winid = entry and entry.root_winid or nil
     if target_root_winid == nil or root_winid == target_root_winid then
+      local event_root_winid = state.ephemeral_root_winid(item)
       popup.close(item)
       state.unregister_ephemeral(id)
-      user_events.emit(
-        "PeekstackClose",
-        user_events.build_popup_data(item, item.origin and item.origin.winid or 0, { ephemeral = true })
-      )
+      user_events.emit("PeekstackClose", user_events.build_popup_data(item, event_root_winid, { ephemeral = true }))
     end
   end
 end

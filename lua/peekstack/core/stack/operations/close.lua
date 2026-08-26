@@ -63,14 +63,12 @@ function M.close_by_id(id, winid)
   deps()
   local ephemeral_id, ephemeral = state.find_ephemeral(id)
   if ephemeral_id and ephemeral then
+    local root_winid = state.ephemeral_root_winid(ephemeral)
     feedback.highlight_origin(ephemeral.origin)
     popup.close(ephemeral)
     state.unregister_ephemeral(ephemeral_id)
 
-    user_events.emit(
-      "PeekstackClose",
-      user_events.build_popup_data(ephemeral, ephemeral.origin and ephemeral.origin.winid or 0)
-    )
+    user_events.emit("PeekstackClose", user_events.build_popup_data(ephemeral, root_winid, { ephemeral = true }))
 
     return true
   end

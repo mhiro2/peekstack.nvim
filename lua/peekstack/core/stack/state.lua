@@ -168,6 +168,20 @@ function M.register_ephemeral(model, root_winid)
   M.index_popup(model, root_winid)
 end
 
+---Owning stack root of an ephemeral popup, as recorded when it was registered.
+---@param model PeekstackPopupModel
+---@return integer
+function M.ephemeral_root_winid(model)
+  if not model then
+    return 0
+  end
+  local entry = model.id ~= nil and M.popup_by_id[model.id] or nil
+  if entry and entry.popup == model and entry.root_winid then
+    return entry.root_winid
+  end
+  return resolve_ephemeral_root_winid(model) or (model.origin and model.origin.winid) or 0
+end
+
 ---@param id integer
 function M.unregister_ephemeral(id)
   local model = M.ephemerals[id]

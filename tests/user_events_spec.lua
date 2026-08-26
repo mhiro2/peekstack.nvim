@@ -90,6 +90,51 @@ describe("peekstack.core.user_events", function()
     assert.is_true(found, "PeekstackClose event not found")
   end)
 
+  it("should report the owning stack root for quick peek events", function()
+    local location = {
+      uri = vim.uri_from_bufnr(0),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+      provider = "test",
+    }
+
+    local parent = stack.push(location)
+    assert.is_not_nil(parent)
+    local parent_stack = stack.find_by_winid(parent.winid)
+    assert.is_not_nil(parent_stack)
+    local root_winid = parent_stack.root_winid
+
+    -- Quick peek issued from inside a popup: it belongs to the parent stack,
+    -- not to the popup window it was triggered from.
+    vim.api.nvim_set_current_win(parent.winid)
+    local quick = stack.push(location, { stack = false })
+    assert.is_not_nil(quick)
+
+    vim.api.nvim_set_current_win(root_winid)
+    stack.close(quick.id)
+
+    vim.wait(100)
+
+    local push_data, close_data
+    for _, ev in ipairs(received_events) do
+      if ev.data.popup_id == quick.id then
+        if ev.event == "PeekstackPush" then
+          push_data = ev.data
+        elseif ev.event == "PeekstackClose" then
+          close_data = ev.data
+        end
+      end
+    end
+
+    assert.is_not_nil(push_data, "PeekstackPush event not found")
+    assert.is_not_nil(close_data, "PeekstackClose event not found")
+    assert.is_true(push_data.ephemeral)
+    assert.is_true(close_data.ephemeral)
+    assert.equals(root_winid, push_data.root_winid)
+    assert.equals(root_winid, close_data.root_winid)
+
+    stack.close(parent.id)
+  end)
+
   it("should emit PeekstackFocus event when focusing popup", function()
     local location = {
       uri = vim.uri_from_bufnr(0),
