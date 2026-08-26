@@ -16,6 +16,28 @@ local function pick_backend()
   return registry.get_picker(backend) or registry.get_picker("builtin")
 end
 
+---Freeze the requesting window into opts so results delivered asynchronously
+---(LSP providers, picker callbacks) land on the stack that issued the request
+---even when the user moved to another window in the meantime.
+---@param opts? table
+---@param ctx? PeekstackProviderContext
+---@return table
+local function with_request_origin(opts, ctx)
+  local merged = vim.tbl_extend("force", {}, opts or {})
+  if merged.origin_winid ~= nil and merged.root_winid ~= nil then
+    return merged
+  end
+
+  ctx = ctx or require("peekstack.core.context").current()
+  if merged.origin_winid == nil then
+    merged.origin_winid = ctx.winid
+  end
+  if merged.root_winid == nil then
+    merged.root_winid = ctx.root_winid
+  end
+  return merged
+end
+
 ---Normalize location and set provider from opts if needed.
 ---@param loc table
 ---@param opts? table
@@ -80,10 +102,11 @@ function M.peek_locations(locations, opts)
     return
   end
 
+  local frozen = with_request_origin(opts)
   local picker = pick_backend()
-  picker.pick(locations, opts or {}, function(choice)
+  picker.pick(locations, frozen, function(choice)
     if choice then
-      M.peek_location(choice, opts)
+      M.peek_location(choice, frozen)
     end
   end)
 end
@@ -99,7 +122,7 @@ local function peek_by_provider(provider, opts)
 
   local context = require("peekstack.core.context")
   local ctx = context.current()
-  local merged = vim.tbl_extend("force", opts or {}, { provider = provider })
+  local merged = with_request_origin(vim.tbl_extend("force", opts or {}, { provider = provider }), ctx)
   fn(ctx, function(locations)
     local filtered = locations or {}
     if is_lsp_provider(provider) and locations and #locations > 0 then
