@@ -107,6 +107,49 @@ describe("peekstack.health", function()
     assert.is_true(found)
   end)
 
+  it("reports a registered custom picker backend as ok", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    local registry = require("peekstack.registry")
+    registry.register_picker("my_picker", { pick = function() end })
+    config.setup({ picker = { backend = "my_picker" } })
+
+    health.check()
+    registry.register_picker("my_picker", nil)
+
+    local found = false
+    for _, msg in ipairs(messages) do
+      if msg:find("ok:") and msg:find("my_picker") and msg:find("register_picker") then
+        found = true
+      end
+    end
+    assert.is_true(found)
+  end)
+
+  it("warns when configured picker backend is not registered", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    config.setup({ picker = { backend = "missing_picker" } })
+
+    health.check()
+
+    local found = false
+    for _, msg in ipairs(messages) do
+      if msg:find("warn:") and msg:find("missing_picker") and msg:find("not registered") then
+        found = true
+      end
+    end
+    assert.is_true(found)
+  end)
+
   it("reports persist status when enabled inside a git repo", function()
     vim.fn.has = function()
       return 1

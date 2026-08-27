@@ -239,7 +239,7 @@ Configure via `require("peekstack").setup({ ... })`.
     },
   },
   picker = {
-    backend = "builtin",
+    backend = "builtin", -- "builtin" | "telescope" | "fzf-lua" | "snacks" | <custom name>
     builtin = {
       preview_lines = 1,
     },
@@ -307,6 +307,25 @@ Candidate labels are shown in a readable unified format:
 
 If the chosen plugin is not installed, a warning is shown and the picker will not open.
 
+You can also plug in your own picker with `register_picker(name, mod)` and select it
+with `picker.backend = name`. The module must implement `pick(locations, opts, cb)`
+and call `cb` with the chosen location (or `nil` to cancel). Registration works
+before or after `setup()` and survives `setup()` re-runs; if the configured name is
+not registered, peekstack falls back to `builtin`.
+
+```lua
+require("peekstack").register_picker("my_picker", {
+  pick = function(locations, opts, cb)
+    vim.ui.select(locations, {
+      format_item = function(loc)
+        return vim.uri_to_fname(loc.uri)
+      end,
+    }, cb)
+  end,
+})
+require("peekstack").setup({ picker = { backend = "my_picker" } })
+```
+
 ## 🔌 Extensions (push from external pickers)
 
 Push results from external pickers (telescope / fzf-lua / snacks.nvim) directly
@@ -358,7 +377,8 @@ Auto persist only runs inside a git repository and always uses the repository se
 ## 🔁 Re-running setup
 
 Calling `require("peekstack").setup()` again replaces config, re-registers providers, commands,
-autocmds, picker backends, and auto-persist hooks.
+autocmds, picker backends, and auto-persist hooks. Providers and pickers registered with
+`register_provider()` / `register_picker()` are kept.
 
 It does not migrate existing popup windows, stack entries, or history in place. Updated settings apply
 to future actions, and to existing stacks only after those popups are reopened, restored, or recreated.

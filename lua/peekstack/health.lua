@@ -69,8 +69,14 @@ local function report_picker(cfg)
       else
         vim.health.warn("picker backend '" .. backend .. "' is configured but the plugin is not installed")
       end
+    elseif require("peekstack.registry").get_picker(backend) then
+      vim.health.ok("picker backend '" .. backend .. "' registered via register_picker()")
     else
-      vim.health.warn("unknown picker backend '" .. backend .. "'")
+      vim.health.warn(
+        "picker backend '"
+          .. backend
+          .. "' is not registered; register it with register_picker() (falls back to 'builtin')"
+      )
     end
   end
 
