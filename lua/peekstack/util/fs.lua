@@ -98,9 +98,26 @@ end
 ---@param path string
 ---@return string
 function M.ensure_dir(path)
-  -- mkdir with "p" flag is atomic and handles existing directories
-  vim.fn.mkdir(path, "p")
-  return path
+  if vim.fn.isdirectory(path) == 1 then
+    return path
+  end
+
+  -- mkdir "p" is not atomic: it checks each component before creating it, so a
+  -- concurrent process winning that race aborts it with E739, possibly before
+  -- the leaf exists. Retry, and judge success on the directory being there
+  -- rather than on how mkdir reported the outcome.
+  local last_err
+  for _ = 1, 3 do
+    local ok, err = pcall(vim.fn.mkdir, path, "p")
+    if not ok then
+      last_err = err
+    end
+    if vim.fn.isdirectory(path) == 1 then
+      return path
+    end
+  end
+
+  error(last_err or ("Failed to create directory: " .. path), 0)
 end
 
 ---@param input? string

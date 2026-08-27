@@ -219,6 +219,40 @@ describe("peekstack.persist.sessions", function()
     assert.equals("Beta", restored_popups[2].title)
   end)
 
+  it("should restore into the window that requested the restore", function()
+    push_popup("restore_origin_a", { title = "Origin A" })
+    persist.save_current("restore_origin", { silent = true, sync = true })
+    cleanup_stack()
+
+    local win_a = vim.api.nvim_get_current_win()
+    vim.api.nvim_cmd({ cmd = "split" }, {})
+    local win_b = vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(win_a)
+
+    local restored = nil
+    persist.restore("restore_origin", {
+      silent = true,
+      on_done = function(result)
+        restored = result
+      end,
+    })
+
+    -- The user moves away while the session read is still in flight.
+    vim.api.nvim_set_current_win(win_b)
+
+    local waited = vim.wait(wait_timeout_ms, function()
+      return restored ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for restore callback")
+    assert.is_true(restored)
+
+    assert.equals(1, #stack.list(win_a))
+    assert.equals(0, #stack.list(win_b))
+
+    cleanup_stack()
+    vim.api.nvim_win_close(win_b, true)
+  end)
+
   it("should list all sessions", function()
     push_popup("list_session_a", { title = "List A" })
     persist.save_current("test_session_1", { silent = true, sync = true })

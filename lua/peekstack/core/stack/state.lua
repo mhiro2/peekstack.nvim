@@ -159,9 +159,27 @@ function M.register_stack_view_win(winid)
 end
 
 ---@param model PeekstackPopupModel
-function M.register_ephemeral(model)
+---@param root_winid? integer owning stack root; inferred from the origin when omitted
+function M.register_ephemeral(model, root_winid)
   M.ephemerals[model.id] = model
-  M.index_popup(model, resolve_ephemeral_root_winid(model))
+  if type(root_winid) ~= "number" or not vim.api.nvim_win_is_valid(root_winid) then
+    root_winid = resolve_ephemeral_root_winid(model)
+  end
+  M.index_popup(model, root_winid)
+end
+
+---Owning stack root of an ephemeral popup, as recorded when it was registered.
+---@param model PeekstackPopupModel
+---@return integer
+function M.ephemeral_root_winid(model)
+  if not model then
+    return 0
+  end
+  local entry = model.id ~= nil and M.popup_by_id[model.id] or nil
+  if entry and entry.popup == model and entry.root_winid then
+    return entry.root_winid
+  end
+  return resolve_ephemeral_root_winid(model) or (model.origin and model.origin.winid) or 0
 end
 
 ---@param id integer

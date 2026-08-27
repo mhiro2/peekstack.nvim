@@ -78,6 +78,78 @@ describe("fs", function()
     end)
   end)
 
+  describe("ensure_dir", function()
+    it("is idempotent for an existing directory", function()
+      local dir = vim.fn.tempname()
+      assert.equals(dir, fs.ensure_dir(dir))
+      assert.equals(1, vim.fn.isdirectory(dir))
+      assert.equals(dir, fs.ensure_dir(dir))
+      assert.equals(1, vim.fn.isdirectory(dir))
+
+      vim.fn.delete(dir, "rf")
+    end)
+
+    it("tolerates a concurrent mkdir losing the race", function()
+      local dir = vim.fn.tempname()
+      local original_mkdir = vim.fn.mkdir
+      vim.fn.mkdir = function(path, flags)
+        -- Emulate another process creating the directory first.
+        original_mkdir(path, flags)
+        error("Vim:E739: Cannot create directory " .. path .. ": file already exists")
+      end
+
+      local ok, result = pcall(fs.ensure_dir, dir)
+      vim.fn.mkdir = original_mkdir
+
+      assert.is_true(ok, tostring(result))
+      assert.equals(dir, result)
+      assert.equals(1, vim.fn.isdirectory(dir))
+
+      vim.fn.delete(dir, "rf")
+    end)
+
+    it("retries when a concurrent mkdir aborts on an intermediate directory", function()
+      local base = vim.fn.tempname()
+      local dir = base .. "/nested/leaf"
+      local original_mkdir = vim.fn.mkdir
+      local calls = 0
+      vim.fn.mkdir = function(path, flags)
+        calls = calls + 1
+        if calls == 1 then
+          -- Another process created an intermediate component first, aborting
+          -- this mkdir before the leaf directory exists.
+          original_mkdir(base .. "/nested", flags)
+          error("Vim:E739: Cannot create directory " .. base .. "/nested: file already exists")
+        end
+        return original_mkdir(path, flags)
+      end
+
+      local ok, result = pcall(fs.ensure_dir, dir)
+      vim.fn.mkdir = original_mkdir
+
+      assert.is_true(ok, tostring(result))
+      assert.equals(dir, result)
+      assert.equals(1, vim.fn.isdirectory(dir))
+      assert.equals(2, calls)
+
+      vim.fn.delete(base, "rf")
+    end)
+
+    it("propagates a genuine mkdir failure", function()
+      local dir = vim.fn.tempname()
+      local original_mkdir = vim.fn.mkdir
+      vim.fn.mkdir = function()
+        error("Vim:E739: Cannot create directory")
+      end
+
+      local ok = pcall(fs.ensure_dir, dir)
+      vim.fn.mkdir = original_mkdir
+
+      assert.is_false(ok)
+      assert.equals(0, vim.fn.isdirectory(dir))
+    end)
+  end)
+
   describe("scope_path", function()
     local original_ensure_dir
 

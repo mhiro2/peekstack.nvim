@@ -45,14 +45,12 @@ end
 ---@param opts? { close_window?: boolean }
 local function remove_ephemeral(id, item, opts)
   opts = opts or {}
+  local root_winid = state.ephemeral_root_winid(item)
   if opts.close_window ~= false and item.winid and vim.api.nvim_win_is_valid(item.winid) then
     popup.close(item)
   end
   state.unregister_ephemeral(id)
-  user_events.emit(
-    "PeekstackClose",
-    user_events.build_popup_data(item, item.origin and item.origin.winid or 0, { ephemeral = true })
-  )
+  user_events.emit("PeekstackClose", user_events.build_popup_data(item, root_winid, { ephemeral = true }))
 end
 
 ---@param winid integer
@@ -67,7 +65,10 @@ function M.handle_win_closed(winid)
   end
   for id, item in pairs(state.ephemerals) do
     if item.winid == winid then
-      user_events.emit("PeekstackClose", user_events.build_popup_data(item, item.origin and item.origin.winid or 0))
+      user_events.emit(
+        "PeekstackClose",
+        user_events.build_popup_data(item, state.ephemeral_root_winid(item), { ephemeral = true })
+      )
       state.unregister_ephemeral(id)
     end
   end
