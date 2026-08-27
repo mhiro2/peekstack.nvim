@@ -319,6 +319,78 @@ describe("peekstack.persist.sessions", function()
     assert.is_nil(data.sessions.to_delete)
   end)
 
+  it("should not lose sessions when async saves and deletes overlap", function()
+    push_popup("concurrent_a", { title = "Concurrent" })
+    persist.save_current("seed", { silent = true, sync = true })
+
+    local done = 0
+    local function count_done()
+      done = done + 1
+    end
+    persist.save_current("first", { silent = true, on_done = count_done })
+    persist.save_current("second", { silent = true, on_done = count_done })
+    persist.delete_session("seed")
+    persist.save_current("third", { silent = true, on_done = count_done })
+
+    local waited = vim.wait(wait_timeout_ms, function()
+      return done == 3
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for overlapping saves")
+    wait_for_session("seed", false)
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.is_not_nil(data.sessions.first)
+    assert.is_not_nil(data.sessions.second)
+    assert.is_not_nil(data.sessions.third)
+    assert.is_nil(data.sessions.seed)
+  end)
+
+  it("should not let a sync save race an in-flight async save", function()
+    push_popup("sync_vs_async", { title = "Race" })
+
+    local async_done = nil
+    persist.save_current("async_side", {
+      silent = true,
+      on_done = function(success)
+        async_done = success
+      end,
+    })
+    persist.save_current("sync_side", { silent = true, sync = true })
+
+    local waited = vim.wait(wait_timeout_ms, function()
+      return async_done ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for async save")
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.is_not_nil(data.sessions.async_side)
+    assert.is_not_nil(data.sessions.sync_side)
+  end)
+
+  it("should keep processing updates after an on_done callback throws", function()
+    push_popup("throwing_callback", { title = "Throw" })
+
+    persist.save_current("throws", {
+      silent = true,
+      on_done = function()
+        error("boom")
+      end,
+    })
+    local after_done = nil
+    persist.save_current("after_throw", {
+      silent = true,
+      on_done = function(success)
+        after_done = success
+      end,
+    })
+
+    local waited = vim.wait(wait_timeout_ms, function()
+      return after_done ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for the follow-up save")
+    assert.is_true(after_done)
+  end)
+
   it("should restore even when the store holds a malformed session entry", function()
     write_and_wait(test_scope, {
       version = 2,
