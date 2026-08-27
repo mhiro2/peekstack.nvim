@@ -36,9 +36,12 @@ describe("custom picker backend", function()
   end)
 
   it("rejects non-string backend and falls back to builtin", function()
-    local cfg = config.setup({ picker = { backend = 42 } })
-    assert.equals("builtin", cfg.picker.backend)
-    assert.is_true(has_message("picker.backend must be a non-empty string"))
+    for _, value in ipairs({ 42, false, "" }) do
+      notifications = {}
+      local cfg = config.setup({ picker = { backend = value } })
+      assert.equals("builtin", cfg.picker.backend)
+      assert.is_true(has_message("picker.backend must be a non-empty string"))
+    end
   end)
 
   it("keeps a picker registered before setup()", function()

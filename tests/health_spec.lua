@@ -130,6 +130,34 @@ describe("peekstack.health", function()
     assert.is_true(found)
   end)
 
+  it("prefers a user picker registered under a bundled backend name", function()
+    vim.fn.has = function()
+      return 1
+    end
+    vim.fn.executable = function()
+      return 1
+    end
+    local registry = require("peekstack.registry")
+    registry.register_picker("telescope", { pick = function() end })
+    config.setup({ picker = { backend = "telescope" } })
+
+    health.check()
+    registry.register_picker("telescope", nil)
+
+    local found_ok = false
+    local found_warn = false
+    for _, msg in ipairs(messages) do
+      if msg:find("ok:") and msg:find("telescope") and msg:find("register_picker") then
+        found_ok = true
+      end
+      if msg:find("warn:") and msg:find("telescope") then
+        found_warn = true
+      end
+    end
+    assert.is_true(found_ok)
+    assert.is_false(found_warn)
+  end)
+
   it("warns when configured picker backend is not registered", function()
     vim.fn.has = function()
       return 1

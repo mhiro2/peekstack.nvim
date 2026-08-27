@@ -22,7 +22,7 @@ end
 
 ---@type PeekstackConfigFieldRule[]
 local PICKER_RULES = {
-  { key = "backend", validate = validate_backend, require_truthy = true },
+  { key = "backend", validate = validate_backend },
 }
 
 ---@type PeekstackConfigFieldRule[]

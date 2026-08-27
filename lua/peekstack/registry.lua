@@ -65,6 +65,12 @@ function M.register_builtin_picker(name, fn)
 end
 
 ---@param name string
+---@return boolean
+function M.has_user_picker(name)
+  return user_pickers[name] ~= nil
+end
+
+---@param name string
 ---@return PeekstackPicker?
 function M.get_picker(name)
   return user_pickers[name] or builtin_pickers[name]

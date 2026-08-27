@@ -57,8 +57,11 @@ end
 
 ---@param cfg PeekstackConfig
 local function report_picker(cfg)
+  local registry = require("peekstack.registry")
   local backend = cfg.picker and cfg.picker.backend or "builtin"
-  if backend == "builtin" then
+  if registry.has_user_picker(backend) then
+    vim.health.ok("picker backend '" .. backend .. "' registered via register_picker()")
+  elseif backend == "builtin" then
     vim.health.ok("picker backend 'builtin'")
   else
     local plugin_name = PICKER_MODULES[backend]
@@ -69,8 +72,6 @@ local function report_picker(cfg)
       else
         vim.health.warn("picker backend '" .. backend .. "' is configured but the plugin is not installed")
       end
-    elseif require("peekstack.registry").get_picker(backend) then
-      vim.health.ok("picker backend '" .. backend .. "' registered via register_picker()")
     else
       vim.health.warn(
         "picker backend '"
