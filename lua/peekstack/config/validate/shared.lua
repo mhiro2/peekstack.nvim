@@ -71,6 +71,14 @@ function M.validate_ratio(path, value, default)
   return value
 end
 
+---Whether `name` is an autocmd event Neovim accepts in nvim_create_autocmd().
+---Unknown names would make the autocmd registration throw at setup time.
+---@param name string
+---@return boolean
+function M.is_known_event(name)
+  return vim.fn.exists("##" .. name) == 1
+end
+
 ---@param path string
 ---@param value any
 ---@param default string[]
@@ -84,16 +92,25 @@ function M.sanitize_event_list(path, value, default)
   ---@type string[]
   local events = {}
   local invalid_count = 0
+  ---@type string[]
+  local unknown_events = {}
   for _, event in ipairs(value) do
-    if type(event) == "string" and event ~= "" then
-      events[#events + 1] = event
-    else
+    if type(event) ~= "string" or event == "" then
       invalid_count = invalid_count + 1
+    elseif not M.is_known_event(event) then
+      unknown_events[#unknown_events + 1] = event
+    else
+      events[#events + 1] = event
     end
   end
 
   if invalid_count > 0 then
     notify.warn(string.format("%s contains %d invalid entries. Ignoring invalid values", path, invalid_count))
+  end
+  if #unknown_events > 0 then
+    notify.warn(
+      string.format("%s contains unknown autocmd events: %s. Ignoring them", path, table.concat(unknown_events, ", "))
+    )
   end
 
   if #events == 0 then

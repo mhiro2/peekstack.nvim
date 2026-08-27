@@ -251,6 +251,31 @@ describe("config", function()
       assert.same({ "CursorMoved", "InsertEnter" }, cfg.ui.quick_peek.close_events)
     end)
 
+    it("drops unknown autocmd event names from close_events", function()
+      local cfg = config.setup({
+        ui = {
+          quick_peek = {
+            close_events = { "CursorMoveed", "InsertEnter" },
+          },
+        },
+      })
+
+      assert.is_true(has_message("ui.quick_peek.close_events contains unknown autocmd events: CursorMoveed"))
+      assert.same({ "InsertEnter" }, cfg.ui.quick_peek.close_events)
+    end)
+
+    it("falls back to defaults when every close_events entry is unknown", function()
+      local cfg = config.setup({
+        ui = {
+          inline_preview = {
+            close_events = { "NoSuchEvent" },
+          },
+        },
+      })
+
+      assert.same(config.defaults.ui.inline_preview.close_events, cfg.ui.inline_preview.close_events)
+    end)
+
     it("restores top-level sections replaced with non-table values", function()
       local cfg = config.setup({
         ui = false,
