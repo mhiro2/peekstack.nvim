@@ -102,19 +102,21 @@ function M.save_current(name, opts)
   local items = sessions.collect_items(opts and opts.root_winid or nil)
 
   if sync then
-    local data = sessions.upsert(orchestrator.read_sync(), resolved_name, items)
-    local success = orchestrator.write_sync(data)
+    local success = orchestrator.update_sync(function(data)
+      sessions.upsert(data, resolved_name, items)
+      return true
+    end)
     notify_save_result(success, resolved_name, items, silent)
     finish(success)
     return
   end
 
-  orchestrator.read_async(function(read_data)
-    local data = sessions.upsert(read_data, resolved_name, items)
-    orchestrator.write_async(data, function(success)
-      notify_save_result(success, resolved_name, items, silent)
-      finish(success)
-    end)
+  orchestrator.update_async(function(data)
+    sessions.upsert(data, resolved_name, items)
+    return true
+  end, function(success)
+    notify_save_result(success, resolved_name, items, silent)
+    finish(success)
   end)
 end
 
@@ -220,22 +222,25 @@ function M.delete_session(name)
     return
   end
 
-  orchestrator.read_async(function(data)
-    if not sessions.delete(data, name) then
+  local found = false
+  orchestrator.update_async(function(data)
+    found = sessions.delete(data, name)
+    if not found then
       notify.warn("Session not found: " .. name)
+    end
+    return found
+  end, function(success)
+    if not found then
       return
     end
-
-    orchestrator.write_async(data, function(success)
-      if success then
-        notify.info("Session deleted: " .. name)
-        user_events.emit("PeekstackDeleteSession", {
-          session = name,
-        })
-      else
-        notify.warn("Failed to delete session: " .. name)
-      end
-    end)
+    if success then
+      notify.info("Session deleted: " .. name)
+      user_events.emit("PeekstackDeleteSession", {
+        session = name,
+      })
+    else
+      notify.warn("Failed to delete session: " .. name)
+    end
   end)
 end
 
@@ -252,28 +257,29 @@ function M.rename_session(from, to)
     return
   end
 
-  orchestrator.read_async(function(data)
+  local renamed = false
+  orchestrator.update_async(function(data)
     local result = sessions.rename(data, from, to)
-    if not result.ok then
-      if result.err == "missing" then
-        notify.warn("Session not found: " .. from)
-      elseif result.err == "exists" then
-        notify.warn("Target session already exists: " .. to)
-      end
+    renamed = result.ok
+    if result.err == "missing" then
+      notify.warn("Session not found: " .. from)
+    elseif result.err == "exists" then
+      notify.warn("Target session already exists: " .. to)
+    end
+    return renamed
+  end, function(success)
+    if not renamed then
       return
     end
-
-    orchestrator.write_async(data, function(success)
-      if success then
-        notify.info("Session renamed: " .. from .. " -> " .. to)
-        user_events.emit("PeekstackRenameSession", {
-          from = from,
-          to = to,
-        })
-      else
-        notify.warn("Failed to rename session: " .. from .. " -> " .. to)
-      end
-    end)
+    if success then
+      notify.info("Session renamed: " .. from .. " -> " .. to)
+      user_events.emit("PeekstackRenameSession", {
+        from = from,
+        to = to,
+      })
+    else
+      notify.warn("Failed to rename session: " .. from .. " -> " .. to)
+    end
   end)
 end
 
