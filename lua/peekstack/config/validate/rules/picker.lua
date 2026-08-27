@@ -1,13 +1,28 @@
+local notify = require("peekstack.util.notify")
 local shared = require("peekstack.config.validate.shared")
 
 local M = {}
 
----@type string[]
-local KNOWN_BACKENDS = { "builtin", "telescope", "fzf-lua", "snacks" }
+---Any non-empty string is accepted so pickers registered through
+---`register_picker()` can be selected. Availability of the backend is
+---checked at pick time (falling back to `builtin`) and by `:checkhealth`.
+---@param path string
+---@param value any
+---@param default string
+---@return string
+local function validate_backend(path, value, default)
+  if type(value) ~= "string" or value == "" then
+    notify.warn(
+      string.format("%s must be a non-empty string, got %s. Falling back to %q", path, vim.inspect(value), default)
+    )
+    return default
+  end
+  return value
+end
 
 ---@type PeekstackConfigFieldRule[]
 local PICKER_RULES = {
-  { key = "backend", validate = shared.field_enum(KNOWN_BACKENDS), require_truthy = true },
+  { key = "backend", validate = validate_backend },
 }
 
 ---@type PeekstackConfigFieldRule[]

@@ -102,7 +102,7 @@ With options:
       },
     },
     picker = {
-      backend = "builtin",  -- "builtin" | "telescope" | "fzf-lua" | "snacks"
+      backend = "builtin",  -- "builtin" | "telescope" | "fzf-lua" | "snacks" | <custom name>
       builtin = {
         preview_lines = 1,
       },
@@ -146,6 +146,7 @@ Configure the backend with `picker.backend`:
     telescope (requires nvim-telescope/telescope.nvim)
     fzf-lua   (requires ibhagwan/fzf-lua)
     snacks    (requires folke/snacks.nvim)
+    <name>    (a picker registered with `register_picker(name, mod)`)
 
 >lua
   require("peekstack").setup({
@@ -409,6 +410,23 @@ Built-in provider names:
     Register a custom picker backend.
     The module must implement `pick(locations, opts, cb)` and call `cb` with the
     chosen location (or nil to cancel).
+    Select it with `picker.backend = name`. Registration can happen before or
+    after `setup()`; registered pickers and providers are kept across
+    `setup()` re-runs and take precedence over builtin entries with the same
+    name. If the configured backend is not registered, peekstack falls back to
+    `builtin` (`:checkhealth peekstack` reports this).
+>lua
+    require("peekstack").register_picker("my_picker", {
+      pick = function(locations, opts, cb)
+        vim.ui.select(locations, {
+          format_item = function(loc)
+            return vim.uri_to_fname(loc.uri)
+          end,
+        }, cb)
+      end,
+    })
+    require("peekstack").setup({ picker = { backend = "my_picker" } })
+<
 
 `require("peekstack").stack`
     Proxy to the stack module. Key functions:
@@ -466,6 +484,8 @@ SETUP RELOAD                                            *peekstack-setup-reload*
 
 Calling `require("peekstack").setup()` again replaces config and re-registers
 providers, commands, autocmds, picker backends, and auto-persist hooks.
+Providers and pickers registered with `register_provider()` /
+`register_picker()` are kept.
 
 It does not migrate existing popup windows, stack entries, or history in
 place. Updated settings apply to future actions, and to existing stacks only
@@ -594,7 +614,7 @@ HEALTH                                                   *peekstack-health*
 Run `:checkhealth peekstack` to verify requirements:
 - Neovim >= 0.12
 - `rg` executable (optional, for grep.search)
-- Configured picker backend availability (telescope / fzf-lua / snacks)
+- Configured picker backend availability (telescope / fzf-lua / snacks / custom)
 - Persist setup and git repository detection
 - Tree-sitter context parser availability (when `ui.title.context` is enabled)
 

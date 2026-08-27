@@ -307,7 +307,7 @@
 ---@field preview_lines integer
 
 ---@class PeekstackConfigPicker
----@field backend "builtin"|"telescope"|"fzf-lua"|"snacks"
+---@field backend string # "builtin" | "telescope" | "fzf-lua" | "snacks" | name passed to register_picker()
 ---@field builtin PeekstackConfigPickerBuiltin
 
 ---@class PeekstackConfigProviderEntry

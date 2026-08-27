@@ -68,7 +68,7 @@ local PROVIDER_GROUPS = {
 
 ---@param cfg PeekstackConfig
 local function register_picker_backends(cfg)
-  registry.register_picker("builtin", require("peekstack.picker.builtin"))
+  registry.register_builtin_picker("builtin", require("peekstack.picker.builtin"))
 
   local backend = cfg.picker.backend
   if backend == "builtin" then
@@ -82,7 +82,7 @@ local function register_picker_backends(cfg)
 
   local ok, picker_mod = pcall(require, mod_name)
   if ok then
-    registry.register_picker(backend, picker_mod)
+    registry.register_builtin_picker(backend, picker_mod)
   end
 end
 
