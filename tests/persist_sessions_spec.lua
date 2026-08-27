@@ -319,6 +319,44 @@ describe("peekstack.persist.sessions", function()
     assert.is_nil(data.sessions.to_delete)
   end)
 
+  it("should restore even when the store holds a malformed session entry", function()
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        broken = true,
+        ok = {
+          items = {
+            {
+              uri = vim.uri_from_fname(make_file("malformed_sibling", { "line" })),
+              range = {
+                start = { line = 0, character = 0 },
+                ["end"] = { line = 0, character = 0 },
+              },
+            },
+          },
+          meta = { created_at = 1, updated_at = 1 },
+        },
+      },
+    })
+    persist._reset_cache()
+
+    local restored = nil
+    persist.restore("ok", {
+      silent = true,
+      on_done = function(result)
+        restored = result
+      end,
+    })
+    local waited = vim.wait(wait_timeout_ms, function()
+      return restored ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for restore")
+    assert.is_true(restored)
+
+    local sessions = wait_for_session("ok", true)
+    assert.is_nil(sessions.broken)
+  end)
+
   it("should rename a session", function()
     push_popup("rename_session", { title = "Rename me" })
     persist.save_current("old_name", { silent = true, sync = true })

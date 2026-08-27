@@ -65,6 +65,50 @@ describe("migrate", function()
       assert.same({}, result.sessions)
     end)
 
+    it("drops non-table session entries in version 2 data", function()
+      local result = migrate.ensure({
+        version = 2,
+        sessions = {
+          bad = true,
+          worse = "nope",
+          good = { items = {}, meta = { created_at = 1, updated_at = 2 } },
+        },
+      })
+      assert.is_nil(result.sessions.bad)
+      assert.is_nil(result.sessions.worse)
+      assert.same({ items = {}, meta = { created_at = 1, updated_at = 2 } }, result.sessions.good)
+    end)
+
+    it("normalizes malformed items and meta in version 2 sessions", function()
+      local result = migrate.ensure({
+        version = 2,
+        sessions = {
+          no_items = { meta = { created_at = 10, updated_at = 20 } },
+          string_items = { items = "x", meta = { created_at = 10 } },
+          no_meta = { items = { { uri = "file:///tmp/c.lua" } } },
+          bad_meta = { items = {}, meta = "bad" },
+          dict_items = { items = { a = { uri = "file:///tmp/d.lua" } }, meta = { created_at = 1, updated_at = 1 } },
+          list_meta = { items = {}, meta = { 1, 2 } },
+        },
+      })
+
+      assert.same({}, result.sessions.dict_items.items)
+      assert.equals("number", type(result.sessions.list_meta.meta.created_at))
+      assert.is_nil(result.sessions.list_meta.meta[1])
+
+      assert.same({}, result.sessions.no_items.items)
+      assert.same({}, result.sessions.string_items.items)
+      assert.equals(10, result.sessions.string_items.meta.created_at)
+      assert.equals(10, result.sessions.string_items.meta.updated_at)
+
+      assert.equals(1, #result.sessions.no_meta.items)
+      assert.equals("number", type(result.sessions.no_meta.meta.created_at))
+      assert.equals("number", type(result.sessions.no_meta.meta.updated_at))
+
+      assert.equals("number", type(result.sessions.bad_meta.meta.created_at))
+      assert.equals("number", type(result.sessions.bad_meta.meta.updated_at))
+    end)
+
     it("handles non-table sessions in version 2 data", function()
       local result = migrate.ensure({ version = 2, sessions = "bad" })
       assert.equals(2, result.version)
