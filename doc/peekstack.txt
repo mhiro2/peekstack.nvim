@@ -26,7 +26,8 @@ With options:
         style = "stack",               -- "stack" | "cascade" | "single"
         offset = { row = 1, col = 4 }, -- Cascade offset per popup
         shrink = { w = 4, h = 2 },     -- Shrink per cascade level
-        min_size = { w = 60, h = 12 }, -- Minimum popup dimensions
+        min_size = { w = 60, h = 12 }, -- Minimum popup dimensions (capped by
+                                       -- the editor size on small screens)
         max_ratio = 0.65,              -- Max ratio of editor size
         zindex_base = 50,              -- Base z-index for popups
       },

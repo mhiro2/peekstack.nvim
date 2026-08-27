@@ -55,7 +55,8 @@ describe("layout.compute", function()
           offset = { row = 1, col = 2 },
           shrink = { w = 4, h = 2 },
           min_size = { w = 20, h = 10 },
-          max_ratio = 1,
+          -- leave room around the popup so the cascade offset is not clamped
+          max_ratio = 0.6,
           zindex_base = 50,
         },
       },
@@ -107,11 +108,62 @@ describe("layout.compute", function()
       },
     })
 
-    local result = layout.compute(1)
-    assert.equals(30, result.width) -- clamped to columns (< min_size.w)
-    assert.equals(9, result.height) -- clamped to lines (< min_size.h)
-    assert.is_true(result.row >= 0)
-    assert.is_true(result.col >= 0)
+    local columns = vim.o.columns
+    local lines = vim.o.lines - vim.o.cmdheight
+
+    for idx = 1, 5 do
+      local result = layout.compute(idx)
+      -- min_size is larger than the screen: the screen wins
+      assert.equals(columns - 2, result.width, "width should fit the screen at index " .. idx)
+      assert.equals(lines - 2, result.height, "height should fit the screen at index " .. idx)
+      assert.equals(0, result.row)
+      assert.equals(0, result.col)
+    end
+  end)
+
+  it("keeps popups fully on screen for deep stacks", function()
+    vim.o.columns = 40
+    vim.o.lines = 15
+    for _, style in ipairs({ "stack", "cascade", "single" }) do
+      config.setup({
+        ui = {
+          layout = {
+            style = style,
+            offset = { row = 1, col = 4 },
+            shrink = { w = 4, h = 2 },
+            min_size = { w = 60, h = 12 },
+            max_ratio = 0.65,
+            zindex_base = 50,
+          },
+        },
+      })
+
+      local columns = vim.o.columns
+      local lines = vim.o.lines - vim.o.cmdheight
+      for idx = 1, 10 do
+        local result = layout.compute(idx)
+        local where = style .. " at index " .. idx
+        assert.is_true(result.width > 0, "width should be positive for " .. where)
+        assert.is_true(result.height > 0, "height should be positive for " .. where)
+        assert.is_true(result.row >= 0, "row should be non-negative for " .. where)
+        assert.is_true(result.col >= 0, "col should be non-negative for " .. where)
+        -- +2 accounts for the border drawn around the popup
+        assert.is_true(result.col + result.width + 2 <= columns, "should fit horizontally for " .. where)
+        assert.is_true(result.row + result.height + 2 <= lines, "should fit vertically for " .. where)
+      end
+    end
+  end)
+
+  it("keeps the zoomed popup within the screen", function()
+    vim.o.columns = 30
+    vim.o.lines = 10
+    config.setup({})
+
+    local result = layout.compute_zoom(2)
+    assert.equals(0, result.row)
+    assert.equals(0, result.col)
+    assert.equals(vim.o.columns - 2, result.width)
+    assert.equals(vim.o.lines - vim.o.cmdheight - 2, result.height)
   end)
 
   it("produces non-negative row and col for all indices", function()

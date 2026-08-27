@@ -9,11 +9,19 @@ local M = {}
 ---@field col integer
 ---@field zindex integer
 
+---Border cells consumed by the popup border (one per side).
+local BORDER_SIZE = 2
+
+---Clamp a value into [min, max].  When min exceeds max (e.g. a configured
+---min_size larger than the editor), max wins so the result always fits.
 ---@param value number
 ---@param min number
 ---@param max number
 ---@return number
 local function clamp(value, min, max)
+  if max < min then
+    min = max
+  end
   if value < min then
     return min
   end
@@ -30,10 +38,13 @@ function M.compute(index)
   local layout = ui.layout
   local columns = vim.o.columns
   local lines = vim.o.lines - vim.o.cmdheight
+  -- Usable area for the popup body: the border needs one cell on each side.
+  local avail_w = math.max(columns - BORDER_SIZE, 1)
+  local avail_h = math.max(lines - BORDER_SIZE, 1)
   local max_w = math.floor(columns * layout.max_ratio)
   local max_h = math.floor(lines * layout.max_ratio)
-  local base_width = clamp(max_w, layout.min_size.w, columns)
-  local base_height = clamp(max_h, layout.min_size.h, lines)
+  local base_width = clamp(max_w, layout.min_size.w, avail_w)
+  local base_height = clamp(max_h, layout.min_size.h, avail_h)
 
   local step = index - 1
   local style = layout.style or "stack"
@@ -46,17 +57,24 @@ function M.compute(index)
   local height = base_height
 
   if style == "stack" then
-    width = clamp(base_width - (layout.shrink.w * step), layout.min_size.w, columns)
-    height = clamp(base_height - (layout.shrink.h * step), layout.min_size.h, lines)
+    width = clamp(base_width - (layout.shrink.w * step), layout.min_size.w, avail_w)
+    height = clamp(base_height - (layout.shrink.h * step), layout.min_size.h, avail_h)
   end
 
-  local row = math.max(math.floor((lines - height) / 2), 0)
-  local col = math.max(math.floor((columns - width) / 2), 0)
+  -- Maximum top-left position that still keeps the whole popup on screen.
+  local max_row = math.max(lines - height - BORDER_SIZE, 0)
+  local max_col = math.max(columns - width - BORDER_SIZE, 0)
+
+  local row = math.floor(max_row / 2)
+  local col = math.floor(max_col / 2)
 
   if style == "stack" or style == "cascade" then
     row = row + (layout.offset.row * step)
     col = col + (layout.offset.col * step)
   end
+
+  row = clamp(row, 0, max_row)
+  col = clamp(col, 0, max_col)
 
   return {
     width = width,
@@ -75,8 +93,8 @@ function M.compute_zoom(popup_count)
   local lines = vim.o.lines - vim.o.cmdheight
   local base = config.get().ui.layout.zindex_base
   return {
-    width = columns,
-    height = lines,
+    width = math.max(columns - BORDER_SIZE, 1),
+    height = math.max(lines - BORDER_SIZE, 1),
     row = 0,
     col = 0,
     zindex = base + popup_count + 1,
