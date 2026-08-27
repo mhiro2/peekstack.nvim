@@ -251,6 +251,24 @@ describe("config", function()
       assert.same({ "CursorMoved", "InsertEnter" }, cfg.ui.quick_peek.close_events)
     end)
 
+    it("restores top-level sections replaced with non-table values", function()
+      local cfg = config.setup({
+        ui = false,
+        picker = "telescope",
+        providers = 1,
+        persist = true,
+      })
+
+      assert.is_true(has_message("ui must be a table, got boolean"))
+      assert.is_true(has_message("picker must be a table, got string"))
+      assert.is_true(has_message("providers must be a table, got number"))
+      assert.is_true(has_message("persist must be a table, got boolean"))
+      assert.same(config.defaults.ui, cfg.ui)
+      assert.same(config.defaults.picker, cfg.picker)
+      assert.same(config.defaults.providers, cfg.providers)
+      assert.same(config.defaults.persist, cfg.persist)
+    end)
+
     it("falls back when quick peek close_events is empty", function()
       local cfg = config.setup({
         ui = {
