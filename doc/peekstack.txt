@@ -452,7 +452,9 @@ Persistence is disabled by default. Enable with `persist.enabled = true`.
 
 Persistence uses repository storage when the current working directory is
 inside a git repository. Outside a git repository, it falls back to
-cwd-based storage.
+cwd-based storage. The storage is resolved when a save, delete, or rename
+is requested, so changing directory while it is still being written does
+not move it to another repository.
 
 `persist.session.default_name` is used when a name is omitted, unless
 `persist.session.prompt_if_missing` is true.

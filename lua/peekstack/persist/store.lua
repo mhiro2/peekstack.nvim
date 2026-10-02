@@ -1,4 +1,3 @@
-local fs = require("peekstack.util.fs")
 local codec = require("peekstack.persist.codec")
 local notify = require("peekstack.util.notify")
 
@@ -30,15 +29,14 @@ local function ensure_parent_dir(path)
   return true
 end
 
----@param scope string
+---@param path string store file path, resolved by the caller
 ---@param opts { on_done: fun(data: PeekstackStoreData) }
-function M.read(scope, opts)
+function M.read(path, opts)
   local on_done = opts and opts.on_done or nil
   if not on_done then
     return
   end
 
-  local path = fs.scope_path(scope)
   vim.uv.fs_stat(path, function(stat_err, stat)
     if stat_err or not stat or stat.size == 0 then
       vim.schedule(function()
@@ -71,10 +69,9 @@ function M.read(scope, opts)
   end)
 end
 
----@param scope string
+---@param path string store file path, resolved by the caller
 ---@return PeekstackStoreData
-function M.read_sync(scope)
-  local path = fs.scope_path(scope)
+function M.read_sync(path)
   local stat = vim.uv.fs_stat(path)
   if not stat or stat.size == 0 then
     return codec.empty_data()
@@ -94,10 +91,10 @@ function M.read_sync(scope)
   return codec.decode(path, data)
 end
 
----@param scope string
+---@param path string store file path, resolved by the caller
 ---@param data PeekstackStoreData
 ---@param opts? { on_done?: fun(success: boolean) }
-function M.write(scope, data, opts)
+function M.write(path, data, opts)
   local on_done = opts and opts.on_done or nil
   local function finish(success)
     if on_done then
@@ -107,7 +104,6 @@ function M.write(scope, data, opts)
     end
   end
 
-  local path = fs.scope_path(scope)
   local encoded = codec.encode(data)
   if not encoded then
     finish(false)
@@ -154,11 +150,10 @@ function M.write(scope, data, opts)
   end)
 end
 
----@param scope string
+---@param path string store file path, resolved by the caller
 ---@param data PeekstackStoreData
 ---@return boolean
-function M.write_sync(scope, data)
-  local path = fs.scope_path(scope)
+function M.write_sync(path, data)
   local encoded = codec.encode(data)
   if not encoded then
     return false

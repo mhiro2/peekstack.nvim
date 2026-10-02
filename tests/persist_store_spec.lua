@@ -2,16 +2,16 @@ describe("peekstack.persist.store", function()
   local store = require("peekstack.persist.store")
   local fs = require("peekstack.util.fs")
 
-  local test_scope = "global"
+  local test_path = fs.scope_path("global")
   local wait_timeout_ms = 500
   local wait_interval_ms = 10
 
-  ---@param scope string
+  ---@param path string
   ---@param data PeekstackStoreData
-  local function write_and_wait(scope, data)
+  local function write_and_wait(path, data)
     local done = false
     local success = false
-    store.write(scope, data, {
+    store.write(path, data, {
       on_done = function(ok)
         done = true
         success = ok
@@ -24,12 +24,12 @@ describe("peekstack.persist.store", function()
     assert.is_true(success, "Store write failed")
   end
 
-  ---@param scope string
+  ---@param path string
   ---@return PeekstackStoreData
-  local function read_and_wait(scope)
+  local function read_and_wait(path)
     local done = false
     local result = nil
-    store.read(scope, {
+    store.read(path, {
       on_done = function(data)
         result = data
         done = true
@@ -75,20 +75,19 @@ describe("peekstack.persist.store", function()
   end
 
   before_each(function()
-    write_and_wait(test_scope, { version = 2, sessions = {} })
+    write_and_wait(test_path, { version = 2, sessions = {} })
   end)
 
   after_each(function()
-    write_and_wait(test_scope, { version = 2, sessions = {} })
+    write_and_wait(test_path, { version = 2, sessions = {} })
   end)
 
   it("returns empty data when file is missing", function()
-    local path = fs.scope_path(test_scope)
-    delete_and_wait(path)
+    delete_and_wait(test_path)
 
     local called = false
     local result = nil
-    store.read(test_scope, {
+    store.read(test_path, {
       on_done = function(data)
         called = true
         result = data
@@ -114,15 +113,14 @@ describe("peekstack.persist.store", function()
         },
       },
     }
-    write_and_wait(test_scope, data)
+    write_and_wait(test_path, data)
 
-    local result = read_and_wait(test_scope)
+    local result = read_and_wait(test_path)
     assert.same(data, result)
   end)
 
   it("returns empty data and warns for invalid JSON", function()
-    local path = fs.scope_path(test_scope)
-    write_raw_and_wait(path, "{ invalid json")
+    write_raw_and_wait(test_path, "{ invalid json")
 
     local warnings = {}
     local original_notify = vim.notify
@@ -132,7 +130,7 @@ describe("peekstack.persist.store", function()
       end
     end
 
-    local result = read_and_wait(test_scope)
+    local result = read_and_wait(test_path)
 
     vim.notify = original_notify
     assert.same({ version = 2, sessions = {} }, result)
@@ -150,15 +148,14 @@ describe("peekstack.persist.store", function()
         },
       },
     }
-    write_and_wait(test_scope, data)
+    write_and_wait(test_path, data)
 
-    local result = store.read_sync(test_scope)
+    local result = store.read_sync(test_path)
     assert.same(data, result)
   end)
 
   it("read_sync returns empty data and warns for invalid JSON", function()
-    local path = fs.scope_path(test_scope)
-    write_raw_and_wait(path, "{ invalid json")
+    write_raw_and_wait(test_path, "{ invalid json")
 
     local warnings = {}
     local original_notify = vim.notify
@@ -168,7 +165,7 @@ describe("peekstack.persist.store", function()
       end
     end
 
-    local result = store.read_sync(test_scope)
+    local result = store.read_sync(test_path)
 
     vim.notify = original_notify
     assert.same({ version = 2, sessions = {} }, result)
@@ -187,12 +184,12 @@ describe("peekstack.persist.store", function()
       },
     }
 
-    local ok = store.write_sync(test_scope, data)
+    local ok = store.write_sync(test_path, data)
     assert.is_true(ok)
-    assert.same(data, store.read_sync(test_scope))
+    assert.same(data, store.read_sync(test_path))
   end)
 
-  it("allows overlapping async writes to the same scope", function()
+  it("allows overlapping async writes to the same file", function()
     local first = {
       version = 2,
       sessions = {
@@ -214,13 +211,13 @@ describe("peekstack.persist.store", function()
 
     local done = 0
     local successes = {}
-    store.write(test_scope, first, {
+    store.write(test_path, first, {
       on_done = function(ok)
         done = done + 1
         successes[#successes + 1] = ok
       end,
     })
-    store.write(test_scope, second, {
+    store.write(test_path, second, {
       on_done = function(ok)
         done = done + 1
         successes[#successes + 1] = ok
@@ -234,13 +231,13 @@ describe("peekstack.persist.store", function()
     assert.is_true(successes[1])
     assert.is_true(successes[2])
 
-    local result = read_and_wait(test_scope)
+    local result = read_and_wait(test_path)
     assert.equals(2, result.version)
     assert.is_true(result.sessions.first ~= nil or result.sessions.second ~= nil)
   end)
 
   it("write_sync returns false when payload cannot be encoded", function()
-    local ok = store.write_sync(test_scope, {
+    local ok = store.write_sync(test_path, {
       version = 2,
       sessions = {},
       invalid = function() end,

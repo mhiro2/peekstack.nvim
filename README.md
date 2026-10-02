@@ -354,6 +354,8 @@ for a name instead of using the default.
 > [!WARNING]
 > Persistence uses repository storage when the current working directory is inside a git repository.
 > Outside a git repository, sessions fall back to cwd-based storage.
+> The storage is resolved when a save, delete, or rename is requested, so changing directory while
+> it is still being written does not move it to another repository.
 
 > [!IMPORTANT]
 > Sessions are written as plain JSON under `vim.fn.stdpath("state") .. "/peekstack/"`. Each entry
