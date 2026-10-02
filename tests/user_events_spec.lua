@@ -6,6 +6,25 @@ describe("peekstack.core.user_events", function()
   -- Track received events
   local received_events = {}
 
+  ---Run `fn` from a throwaway git repository so session writes do not touch
+  ---the store shared with other specs running in parallel processes.
+  ---@param fn fun()
+  local function in_temp_repo(fn)
+    local fs = require("peekstack.util.fs")
+    local original_cwd = vim.fn.getcwd()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir .. "/.git", "p")
+    vim.cmd.cd(dir)
+    local store_path = fs.scope_path("repo")
+    local ok, err = pcall(fn)
+    vim.cmd.cd(original_cwd)
+    pcall(vim.fn.delete, store_path)
+    pcall(vim.fn.delete, dir, "rf")
+    if not ok then
+      error(err, 0)
+    end
+  end
+
   ---@param name string
   ---@return boolean
   local function wait_for_event(name)
@@ -185,10 +204,12 @@ describe("peekstack.core.user_events", function()
     local persist = require("peekstack.persist")
     config.setup({ persist = { enabled = true } })
 
-    persist.save_current("test_session")
+    in_temp_repo(function()
+      persist.save_current("test_session")
 
-    local ok = wait_for_event("PeekstackSave")
-    assert.is_true(ok, "Timed out waiting for PeekstackSave event")
+      local ok = wait_for_event("PeekstackSave")
+      assert.is_true(ok, "Timed out waiting for PeekstackSave event")
+    end)
 
     local found = false
     for _, ev in ipairs(received_events) do
@@ -205,9 +226,11 @@ describe("peekstack.core.user_events", function()
     local persist = require("peekstack.persist")
     config.setup({ persist = { enabled = true } })
 
-    persist.restore("test_session")
+    in_temp_repo(function()
+      persist.restore("test_session")
 
-    vim.wait(100)
+      vim.wait(100)
+    end)
 
     local _found = false
     for _, ev in ipairs(received_events) do
