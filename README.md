@@ -373,6 +373,11 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 - **Save** on `PeekstackPush` / `PeekstackClose` / `PeekstackRestorePopup` with a debounce
 - **Save on leave** on `VimLeavePre` if `save_on_leave = true`
 
+The auto session holds a single stack: the one that changed most recently, saved to the repository
+that was current when it changed. Leaving Neovim saves that stack even if the cursor is in another
+window, skips the save if no stack changed during the session, and keeps the stored session as-is
+once that stack's window has been closed.
+
 Auto persist only runs inside a git repository and always uses the repository session storage. Make sure
 `persist.enabled = true` as well.
 

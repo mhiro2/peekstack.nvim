@@ -468,6 +468,12 @@ Auto persistence (`persist.auto`) requires `persist.enabled = true`:
     debounce_ms        debounce time for auto save
     save_on_leave      save on VimLeavePre
 
+The auto session holds a single stack: the one that changed most
+recently, saved to the repository that was current when it changed.
+Leaving Neovim saves that stack even if the cursor is in another window,
+skips the save if no stack changed during the session, and keeps the
+stored session as-is once that stack's window has been closed.
+
 Auto persistence runs only inside a git repository and always uses
 the repository session storage.
 

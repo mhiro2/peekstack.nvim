@@ -1,15 +1,29 @@
 local config = require("peekstack.config")
 local fs = require("peekstack.util.fs")
+local orchestrator = require("peekstack.persist.orchestrator")
 local persist = require("peekstack.persist")
 local stack = require("peekstack.core.stack")
 local timer_util = require("peekstack.util.timer")
 
 local M = {}
 
+---A stack together with the store file it is saved to. Both are fixed when
+---the change is observed, so neither a `:cd` nor a window switch before the
+---save runs can redirect it.
+---@class PeekstackAutoSaveTarget
+---@field root_winid integer
+---@field store_path string
+
 ---@type uv.uv_timer_t?
 local save_timer = nil
----@type integer?
-local pending_root_winid = nil
+---Target whose debounced save has not run yet.
+---@type PeekstackAutoSaveTarget?
+local pending_target = nil
+---The auto session mirrors a single stack: the one changed most recently.
+---Kept apart from `pending_target` so the leave-time save still knows which
+---stack to write after the debounced save has already run.
+---@type PeekstackAutoSaveTarget?
+local tracked_target = nil
 ---@type string?
 local last_restored_repo = nil
 
@@ -31,15 +45,6 @@ local function resolve_session_name()
   return "auto"
 end
 
----@param winid? integer
----@return integer?
-local function normalize_root_winid(winid)
-  if winid and type(winid) == "number" and vim.api.nvim_win_is_valid(winid) then
-    return winid
-  end
-  return nil
-end
-
 ---@return integer
 local function resolve_root_winid()
   local winid = vim.api.nvim_get_current_win()
@@ -53,22 +58,60 @@ local function resolve_root_winid()
   return winid
 end
 
+---Capture the stack to save and the store it belongs to.
+---An explicit `root_winid` that no longer exists yields nil instead of falling
+---back to the current window, which holds an unrelated stack.
 ---@param root_winid? integer
+---@return PeekstackAutoSaveTarget?
+local function capture_target(root_winid)
+  if not fs.repo_root() then
+    return nil
+  end
+  if root_winid == nil then
+    root_winid = resolve_root_winid()
+  elseif type(root_winid) ~= "number" or not vim.api.nvim_win_is_valid(root_winid) then
+    return nil
+  end
+  return {
+    root_winid = stack.get_root_winid(root_winid),
+    store_path = orchestrator.store_path(),
+  }
+end
+
+---@param a PeekstackAutoSaveTarget
+---@param b PeekstackAutoSaveTarget
+---@return boolean
+local function same_target(a, b)
+  return a.root_winid == b.root_winid and a.store_path == b.store_path
+end
+
+---@param target PeekstackAutoSaveTarget
 ---@param opts? { sync?: boolean }
 ---@return boolean
-local function save_session(root_winid, opts)
+local function save_session(target, opts)
   if not is_enabled() then
     return false
   end
-  if not fs.repo_root() then
+  -- Once the root window is gone its stack is too; saving now would collect
+  -- the current window's stack and overwrite the session with it.
+  if not vim.api.nvim_win_is_valid(target.root_winid) then
     return false
   end
   persist.save_current(resolve_session_name(), {
-    root_winid = normalize_root_winid(root_winid),
+    root_winid = target.root_winid,
+    store_path = target.store_path,
     silent = true,
     sync = opts and opts.sync or false,
   })
   return true
+end
+
+local function flush_pending()
+  local target = pending_target
+  pending_target = nil
+  if target then
+    save_session(target)
+  end
 end
 
 ---@return boolean
@@ -115,16 +158,23 @@ function M.schedule_save(opts)
     return false
   end
 
-  if not fs.repo_root() then
+  local target = capture_target(opts and opts.root_winid or nil)
+  if not target then
     return false
   end
 
-  local debounce_ms = tonumber(cfg.persist.auto.debounce_ms) or 1000
-  local root_winid = normalize_root_winid(opts and opts.root_winid or nil)
-  if root_winid then
-    pending_root_winid = root_winid
+  -- A debounced save for another stack or store must not be swallowed by
+  -- this one: write it out now instead of letting the new target replace it.
+  if pending_target and not same_target(pending_target, target) then
+    if save_timer then
+      save_timer:stop()
+    end
+    flush_pending()
   end
+  pending_target = target
+  tracked_target = target
 
+  local debounce_ms = tonumber(cfg.persist.auto.debounce_ms) or 1000
   if save_timer then
     save_timer:stop()
   else
@@ -134,16 +184,23 @@ function M.schedule_save(opts)
 
   save_timer:start(debounce_ms, 0, function()
     save_timer:stop()
-    local target_winid = pending_root_winid
-    pending_root_winid = nil
+    -- Bind to the target this timer debounced: a schedule_save() that runs
+    -- before the scheduled callback replaces pending_target, and that newer
+    -- target must wait for its own timer.
+    local fired = pending_target
     vim.schedule(function()
-      save_session(target_winid)
+      if fired and pending_target == fired then
+        flush_pending()
+      end
     end)
   end)
 
   return true
 end
 
+---Without an explicit `root_winid` this saves the stack auto save last
+---tracked, not the current window's, which may be an unrelated split.
+---Nothing is written when no stack changed during the session.
 ---@param opts? { root_winid?: integer }
 ---@return boolean
 function M.save_on_leave(opts)
@@ -156,21 +213,30 @@ function M.save_on_leave(opts)
     return false
   end
 
-  local root_winid = normalize_root_winid(opts and opts.root_winid or nil) or pending_root_winid
-  pending_root_winid = nil
+  local target
+  if opts and opts.root_winid then
+    target = capture_target(opts.root_winid)
+  else
+    target = pending_target or tracked_target
+  end
+  pending_target = nil
 
   if save_timer then
     save_timer:stop()
   end
 
-  return save_session(root_winid, { sync = true })
+  if not target then
+    return false
+  end
+  return save_session(target, { sync = true })
 end
 
 function M.setup()
   timer_util.close(save_timer)
   timer_util.get_store().persist_auto = nil
   save_timer = nil
-  pending_root_winid = nil
+  pending_target = nil
+  tracked_target = nil
 
   local group = vim.api.nvim_create_augroup("PeekstackPersistAuto", { clear = true })
 
@@ -213,7 +279,8 @@ end
 ---Reset internal state (for testing).
 function M._reset()
   last_restored_repo = nil
-  pending_root_winid = nil
+  pending_target = nil
+  tracked_target = nil
   timer_util.close(save_timer)
   timer_util.get_store().persist_auto = nil
   save_timer = nil
