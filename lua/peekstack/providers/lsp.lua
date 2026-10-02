@@ -133,10 +133,7 @@ local function request(ctx, method, provider, params_modifier, result_mapper, cb
   for _, client in ipairs(clients) do
     local params = {
       textDocument = vim.lsp.util.make_text_document_params(bufnr),
-      position = {
-        line = ctx.position.line,
-        character = ctx.position.character,
-      },
+      position = location.position_to_lsp(bufnr, ctx.position, client.offset_encoding),
     }
     if params_modifier then
       params_modifier(params)
@@ -148,6 +145,7 @@ local function request(ctx, method, provider, params_modifier, result_mapper, cb
       if not err and result then
         local ok, locs = pcall(mapper, result, provider, ctx)
         if ok and type(locs) == "table" then
+          location.ranges_to_byte(locs, client.offset_encoding)
           vim.list_extend(all_locations, locs)
         end
       end

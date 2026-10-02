@@ -224,6 +224,108 @@ function M.list_from_lsp(result, provider)
   return items
 end
 
+---@param uri string
+---@return integer?
+local function loaded_buf_for_uri(uri)
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(bufnr) and vim.uri_from_bufnr(bufnr) == uri then
+      return bufnr
+    end
+  end
+  return nil
+end
+
+---Return a reader for the 0-based lines of a document, preferring the loaded
+---buffer (which the LSP server sees) over the file on disk.
+---@param uri string
+---@return fun(row: integer): string?
+local function line_reader(uri)
+  local bufnr = loaded_buf_for_uri(uri)
+  if bufnr then
+    return function(row)
+      return vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1]
+    end
+  end
+
+  local lines
+  return function(row)
+    if not lines then
+      lines = {}
+      local fname = fs.uri_to_fname(uri)
+      local file = fname and io.open(fname, "rb")
+      if file then
+        for line in file:lines() do
+          lines[#lines + 1] = line
+        end
+        file:close()
+      end
+    end
+    return lines[row + 1]
+  end
+end
+
+---Byte and LSP columns only differ on lines containing non-ASCII bytes.
+---@param line string?
+---@return boolean
+local function is_multibyte(line)
+  return line ~= nil and line:find("[\128-\255]") ~= nil
+end
+
+---@param read_line fun(row: integer): string?
+---@param pos { line: integer, character: integer }
+---@param encoding string
+---@return { line: integer, character: integer }
+local function position_to_byte(read_line, pos, encoding)
+  local line = read_line(pos.line)
+  if not is_multibyte(line) then
+    return { line = pos.line, character = pos.character }
+  end
+  return { line = pos.line, character = vim.str_byteindex(line, encoding, pos.character, false) }
+end
+
+---Convert a byte-column position in a loaded buffer into the column unit of
+---an LSP client's offset encoding.
+---@param bufnr integer
+---@param pos { line: integer, character: integer } 0-based line, byte column
+---@param encoding? string client offset encoding (defaults to "utf-16")
+---@return { line: integer, character: integer }
+function M.position_to_lsp(bufnr, pos, encoding)
+  encoding = encoding or "utf-16"
+  if encoding == "utf-8" then
+    return { line = pos.line, character = pos.character }
+  end
+  local line = vim.api.nvim_buf_get_lines(bufnr, pos.line, pos.line + 1, false)[1]
+  if not is_multibyte(line) then
+    return { line = pos.line, character = pos.character }
+  end
+  return { line = pos.line, character = vim.str_utfindex(line, encoding, pos.character, false) }
+end
+
+---Convert location ranges reported in an LSP client's offset encoding into
+---byte columns, the unit used for every internal location.
+---@param locations PeekstackLocation[]
+---@param encoding? string client offset encoding (defaults to "utf-16")
+function M.ranges_to_byte(locations, encoding)
+  encoding = encoding or "utf-16"
+  if encoding == "utf-8" then
+    return
+  end
+  ---@type table<string, fun(row: integer): string?>
+  local readers = {}
+  for _, loc in ipairs(locations) do
+    local reader = readers[loc.uri]
+    if not reader then
+      reader = line_reader(loc.uri)
+      readers[loc.uri] = reader
+    end
+    local range = normalize_range(loc.range)
+    loc.range = {
+      start = position_to_byte(reader, range.start, encoding),
+      ["end"] = position_to_byte(reader, range["end"], encoding),
+    }
+  end
+end
+
 ---@param diags table[]?
 ---@param provider? string
 ---@return PeekstackLocation[]
