@@ -82,7 +82,9 @@ end
 
 ---Save the current stack to persistent storage with optional name.
 ---@param name? string
----@param opts? { root_winid?: integer, silent?: boolean, sync?: boolean, on_done?: fun(success: boolean) }
+---`store_path` pins the store file; it defaults to the current repository's
+---store, resolved when the save is requested.
+---@param opts? { root_winid?: integer, store_path?: string, silent?: boolean, sync?: boolean, on_done?: fun(success: boolean) }
 function M.save_current(name, opts)
   local silent = opts and opts.silent or false
   local sync = opts and opts.sync or false
@@ -100,9 +102,10 @@ function M.save_current(name, opts)
 
   local resolved_name = sessions.resolve_name(name)
   local items = sessions.collect_items(opts and opts.root_winid or nil)
+  local path = opts and opts.store_path or orchestrator.store_path()
 
   if sync then
-    local success = orchestrator.update_sync(function(data)
+    local success = orchestrator.update_sync(path, function(data)
       sessions.upsert(data, resolved_name, items)
       return true
     end)
@@ -111,7 +114,7 @@ function M.save_current(name, opts)
     return
   end
 
-  orchestrator.update_async(function(data)
+  orchestrator.update_async(path, function(data)
     sessions.upsert(data, resolved_name, items)
     return true
   end, function(success)
@@ -141,7 +144,7 @@ function M.restore(name, opts)
   -- Freeze the target stack now: the read below is async and the user may
   -- move to another window before the session is restored.
   local root_winid = sessions.resolve_root_winid(opts and opts.root_winid or nil)
-  orchestrator.refresh_cache_async(function(data)
+  orchestrator.refresh_cache_async(orchestrator.store_path(), function(data)
     local session = data.sessions[resolved_name]
 
     if not session or not session.items or #session.items == 0 then
@@ -204,15 +207,16 @@ function M.list_sessions(opts)
     return {}
   end
 
+  local path = orchestrator.store_path()
   if on_done then
-    orchestrator.refresh_cache_async(function(data)
+    orchestrator.refresh_cache_async(path, function(data)
       on_done(data.sessions or {})
     end)
-  elseif not orchestrator.cache_loaded() then
-    orchestrator.refresh_cache_sync()
+  elseif not orchestrator.cache_loaded(path) then
+    orchestrator.refresh_cache_sync(path)
   end
 
-  return orchestrator.cache_sessions()
+  return orchestrator.cache_sessions(path)
 end
 
 ---Delete a named session.
@@ -223,7 +227,7 @@ function M.delete_session(name)
   end
 
   local found = false
-  orchestrator.update_async(function(data)
+  orchestrator.update_async(orchestrator.store_path(), function(data)
     found = sessions.delete(data, name)
     if not found then
       notify.warn("Session not found: " .. name)
@@ -258,7 +262,7 @@ function M.rename_session(from, to)
   end
 
   local renamed = false
-  orchestrator.update_async(function(data)
+  orchestrator.update_async(orchestrator.store_path(), function(data)
     local result = sessions.rename(data, from, to)
     renamed = result.ok
     if result.err == "missing" then

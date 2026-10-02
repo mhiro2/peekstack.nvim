@@ -4,6 +4,7 @@ describe("peekstack.persist.sessions", function()
   local stack = require("peekstack.core.stack")
   local store = require("peekstack.persist.store")
   local migrate = require("peekstack.persist.migrate")
+  local fs = require("peekstack.util.fs")
 
   -- Use "repo" as the fixed scope for persistence
   local test_scope = "repo"
@@ -72,7 +73,7 @@ describe("peekstack.persist.sessions", function()
   ---@param scope string
   ---@param data PeekstackStoreData
   local function write_and_wait(scope, data)
-    local success = store.write_sync(scope, data)
+    local success = store.write_sync(fs.scope_path(scope), data)
     assert.is_true(success, "Store write failed")
   end
 
@@ -81,7 +82,7 @@ describe("peekstack.persist.sessions", function()
   local function read_and_wait(scope)
     local done = false
     local result = nil
-    store.read(scope, {
+    store.read(fs.scope_path(scope), {
       on_done = function(data)
         result = data
         done = true
@@ -105,7 +106,7 @@ describe("peekstack.persist.sessions", function()
       end
       if not in_flight then
         in_flight = true
-        store.read(scope, {
+        store.read(fs.scope_path(scope), {
           on_done = function(data)
             if predicate(data) then
               satisfied = true
@@ -1253,7 +1254,7 @@ describe("peekstack.persist.sessions", function()
 
     local original_write_sync = store.write_sync
     local ok, err = pcall(function()
-      store.write_sync = function(_scope, _data)
+      store.write_sync = function(_path, _data)
         return false
       end
 
@@ -1283,7 +1284,7 @@ describe("peekstack.persist.sessions", function()
 
     local original_write = store.write
     local ok, err = pcall(function()
-      store.write = function(_scope, _data, opts)
+      store.write = function(_path, _data, opts)
         if opts and opts.on_done then
           vim.schedule(function()
             opts.on_done(false)
@@ -1334,7 +1335,7 @@ describe("peekstack.persist.sessions", function()
     local original_write = store.write
     local write_done = false
     local ok, err = pcall(function()
-      store.write = function(_scope, _data, opts)
+      store.write = function(_path, _data, opts)
         if opts and opts.on_done then
           vim.schedule(function()
             opts.on_done(false)

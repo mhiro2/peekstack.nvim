@@ -354,6 +354,8 @@ for a name instead of using the default.
 > [!WARNING]
 > Persistence uses repository storage when the current working directory is inside a git repository.
 > Outside a git repository, sessions fall back to cwd-based storage.
+> The storage is resolved when a save, delete, or rename is requested, so changing directory while
+> it is still being written does not move it to another repository.
 
 > [!IMPORTANT]
 > Sessions are written as plain JSON under `vim.fn.stdpath("state") .. "/peekstack/"`. Each entry
@@ -370,6 +372,11 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 - **Restore** on `VimEnter` / `DirChanged` (only when the stack is empty if `restore_if_empty = true`)
 - **Save** on `PeekstackPush` / `PeekstackClose` / `PeekstackRestorePopup` with a debounce
 - **Save on leave** on `VimLeavePre` if `save_on_leave = true`
+
+The auto session holds a single stack: the one that changed most recently, saved to the repository
+that was current when it changed. Leaving Neovim saves that stack even if the cursor is in another
+window, skips the save if no stack changed during the session, and keeps the stored session as-is
+once that stack's window has been closed.
 
 Auto persist only runs inside a git repository and always uses the repository session storage. Make sure
 `persist.enabled = true` as well.
