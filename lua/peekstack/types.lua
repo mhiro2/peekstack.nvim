@@ -11,7 +11,6 @@
 ---@field text? string
 ---@field kind? integer
 ---@field provider string
----@field origin? PeekstackRange
 
 ---@class PeekstackDiagnosticExtmarks
 ---@field bufnr integer

@@ -36,6 +36,24 @@ describe("location", function()
       assert.equals(3, result.range.start.line)
     end)
 
+    it("prefers targetSelectionRange over targetRange for a LocationLink", function()
+      local loc = {
+        targetUri = "file:///tmp/bar.lua",
+        targetRange = {
+          start = { line = 3, character = 0 },
+          ["end"] = { line = 9, character = 3 },
+        },
+        targetSelectionRange = {
+          start = { line = 3, character = 9 },
+          ["end"] = { line = 3, character = 14 },
+        },
+      }
+      local result = location.normalize(loc, "lsp.definition")
+      assert.is_not_nil(result)
+      assert.same({ line = 3, character = 9 }, result.range.start)
+      assert.same({ line = 3, character = 14 }, result.range["end"])
+    end)
+
     it("normalizes a filename-based location", function()
       local loc = {
         filename = "/tmp/test.lua",

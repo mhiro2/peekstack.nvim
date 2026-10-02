@@ -158,7 +158,9 @@ local function from_lsp_location(loc, provider)
     return nil
   end
   local uri = loc.uri or loc.targetUri
-  local range = loc.range or loc.targetRange
+  -- A LocationLink's targetRange spans the whole symbol (e.g. a function body);
+  -- targetSelectionRange is the name to land on and to compare against the cursor.
+  local range = loc.range or loc.targetSelectionRange or loc.targetRange
   if not uri or not range then
     return nil
   end
@@ -168,7 +170,6 @@ local function from_lsp_location(loc, provider)
     text = loc.text,
     kind = loc.kind,
     provider = provider,
-    origin = loc.originSelectionRange,
   }
 end
 
