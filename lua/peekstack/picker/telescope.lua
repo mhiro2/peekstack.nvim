@@ -94,13 +94,15 @@ function M.pick(locations, opts, cb)
       sorter = conf.generic_sorter(telescope_opts),
       previewer = conf.grep_previewer(telescope_opts),
       attach_mappings = function(_, map)
-        map("i", "<CR>", function(bufnr)
+        local function on_select(bufnr)
           local selection = require("telescope.actions.state").get_selected_entry()
           require("telescope.actions").close(bufnr)
           if selection and selection.value then
             cb(selection.value)
           end
-        end)
+        end
+        map("i", "<CR>", on_select)
+        map("n", "<CR>", on_select)
         return true
       end,
     })

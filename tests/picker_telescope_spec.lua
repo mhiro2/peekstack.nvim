@@ -28,7 +28,6 @@ describe("peekstack.picker.telescope", function()
   it("sets preview metadata and returns selected location", function()
     local captured = {}
     local picked = nil
-    local mapped_confirm = nil
 
     package.loaded["telescope.config"] = {
       values = {
@@ -61,13 +60,12 @@ describe("peekstack.picker.telescope", function()
         captured.spec = spec
         return {
           find = function()
+            captured.mappings = {}
             spec.attach_mappings(nil, function(mode, key, fn)
-              captured.mode = mode
-              captured.key = key
-              mapped_confirm = fn
+              captured.mappings[mode .. key] = fn
             end)
             captured.selected = captured.finder.results[2]
-            mapped_confirm(13)
+            captured.mappings["i<CR>"](13)
           end,
         }
       end,
@@ -107,10 +105,14 @@ describe("peekstack.picker.telescope", function()
     assert.equals("/tmp/a.lua", captured.finder.results[1].filename)
     assert.equals(2, captured.finder.results[1].lnum)
     assert.equals(3, captured.finder.results[1].col)
-    assert.equals("i", captured.mode)
-    assert.equals("<CR>", captured.key)
     assert.equals(13, captured.closed_bufnr)
     assert.are.same(loc2, picked)
+
+    picked = nil
+    captured.selected = captured.finder.results[1]
+    captured.mappings["n<CR>"](14)
+    assert.equals(14, captured.closed_bufnr)
+    assert.are.same(loc1, picked)
   end)
   ---@param display string
   ---@param highlights table
