@@ -24,6 +24,44 @@ function M.reflow_all()
   end
 end
 
+---@param stack PeekstackStackModel
+local function hide(stack)
+  stack.zoomed_id = nil
+  if vim.api.nvim_win_is_valid(stack.root_winid) then
+    vim.api.nvim_set_current_win(stack.root_winid)
+  end
+  state.suppress_win_events = true
+  for _, item in ipairs(stack.popups) do
+    popup.close(item)
+    state.unindex_popup(item)
+    item.winid = nil
+  end
+  state.suppress_win_events = false
+  stack.hidden = true
+end
+
+---Show a hidden stack without moving focus. Popups that already have a live
+---window keep it, so no window is ever opened twice for one popup.
+---Every operation that opens or focuses a popup calls this first.
+---@param stack PeekstackStackModel
+function M.show(stack)
+  deps()
+  if not stack.hidden then
+    return
+  end
+  stack.hidden = false
+  for idx, item in ipairs(stack.popups) do
+    if not (item.winid and vim.api.nvim_win_is_valid(item.winid)) then
+      local model = common.reopen_popup(item, stack)
+      if model then
+        stack.popups[idx] = model
+        state.index_popup(model, stack.root_winid)
+      end
+    end
+  end
+  layout.reflow(stack)
+end
+
 ---@param winid? integer
 ---@return boolean
 function M.toggle(winid)
@@ -34,28 +72,9 @@ function M.toggle(winid)
   end
 
   if not stack.hidden then
-    stack.zoomed_id = nil
-    if vim.api.nvim_win_is_valid(stack.root_winid) then
-      vim.api.nvim_set_current_win(stack.root_winid)
-    end
-    state.suppress_win_events = true
-    for _, item in ipairs(stack.popups) do
-      popup.close(item)
-      state.unindex_popup(item)
-      item.winid = nil
-    end
-    state.suppress_win_events = false
-    stack.hidden = true
+    hide(stack)
   else
-    for idx, item in ipairs(stack.popups) do
-      local model = common.reopen_popup(item, stack)
-      if model then
-        stack.popups[idx] = model
-        state.index_popup(model, stack.root_winid)
-      end
-    end
-    layout.reflow(stack)
-    stack.hidden = false
+    M.show(stack)
     if stack.focused_id then
       require("peekstack.core.stack.operations.focus").focus_by_id(stack.focused_id, stack.root_winid)
     end

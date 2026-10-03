@@ -113,6 +113,9 @@ end
 ---@return PeekstackPopupModel?
 function M.restore_entry(stack, entry, id_remap)
   deps()
+  -- A popup restored into a hidden stack would otherwise be reopened again
+  -- when the stack is shown.
+  require("peekstack.core.stack.operations.visibility").show(stack)
   -- Merge stack-level remap with any caller-provided remap.
   local merged = ensure_id_remap(stack)
   if id_remap then

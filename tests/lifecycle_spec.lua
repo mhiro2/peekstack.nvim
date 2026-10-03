@@ -230,4 +230,84 @@ describe("popup lifecycle", function()
       assert.is_nil(stack.find_by_id(model.id))
     end)
   end)
+
+  describe("hidden stack", function()
+    ---Every floating window belongs to a popup in the stack.
+    local function assert_all_floats_tracked()
+      local tracked = {}
+      for _, item in ipairs(stack.list()) do
+        assert.is_not_nil(item.winid)
+        tracked[item.winid] = true
+      end
+      local floats = floating_wins()
+      for _, winid in ipairs(floats) do
+        assert.is_true(tracked[winid] == true, "untracked float " .. winid)
+      end
+      assert.equals(#stack.list(), #floats)
+    end
+
+    local function assert_close_all_closes_everything()
+      stack.close_all()
+      assert.equals(0, #floating_wins())
+    end
+
+    ---@param restore fun()
+    local function restore_while_hidden(restore)
+      local first = stack.push(helpers.make_location())
+      local second = stack.push(helpers.make_location())
+      stack.close(second.id)
+      stack.toggle()
+      assert.is_true(stack.is_hidden())
+
+      restore()
+      assert.is_false(stack.is_hidden())
+      assert_all_floats_tracked()
+
+      stack.toggle()
+      stack.toggle()
+      assert_all_floats_tracked()
+      assert.equals(first.id, stack.list()[1].id)
+      assert_close_all_closes_everything()
+    end
+
+    it("shows the stack when restore_last runs while hidden", function()
+      restore_while_hidden(function()
+        assert.is_not_nil(stack.restore_last())
+      end)
+    end)
+
+    it("shows the stack when restore_all runs while hidden", function()
+      restore_while_hidden(function()
+        assert.equals(1, #stack.restore_all())
+      end)
+    end)
+
+    it("shows the stack when restore_from_history runs while hidden", function()
+      restore_while_hidden(function()
+        assert.is_not_nil(stack.restore_from_history(1))
+      end)
+    end)
+
+    it("shows the stack when a popup is focused while hidden", function()
+      local first = stack.push(helpers.make_location())
+      stack.push(helpers.make_location())
+      stack.toggle()
+
+      assert.is_true(stack.focus_by_id(first.id))
+      assert.is_false(stack.is_hidden())
+      assert.equals(stack.find_by_id(first.id).winid, vim.api.nvim_get_current_win())
+      assert_all_floats_tracked()
+
+      stack.toggle()
+      stack.toggle()
+      assert_all_floats_tracked()
+      assert_close_all_closes_everything()
+    end)
+
+    it("does not open a second window for a popup that is already shown", function()
+      local model = stack.push(helpers.make_location())
+      assert.equals(model, stack.reopen_by_id(model.id))
+      assert_all_floats_tracked()
+    end)
+  end)
 end)
