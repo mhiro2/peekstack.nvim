@@ -1,6 +1,7 @@
-# Local test deps
+# Local test deps and artifacts
 deps/
 .nvimlog
+.tmp/
 
 
 ### https://raw.githubusercontent.com/github/gitignore/86922aee426c32ffb6098f9a38c42da75169501e/Global/Windows.gitignore
