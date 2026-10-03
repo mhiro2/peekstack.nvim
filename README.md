@@ -278,7 +278,8 @@ Configure via `require("peekstack").setup({ ... })`.
 
 > [!NOTE]
 > `setup()` never throws on bad config. Invalid values fall back to defaults
-> with a `vim.notify` warning, and unknown or mistyped keys (e.g. `ui.popups`
+> with a `vim.notify` warning naming the default, counts, sizes and durations
+> must be integers (fractions, NaN and infinities are rejected), and unknown or mistyped keys (e.g. `ui.popups`
 > instead of `ui.popup`) are reported the same way so typos are easy to spot.
 
 ## 🧺 Picker backends (telescope / fzf-lua / snacks.nvim)
@@ -357,6 +358,10 @@ for a name instead of using the default.
 > The storage is resolved when a save, delete, or rename is requested, so changing directory while
 > it is still being written does not move it to another repository.
 
+If the storage file cannot be read (an I/O error, invalid JSON, or a version this release does not
+know), peekstack warns and refuses to save, delete, or rename sessions in it instead of replacing
+it with an empty store. Fix or move the file to recover.
+
 > [!IMPORTANT]
 > Sessions are written as plain JSON under `vim.fn.stdpath("state") .. "/peekstack/"`. Each entry
 > stores the file URI, line/column range, title, provider name, pin/buffer-mode flags, parent
@@ -376,7 +381,8 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 The auto session holds a single stack: the one that changed most recently, saved to the repository
 that was current when it changed. Leaving Neovim saves that stack even if the cursor is in another
 window, skips the save if no stack changed during the session, and keeps the stored session as-is
-once that stack's window has been closed.
+once that stack's window has been closed. The save on leave waits up to one second for earlier
+saves to finish; if they are still writing, it is skipped with a warning rather than racing them.
 
 Auto persist only runs inside a git repository and always uses the repository session storage. Make sure
 `persist.enabled = true` as well.

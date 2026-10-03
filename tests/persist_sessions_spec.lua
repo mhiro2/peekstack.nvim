@@ -368,6 +368,211 @@ describe("peekstack.persist.sessions", function()
     assert.is_not_nil(data.sessions.sync_side)
   end)
 
+  it("should run a sync save requested from an async save callback", function()
+    push_popup("nested_sync", { title = "Nested" })
+
+    local nested_saved = nil
+    persist.save_current("outer_async", {
+      silent = true,
+      on_done = function()
+        persist.save_current("nested_sync", {
+          silent = true,
+          sync = true,
+          on_done = function(success)
+            nested_saved = success
+          end,
+        })
+      end,
+    })
+
+    local started = vim.uv.now()
+    local waited = vim.wait(wait_timeout_ms, function()
+      return nested_saved ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for the nested sync save")
+    assert.is_true(nested_saved)
+    assert.is_true(vim.uv.now() - started < 1000, "the nested sync save should not wait for its own caller")
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.is_not_nil(data.sessions.outer_async)
+    assert.is_not_nil(data.sessions.nested_sync)
+  end)
+
+  it("should fail a sync save instead of racing an async write that outlives the wait", function()
+    push_popup("sync_timeout", { title = "Slow" })
+
+    local original_write = store.write
+    local ok, err = pcall(function()
+      -- Hold the first async write past the sync wait, then let it finish.
+      local delayed = false
+      store.write = function(path, data, opts)
+        if delayed then
+          return original_write(path, data, opts)
+        end
+        delayed = true
+        vim.defer_fn(function()
+          original_write(path, data, opts)
+        end, 1300)
+      end
+
+      local slow_done = nil
+      persist.save_current("slow_async", {
+        silent = true,
+        on_done = function(success)
+          slow_done = success
+        end,
+      })
+
+      local warnings = {}
+      local original_notify = vim.notify
+      vim.notify = function(msg, level)
+        if level == vim.log.levels.WARN then
+          warnings[#warnings + 1] = msg
+        end
+      end
+      local sync_saved = nil
+      persist.save_current("sync_after_timeout", {
+        silent = true,
+        sync = true,
+        on_done = function(success)
+          sync_saved = success
+        end,
+      })
+      vim.notify = original_notify
+
+      assert.is_false(sync_saved)
+      assert.is_nil(slow_done, "the delayed async write should still be pending")
+      assert.is_true(#warnings > 0 and warnings[1]:find("Timed out", 1, true) ~= nil)
+
+      local waited = vim.wait(2000, function()
+        return slow_done ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for the delayed async save")
+      assert.is_true(slow_done)
+
+      -- The queue keeps running after the withdrawn sync update.
+      local next_done = nil
+      persist.save_current("after_timeout", {
+        silent = true,
+        on_done = function(success)
+          next_done = success
+        end,
+      })
+      local next_waited = vim.wait(wait_timeout_ms, function()
+        return next_done ~= nil
+      end, wait_interval_ms)
+      assert.is_true(next_waited, "Timed out waiting for the follow-up save")
+      assert.is_true(next_done)
+
+      local data = migrate.ensure(read_and_wait(test_scope))
+      assert.is_not_nil(data.sessions.slow_async)
+      assert.is_not_nil(data.sessions.after_timeout)
+      assert.is_nil(data.sessions.sync_after_timeout)
+    end)
+
+    store.write = original_write
+
+    if not ok then
+      error(err)
+    end
+  end)
+
+  describe("when the store cannot be read", function()
+    ---@param fn fun()
+    local function silence_warnings(fn)
+      local original_notify = vim.notify
+      vim.notify = function() end
+      local ok, err = pcall(fn)
+      vim.notify = original_notify
+      if not ok then
+        error(err)
+      end
+    end
+
+    ---@param content string
+    local function write_raw(content)
+      local path = fs.scope_path(test_scope)
+      vim.fn.mkdir(vim.fs.dirname(path), "p")
+      assert.equals(0, vim.fn.writefile({ content }, path, "b"))
+    end
+
+    ---@return string
+    local function read_raw()
+      return table.concat(vim.fn.readfile(fs.scope_path(test_scope), "b"), "\n")
+    end
+
+    ---@param name string
+    ---@param opts? { sync?: boolean }
+    ---@return boolean?
+    local function save(name, opts)
+      local saved = nil
+      persist.save_current(name, {
+        silent = true,
+        sync = opts and opts.sync or false,
+        on_done = function(success)
+          saved = success
+        end,
+      })
+      vim.wait(wait_timeout_ms, function()
+        return saved ~= nil
+      end, wait_interval_ms)
+      return saved
+    end
+
+    for _, case in ipairs({
+      { name = "corrupt JSON", content = '{"version": 2, "sessions": {"keep": ' },
+      { name = "an unknown version", content = '{"version":99,"sessions":{"keep":{}}}' },
+      { name = "a JSON value that is not an object", content = "[1, 2]" },
+    }) do
+      it("should not overwrite " .. case.name, function()
+        push_popup("unreadable_" .. case.name:gsub("%W", "_"))
+        write_raw(case.content)
+
+        silence_warnings(function()
+          assert.is_false(save("async_overwrite"))
+          assert.is_false(save("sync_overwrite", { sync = true }))
+          assert.same({}, persist.list_sessions({ silent = true }))
+        end)
+
+        assert.equals(case.content, read_raw())
+      end)
+    end
+
+    it("should not overwrite existing sessions when reading fails with EIO", function()
+      push_popup("unreadable_eio")
+      write_and_wait(test_scope, {
+        version = 2,
+        sessions = { keep = { items = {}, meta = { created_at = 1, updated_at = 1 } } },
+      })
+      local before = read_raw()
+
+      local original_fs_read = vim.uv.fs_read
+      local ok, err = pcall(silence_warnings, function()
+        vim.uv.fs_read = function(_fd, _size, _offset, callback)
+          if callback then
+            callback("EIO: i/o error", nil)
+            return
+          end
+          return nil, "EIO: i/o error", "EIO"
+        end
+        assert.is_false(save("async_overwrite"))
+        assert.is_false(save("sync_overwrite", { sync = true }))
+        persist.delete_session("keep")
+        persist.rename_session("keep", "renamed")
+        vim.wait(100)
+      end)
+      vim.uv.fs_read = original_fs_read
+      if not ok then
+        error(err)
+      end
+
+      assert.equals(before, read_raw())
+      local data = migrate.ensure(read_and_wait(test_scope))
+      assert.is_not_nil(data.sessions.keep)
+      assert.is_nil(data.sessions.renamed)
+    end)
+  end)
+
   it("should keep processing updates after an on_done callback throws", function()
     push_popup("throwing_callback", { title = "Throw" })
 
@@ -461,6 +666,22 @@ describe("peekstack.persist.sessions", function()
     assert.equals(second.model.location.uri, items[1].uri)
     assert.equals(third.model.location.uri, items[2].uri)
     assert.is_not.equals(first.model.location.uri, items[1].uri)
+  end)
+
+  it("should keep every item when max_items is not an integer", function()
+    local original_notify = vim.notify
+    vim.notify = function() end
+    config.setup({ persist = { enabled = true, max_items = 1.5 } })
+    vim.notify = original_notify
+
+    push_popup("fractional_max_a")
+    push_popup("fractional_max_b")
+    push_popup("fractional_max_c")
+
+    persist.save_current("fractional", { silent = true, sync = true })
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.equals(3, #data.sessions.fractional.items)
   end)
 
   it("should notify when persist is disabled", function()

@@ -18,9 +18,19 @@ function M.store_path()
   return fs.scope_path(SCOPE)
 end
 
----@param data PeekstackStoreData
----@return PeekstackStoreData
-function M.ensure_data(data)
+---Migrate data read from `path`. Unsupported versions (e.g. a store written
+---by a newer release) yield nil so that the file is left untouched.
+---@param path string
+---@param data PeekstackStoreData?
+---@return PeekstackStoreData?
+local function ensure_data(path, data)
+  if not data then
+    return nil
+  end
+  if not migrate.supports(data.version) then
+    notify.warn(string.format("Unsupported session data version %s: %s", tostring(data.version), path))
+    return nil
+  end
   return migrate.ensure(data)
 end
 
@@ -38,44 +48,50 @@ function M.ensure_enabled(silent)
 end
 
 ---Asynchronously read store data and pass migrated data to `on_done`.
+---`data` is nil when the store could not be read or decoded; callers must
+---then leave the file alone instead of treating it as empty.
 ---Does NOT touch the cache; callers that want to refresh it should use
 ---`refresh_cache_async` instead. This keeps save/delete/rename flows from
 ---updating the cache before a successful write.
 ---@param path string
----@param on_done fun(data: PeekstackStoreData)
+---@param on_done fun(data: PeekstackStoreData?)
 function M.read_async(path, on_done)
   store.read(path, {
     on_done = function(read_data)
-      on_done(M.ensure_data(read_data))
+      on_done(ensure_data(path, read_data))
     end,
   })
 end
 
 ---Synchronously read and migrate store data without touching the cache.
 ---@param path string
----@return PeekstackStoreData
+---@return PeekstackStoreData? data nil when the store could not be read
 function M.read_sync(path)
-  return M.ensure_data(store.read_sync(path))
+  return ensure_data(path, store.read_sync(path))
 end
 
 ---Asynchronously read store data and refresh the cache from disk.
 ---Used by read-only flows (restore, list_sessions) that should reflect the
----latest persisted state in memory.
+---latest persisted state in memory. A failed read keeps the cache as is.
 ---@param path string
----@param on_done fun(data: PeekstackStoreData)
+---@param on_done fun(data: PeekstackStoreData?)
 function M.refresh_cache_async(path, on_done)
   M.read_async(path, function(data)
-    cache.update(path, data)
+    if data then
+      cache.update(path, data)
+    end
     on_done(data)
   end)
 end
 
 ---Synchronously read store data and refresh the cache from disk.
 ---@param path string
----@return PeekstackStoreData
+---@return PeekstackStoreData? data nil when the store could not be read
 function M.refresh_cache_sync(path)
   local data = M.read_sync(path)
-  cache.update(path, data)
+  if data then
+    cache.update(path, data)
+  end
   return data
 end
 
@@ -112,6 +128,7 @@ end
 ---@field path string
 ---@field mutate fun(data: PeekstackStoreData): boolean
 ---@field on_done? fun(success: boolean)
+---@field sync? boolean read and write with blocking I/O when its turn comes
 
 ---@type PeekstackPersistUpdate[]
 local update_queue = {}
@@ -126,17 +143,29 @@ local function run_next_update()
   update_running = true
 
   local function finish(success)
+    -- Release the queue before the callback so an update it enqueues (e.g. a
+    -- sync save from a PeekstackSave handler) can run instead of waiting on
+    -- this finished one. Earlier queued updates still go first.
+    update_running = false
     if update.on_done then
-      -- A throwing callback must not wedge the queue with update_running=true.
+      -- A throwing callback must not stop the queue.
       local ok, err = pcall(update.on_done, success)
       if not ok then
         notify.warn("Session update callback failed: " .. tostring(err))
       end
     end
-    run_next_update()
+    if not update_running then
+      run_next_update()
+    end
   end
 
-  M.read_async(update.path, function(data)
+  ---@param data PeekstackStoreData?
+  local function apply(data)
+    if not data then
+      -- Never write over a store that could not be read.
+      finish(false)
+      return
+    end
     local ok, keep = pcall(update.mutate, data)
     if not ok then
       notify.warn("Failed to update session data: " .. tostring(keep))
@@ -147,8 +176,26 @@ local function run_next_update()
       finish(false)
       return
     end
-    M.write_async(update.path, data, finish)
-  end)
+    if update.sync then
+      finish(M.write_sync(update.path, data))
+    else
+      M.write_async(update.path, data, finish)
+    end
+  end
+
+  if update.sync then
+    apply(M.read_sync(update.path))
+  else
+    M.read_async(update.path, apply)
+  end
+end
+
+---@param update PeekstackPersistUpdate
+local function enqueue(update)
+  update_queue[#update_queue + 1] = update
+  if not update_running then
+    run_next_update()
+  end
 end
 
 ---Asynchronously read, mutate and write back store data at `path`.
@@ -161,34 +208,53 @@ end
 ---@param mutate fun(data: PeekstackStoreData): boolean
 ---@param on_done? fun(success: boolean)
 function M.update_async(path, mutate, on_done)
-  update_queue[#update_queue + 1] = { path = path, mutate = mutate, on_done = on_done }
-  if not update_running then
-    run_next_update()
-  end
+  enqueue({ path = path, mutate = mutate, on_done = on_done })
 end
 
----Upper bound for draining in-flight async updates before a sync update.
-local UPDATE_SYNC_DRAIN_MS = 1000
+---Upper bound for waiting on queued updates ahead of a sync update.
+local UPDATE_SYNC_TIMEOUT_MS = 1000
 
 ---Synchronously read, mutate and write back store data at `path`.
----Drains queued async updates first (bounded by UPDATE_SYNC_DRAIN_MS) so a
----sync save issued while an async save is mid-flight does not race it; the
----sync write itself then runs atomically from Lua's point of view.
+---The update joins the same queue as async updates, so it never overlaps an
+---in-flight write. If earlier updates do not finish within
+---UPDATE_SYNC_TIMEOUT_MS, the update is withdrawn and reported as failed
+---rather than racing them with a write that one of them could later clobber.
 ---@param path string
 ---@param mutate fun(data: PeekstackStoreData): boolean
 ---@return boolean success whether the data was written
 function M.update_sync(path, mutate)
-  if update_running then
-    vim.wait(UPDATE_SYNC_DRAIN_MS, function()
-      return not update_running
+  ---@type boolean?
+  local result = nil
+  ---@type PeekstackPersistUpdate
+  local update = {
+    path = path,
+    mutate = mutate,
+    sync = true,
+    on_done = function(success)
+      result = success
+    end,
+  }
+  enqueue(update)
+
+  if result == nil then
+    vim.wait(UPDATE_SYNC_TIMEOUT_MS, function()
+      return result ~= nil
     end, 10)
   end
-
-  local data = M.read_sync(path)
-  if not mutate(data) then
-    return false
+  if result ~= nil then
+    return result
   end
-  return M.write_sync(path, data)
+
+  -- A sync update runs to completion once dequeued, so a pending result means
+  -- it is still queued behind a slow write.
+  for i, queued in ipairs(update_queue) do
+    if queued == update then
+      table.remove(update_queue, i)
+      break
+    end
+  end
+  notify.warn("Timed out waiting for pending session writes: " .. path)
+  return false
 end
 
 ---Reset the in-memory session cache and drop queued updates.

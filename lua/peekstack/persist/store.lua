@@ -29,66 +29,96 @@ local function ensure_parent_dir(path)
   return true
 end
 
+local READ_CHUNK_SIZE = 64 * 1024
+
+---Turn the outcome of reading the store file into store data.
+---A missing file is an empty store, but any other I/O error or undecodable
+---content yields nil so callers never overwrite data they could not read.
+---@param path string
+---@param err string? libuv error message
+---@param content string?
+---@return PeekstackStoreData?
+local function resolve_read(path, err, content)
+  if err then
+    if vim.startswith(err, "ENOENT") then
+      return codec.empty_data()
+    end
+    notify.warn(string.format("Failed to read session data: %s (%s)", path, err))
+    return nil
+  end
+  return codec.decode(path, content or "")
+end
+
+---Read the store file until EOF on a single descriptor, so a file replaced by
+---an atomic rename is never read as a mix of old size and new content.
 ---@param path string store file path, resolved by the caller
----@param opts { on_done: fun(data: PeekstackStoreData) }
+---@param opts { on_done: fun(data: PeekstackStoreData?) } `data` is nil when the store could not be read
 function M.read(path, opts)
   local on_done = opts and opts.on_done or nil
   if not on_done then
     return
   end
 
-  vim.uv.fs_stat(path, function(stat_err, stat)
-    if stat_err or not stat or stat.size == 0 then
-      vim.schedule(function()
-        on_done(codec.empty_data())
-      end)
+  ---@param err string?
+  ---@param content string?
+  local function finish(err, content)
+    vim.schedule(function()
+      on_done(resolve_read(path, err, content))
+    end)
+  end
+
+  vim.uv.fs_open(path, "r", 438, function(open_err, fd)
+    if not fd then
+      finish(open_err or "open failed")
       return
     end
 
-    vim.uv.fs_open(path, "r", 438, function(open_err, fd)
-      if open_err or not fd then
-        vim.schedule(function()
-          on_done(codec.empty_data())
-        end)
-        return
-      end
-
-      vim.uv.fs_read(fd, stat.size, 0, function(read_err, data)
-        vim.uv.fs_close(fd)
-        if read_err or not data or data == "" then
-          vim.schedule(function()
-            on_done(codec.empty_data())
-          end)
-          return
+    local chunks = {}
+    local offset = 0
+    local function read_next()
+      vim.uv.fs_read(fd, READ_CHUNK_SIZE, offset, function(read_err, chunk)
+        if read_err or not chunk then
+          vim.uv.fs_close(fd)
+          finish(read_err or "read failed")
+        elseif chunk == "" then
+          vim.uv.fs_close(fd)
+          finish(nil, table.concat(chunks))
+        else
+          chunks[#chunks + 1] = chunk
+          offset = offset + #chunk
+          read_next()
         end
-        vim.schedule(function()
-          on_done(codec.decode(path, data))
-        end)
       end)
-    end)
+    end
+    read_next()
   end)
 end
 
 ---@param path string store file path, resolved by the caller
----@return PeekstackStoreData
+---@return PeekstackStoreData? data nil when the store could not be read
 function M.read_sync(path)
-  local stat = vim.uv.fs_stat(path)
-  if not stat or stat.size == 0 then
-    return codec.empty_data()
-  end
-
-  local fd = vim.uv.fs_open(path, "r", 438)
+  local fd, open_err = vim.uv.fs_open(path, "r", 438)
   if not fd then
-    return codec.empty_data()
+    return resolve_read(path, open_err or "open failed")
   end
 
-  local data = vim.uv.fs_read(fd, stat.size, 0)
+  local chunks = {}
+  local offset = 0
+  while true do
+    local chunk, read_err = vim.uv.fs_read(fd, READ_CHUNK_SIZE, offset)
+    if not chunk then
+      pcall(vim.uv.fs_close, fd)
+      return resolve_read(path, read_err or "read failed")
+    end
+    if chunk == "" then
+      break
+    end
+    chunks[#chunks + 1] = chunk
+    offset = offset + #chunk
+  end
   pcall(vim.uv.fs_close, fd)
-  if not data or data == "" then
-    return codec.empty_data()
-  end
 
-  return codec.decode(path, data)
+  return resolve_read(path, nil, table.concat(chunks))
 end
 
 ---@param path string store file path, resolved by the caller
