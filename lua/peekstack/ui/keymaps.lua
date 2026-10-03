@@ -9,7 +9,7 @@ local M = {}
 ---@field winid integer
 ---@field bufnr integer
 ---@field lhs string[]
----@field original table<string, vim.api.keyset.get_keymap?>
+---@field original table[] maparg() dicts of the buffer-local mappings that were shadowed
 
 --- Buffer-local keymaps temporarily installed for the currently focused
 --- source-mode popup window. They are restored on WinLeave/close so the
@@ -166,43 +166,29 @@ local function mapping_specs()
   return keymap_spec.normalize(raw)
 end
 
+--- Snapshot the buffer-local normal-mode mapping that `lhs` resolves to.
+--- `maparg()` applies the same key resolution as Neovim (`<C-j>` vs `<C-J>`,
+--- `<leader>`, `<C-w>`), and the returned dict keeps callback, expr, `<SID>`
+--- and script context so `mapset()` can recreate it exactly.
 ---@param bufnr integer
 ---@param lhs string
----@return vim.api.keyset.get_keymap?
+---@return table?
 local function get_buffer_map(bufnr, lhs)
-  for _, item in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
-    if item.lhs == lhs then
-      return item
-    end
+  local item = vim.api.nvim_buf_call(bufnr, function()
+    return vim.fn.maparg(lhs, "n", false, true)
+  end)
+  if item.buffer ~= 1 then
+    return nil
   end
-  return nil
+  return item
 end
 
 ---@param bufnr integer
----@param item vim.api.keyset.get_keymap?
+---@param item table
 local function restore_buffer_map(bufnr, item)
-  if not item or not item.lhs or item.lhs == "" then
-    return
-  end
-
-  local opts = {
-    buffer = bufnr,
-    desc = item.desc ~= "" and item.desc or nil,
-    expr = item.expr == 1,
-    nowait = item.nowait == 1,
-    remap = item.noremap == 0,
-    script = item.script == 1,
-    silent = item.silent == 1,
-  }
-
-  if item.callback ~= nil then
-    vim.keymap.set("n", item.lhs, item.callback, opts)
-    return
-  end
-
-  if type(item.rhs) == "string" then
-    vim.keymap.set("n", item.lhs, item.rhs, opts)
-  end
+  vim.api.nvim_buf_call(bufnr, function()
+    vim.fn.mapset(item)
+  end)
 end
 
 local function deactivate_active_source_popup()
@@ -216,9 +202,13 @@ local function deactivate_active_source_popup()
     return
   end
 
+  -- Delete every installed mapping before restoring, so a restored mapping is
+  -- never removed again by another lhs spelling that resolves to the same keys.
   for _, lhs in ipairs(active.lhs) do
     pcall(vim.keymap.del, "n", lhs, { buffer = active.bufnr })
-    restore_buffer_map(active.bufnr, active.original[lhs])
+  end
+  for _, item in ipairs(active.original) do
+    restore_buffer_map(active.bufnr, item)
   end
 end
 
@@ -234,16 +224,18 @@ local function activate_source_popup(popup)
   deactivate_active_source_popup()
 
   local specs = mapping_specs()
-  ---@type table<string, vim.api.keyset.get_keymap?>
+  ---@type table[]
   local original = {}
   ---@type string[]
   local lhs_list = {}
 
+  -- Snapshot every original mapping before installing any, so an lhs that
+  -- resolves to the same keys as an earlier spec does not capture our own map.
   for _, spec in ipairs(specs) do
-    original[spec.lhs] = get_buffer_map(popup.bufnr, spec.lhs)
-    keymap_spec.set(popup.bufnr, spec)
+    original[#original + 1] = get_buffer_map(popup.bufnr, spec.lhs)
     lhs_list[#lhs_list + 1] = spec.lhs
   end
+  keymap_spec.apply(popup.bufnr, specs)
 
   active_source_maps = {
     winid = popup.winid,

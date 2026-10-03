@@ -215,6 +215,145 @@ describe("popup source mode", function()
     vim.fn.delete(temp)
   end)
 
+  describe("existing buffer-local mappings with other spellings", function()
+    local saved_leader
+    local temp
+    local script
+    local source_bufnr
+    local root_win
+
+    --- Resolve a mapping the same way Neovim does. Lua callbacks are re-wrapped
+    --- by maparg(), so only their presence is compared; behaviour is checked
+    --- by assert_originals_work().
+    ---@param lhs string
+    ---@param mode string
+    ---@return table
+    local function resolve_mode(lhs, mode)
+      local item = vim.api.nvim_buf_call(source_bufnr, function()
+        return vim.fn.maparg(lhs, mode, false, true)
+      end)
+      item.lnum = nil
+      item.callback = item.callback and true or nil
+      return item
+    end
+
+    ---@param lhs string
+    ---@return table
+    local function resolve(lhs)
+      return resolve_mode(lhs, "n")
+    end
+
+    before_each(function()
+      saved_leader = vim.g.mapleader
+      vim.g.mapleader = ","
+      temp = vim.fn.tempname() .. ".lua"
+      vim.fn.writefile({ "print('peekstack')" }, temp)
+      vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+      root_win = vim.api.nvim_get_current_win()
+      source_bufnr = vim.api.nvim_get_current_buf()
+
+      -- Mappings written with different spellings than peekstack's specs,
+      -- including a script-local <SID> expr mapping and a Lua callback.
+      script = vim.fn.tempname() .. ".vim"
+      vim.fn.writefile({
+        "function! s:Original() abort",
+        "  let g:peekstack_original_sid = 1",
+        "  return ''",
+        "endfunction",
+        "nnoremap <buffer> <expr> <C-J> <SID>Original()",
+        "noremap <buffer> <silent> <Leader>os :let g:peekstack_original_leader = 1<CR>",
+      }, script)
+      vim.api.nvim_cmd({ cmd = "source", args = { script } }, {})
+      vim.keymap.set("n", "<c-w>h", function()
+        vim.g.peekstack_original_callback = 1
+      end, { buffer = source_bufnr, desc = "Original window left" })
+    end)
+
+    after_each(function()
+      vim.g.mapleader = saved_leader
+      vim.g.peekstack_original_sid = nil
+      vim.g.peekstack_original_leader = nil
+      vim.g.peekstack_original_callback = nil
+      vim.fn.delete(temp)
+      vim.fn.delete(script)
+    end)
+
+    local function open_source_popup()
+      local model = popup.create({
+        uri = vim.uri_from_fname(temp),
+        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+        provider = "test",
+      }, {
+        buffer_mode = "source",
+      })
+      assert.is_not_nil(model)
+      return model
+    end
+
+    ---@param keys string
+    local function feed(keys)
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "x", false)
+    end
+
+    local function assert_originals_work()
+      vim.api.nvim_set_current_win(root_win)
+      feed("<C-j>")
+      feed("<leader>os")
+      feed("<C-w>h")
+      assert.equals(1, vim.g.peekstack_original_sid)
+      assert.equals(1, vim.g.peekstack_original_leader)
+      assert.equals(1, vim.g.peekstack_original_callback)
+    end
+
+    it("restores Ctrl, leader and <SID> mappings after popup close", function()
+      local lhs_list = { "<C-j>", "<leader>os", "<C-w>h" }
+      local before = vim.tbl_map(resolve, lhs_list)
+      local visual_before = resolve_mode(",os", "x")
+
+      local model = open_source_popup()
+      assert.equals("Peekstack focus next", resolve("<C-j>").desc)
+      assert.equals("Peekstack stack view", resolve("<leader>os").desc)
+      assert.equals("Peekstack navigate left", resolve("<C-w>h").desc)
+
+      popup.close(model)
+
+      for i, lhs in ipairs(lhs_list) do
+        assert.same(before[i], resolve(lhs))
+      end
+      -- The `:noremap` mapping also keeps its visual/operator-pending modes.
+      assert.same(visual_before, resolve_mode(",os", "x"))
+      assert_originals_work()
+    end)
+
+    it("restores Ctrl, leader and <SID> mappings when leaving the popup", function()
+      require("peekstack.core.events").setup()
+      local model = open_source_popup()
+      assert.equals(model.winid, vim.api.nvim_get_current_win())
+      assert.equals("Peekstack focus next", resolve("<C-j>").desc)
+
+      vim.api.nvim_set_current_win(root_win)
+
+      assert.is_nil(resolve("<C-j>").desc)
+      assert.equals("Original window left", resolve("<C-w>h").desc)
+      assert_originals_work()
+
+      popup.close(model)
+    end)
+
+    it("does not turn global mappings into buffer-local ones", function()
+      vim.keymap.del("n", "<C-j>", { buffer = source_bufnr })
+      vim.keymap.set("n", "<C-J>", "<Nop>", { desc = "Global next" })
+
+      local model = open_source_popup()
+      popup.close(model)
+
+      local item = resolve("<C-j>")
+      assert.equals(0, item.buffer)
+      assert.equals("Global next", item.desc)
+      vim.keymap.del("n", "<C-J>")
+    end)
+  end)
+
   it("installs <C-w>hjkl navigation keymaps on copy-mode popups", function()
     local loc = make_location()
     local model = popup.create(loc, { buffer_mode = "copy" })
