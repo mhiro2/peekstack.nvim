@@ -34,14 +34,24 @@ function M.validate_type(path, expected_type, value, default)
   return value
 end
 
+---Whether `value` is an integral number. NaN and infinities fail because
+---`x % 1` is NaN for them.
+---@param value any
+---@return boolean
+local function is_integer(value)
+  return type(value) == "number" and value % 1 == 0
+end
+
+---Validate counts, sizes and durations: finite integers within bounds.
 ---@param path string
 ---@param value any
----@param default number
----@param opts? { min: number?, max: number? }
----@return number
-function M.validate_number_range(path, value, default, opts)
-  if type(value) ~= "number" then
-    notify.warn(string.format("%s must be a number, got %s. Falling back to %s", path, type(value), default))
+---@param default integer
+---@param opts? { min: integer?, max: integer? }
+---@return integer
+function M.validate_integer_range(path, value, default, opts)
+  if not is_integer(value) then
+    local got = type(value) == "number" and tostring(value) or type(value)
+    notify.warn(string.format("%s must be an integer, got %s. Falling back to %s", path, got, default))
     return default
   end
   if opts and opts.min ~= nil and value < opts.min then
@@ -64,7 +74,8 @@ function M.validate_ratio(path, value, default)
     notify.warn(string.format("%s must be a number, got %s. Falling back to %s", path, type(value), default))
     return default
   end
-  if value <= 0 or value > 1 then
+  -- `not (value > 0)` also rejects NaN, which fails every comparison.
+  if not (value > 0) or value > 1 then
     notify.warn(string.format("%s must be in (0, 1], got %s. Falling back to %s", path, value, default))
     return default
   end
@@ -142,22 +153,6 @@ function M.validate_enum(path, value, known, default)
   return value
 end
 
----@param path string
----@param value any
----@param default number
----@return number
-function M.validate_non_negative_number(path, value, default)
-  if type(value) ~= "number" then
-    notify.warn(string.format("%s must be a number, got %s", path, type(value)))
-    return default
-  end
-  if value < 0 then
-    notify.warn(string.format("%s must be >= 0, got %s", path, value))
-    return default
-  end
-  return value
-end
-
 ---@param expected_type string
 ---@return PeekstackConfigFieldValidator
 function M.field_type(expected_type)
@@ -174,11 +169,11 @@ function M.field_enum(known)
   end
 end
 
----@param opts { min: number?, max: number? }
+---@param opts { min: integer?, max: integer? }
 ---@return PeekstackConfigFieldValidator
-function M.field_number_range(opts)
+function M.field_integer_range(opts)
   return function(path, value, default)
-    return M.validate_number_range(path, value, default, opts)
+    return M.validate_integer_range(path, value, default, opts)
   end
 end
 

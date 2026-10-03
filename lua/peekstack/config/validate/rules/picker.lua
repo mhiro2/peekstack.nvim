@@ -27,7 +27,7 @@ local PICKER_RULES = {
 
 ---@type PeekstackConfigFieldRule[]
 local PICKER_BUILTIN_RULES = {
-  { key = "preview_lines", validate = shared.field_number_range({ min = 0 }) },
+  { key = "preview_lines", validate = shared.field_integer_range({ min = 0 }) },
 }
 
 ---@param cfg table

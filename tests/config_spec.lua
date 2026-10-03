@@ -330,7 +330,7 @@ describe("config", function()
           },
         },
       })
-      assert.is_true(has_message("ui.path.max_width must be a number"))
+      assert.is_true(has_message("ui.path.max_width must be an integer, got string"))
       assert.equals(config.defaults.ui.path.max_width, cfg.ui.path.max_width)
     end)
 
@@ -483,6 +483,54 @@ describe("config", function()
       })
       assert.is_true(has_message("persist.max_items"))
       assert.equals(config.defaults.persist.max_items, cfg.persist.max_items)
+    end)
+
+    it("rejects non-integer counts, sizes and durations", function()
+      for _, value in ipairs({ 1.5, 0 / 0, math.huge, -math.huge }) do
+        notifications = {}
+        local cfg = config.setup({
+          ui = {
+            path = { max_width = value },
+            popup = { history = { max_items = value }, auto_close = { idle_ms = value } },
+            layout = { zindex_base = value, offset = { row = value } },
+          },
+          picker = { builtin = { preview_lines = value } },
+          persist = { max_items = value, auto = { debounce_ms = value } },
+        })
+        local label = tostring(value)
+        assert.is_true(has_message("persist.max_items must be an integer, got " .. label), label)
+        assert.is_true(has_message("Falling back to " .. config.defaults.persist.max_items), label)
+        assert.equals(config.defaults.persist.max_items, cfg.persist.max_items)
+        assert.equals(config.defaults.persist.auto.debounce_ms, cfg.persist.auto.debounce_ms)
+        assert.equals(config.defaults.ui.path.max_width, cfg.ui.path.max_width)
+        assert.equals(config.defaults.ui.popup.history.max_items, cfg.ui.popup.history.max_items)
+        assert.equals(config.defaults.ui.popup.auto_close.idle_ms, cfg.ui.popup.auto_close.idle_ms)
+        assert.equals(config.defaults.ui.layout.zindex_base, cfg.ui.layout.zindex_base)
+        assert.equals(config.defaults.ui.layout.offset.row, cfg.ui.layout.offset.row)
+        assert.equals(config.defaults.picker.builtin.preview_lines, cfg.picker.builtin.preview_lines)
+      end
+    end)
+
+    it("accepts integer bounds and integral floats", function()
+      local cfg = config.setup({
+        ui = { path = { max_width = 0 } },
+        persist = { max_items = 1, auto = { debounce_ms = 600000 } },
+      })
+      assert.equals(0, cfg.ui.path.max_width)
+      assert.equals(1, cfg.persist.max_items)
+      assert.equals(600000, cfg.persist.auto.debounce_ms)
+
+      cfg = config.setup({ persist = { max_items = 3.0, auto = { debounce_ms = 600001 } } })
+      assert.equals(3, cfg.persist.max_items)
+      assert.is_true(has_message("persist.auto.debounce_ms must be <= 600000, got 600001. Falling back to 1000"))
+    end)
+
+    it("rejects NaN and out-of-range ratios", function()
+      for _, value in ipairs({ 0 / 0, 0, 1.5, math.huge }) do
+        local cfg = config.setup({ ui = { layout = { max_ratio = value } } })
+        assert.equals(config.defaults.ui.layout.max_ratio, cfg.ui.layout.max_ratio, tostring(value))
+      end
+      assert.equals(1, config.setup({ ui = { layout = { max_ratio = 1 } } }).ui.layout.max_ratio)
     end)
 
     it("falls back on invalid restore_position", function()

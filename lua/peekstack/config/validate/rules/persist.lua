@@ -5,7 +5,7 @@ local M = {}
 ---@type PeekstackConfigFieldRule[]
 local PERSIST_RULES = {
   { key = "enabled", validate = shared.field_type("boolean") },
-  { key = "max_items", validate = shared.field_number_range({ min = 1 }) },
+  { key = "max_items", validate = shared.field_integer_range({ min = 1 }) },
 }
 
 ---@type PeekstackConfigFieldRule[]
@@ -21,7 +21,7 @@ local PERSIST_AUTO_RULES = {
   { key = "restore", validate = shared.field_type("boolean") },
   { key = "save", validate = shared.field_type("boolean") },
   { key = "restore_if_empty", validate = shared.field_type("boolean") },
-  { key = "debounce_ms", validate = shared.field_number_range({ min = 0, max = 600000 }) },
+  { key = "debounce_ms", validate = shared.field_integer_range({ min = 0, max = 600000 }) },
   { key = "save_on_leave", validate = shared.field_type("boolean") },
 }
 

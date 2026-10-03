@@ -668,6 +668,22 @@ describe("peekstack.persist.sessions", function()
     assert.is_not.equals(first.model.location.uri, items[1].uri)
   end)
 
+  it("should keep every item when max_items is not an integer", function()
+    local original_notify = vim.notify
+    vim.notify = function() end
+    config.setup({ persist = { enabled = true, max_items = 1.5 } })
+    vim.notify = original_notify
+
+    push_popup("fractional_max_a")
+    push_popup("fractional_max_b")
+    push_popup("fractional_max_c")
+
+    persist.save_current("fractional", { silent = true, sync = true })
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.equals(3, #data.sessions.fractional.items)
+  end)
+
   it("should notify when persist is disabled", function()
     config.setup({ persist = { enabled = false } })
     local original_notify = vim.notify

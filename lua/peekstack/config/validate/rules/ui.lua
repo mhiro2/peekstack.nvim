@@ -21,7 +21,7 @@ local KNOWN_STACK_VIEW_POSITIONS = { "left", "right", "bottom" }
 ---@type PeekstackConfigFieldRule[]
 local UI_PATH_RULES = {
   { key = "base", validate = shared.field_enum(KNOWN_PATH_BASES), require_truthy = true },
-  { key = "max_width", validate = shared.validate_non_negative_number },
+  { key = "max_width", validate = shared.field_integer_range({ min = 0 }) },
 }
 
 ---@type PeekstackConfigFieldRule[]
@@ -43,14 +43,14 @@ local POPUP_SOURCE_RULES = {
 
 ---@type PeekstackConfigFieldRule[]
 local POPUP_HISTORY_RULES = {
-  { key = "max_items", validate = shared.field_number_range({ min = 1 }) },
+  { key = "max_items", validate = shared.field_integer_range({ min = 1 }) },
   { key = "restore_position", validate = shared.field_enum(KNOWN_RESTORE_POSITIONS), require_truthy = true },
 }
 
 ---@type PeekstackConfigFieldRule[]
 local INLINE_PREVIEW_RULES = {
   { key = "enabled", validate = shared.field_type("boolean") },
-  { key = "max_lines", validate = shared.field_number_range({ min = 1 }) },
+  { key = "max_lines", validate = shared.field_integer_range({ min = 1 }) },
   { key = "hl_group", validate = shared.field_type("string") },
   { key = "close_events", validate = shared.field_event_list() },
 }
@@ -63,8 +63,8 @@ local QUICK_PEEK_RULES = {
 ---@type PeekstackConfigFieldRule[]
 local POPUP_AUTO_CLOSE_RULES = {
   { key = "enabled", validate = shared.field_type("boolean") },
-  { key = "idle_ms", validate = shared.field_number_range({ min = 1 }) },
-  { key = "check_interval_ms", validate = shared.field_number_range({ min = 1 }) },
+  { key = "idle_ms", validate = shared.field_integer_range({ min = 1 }) },
+  { key = "check_interval_ms", validate = shared.field_integer_range({ min = 1 }) },
   { key = "ignore_pinned", validate = shared.field_type("boolean") },
 }
 
@@ -87,7 +87,7 @@ local TITLE_RULES = {
 ---@type PeekstackConfigFieldRule[]
 local TITLE_CONTEXT_RULES = {
   { key = "enabled", validate = shared.field_type("boolean") },
-  { key = "max_depth", validate = shared.field_number_range({ min = 1 }) },
+  { key = "max_depth", validate = shared.field_integer_range({ min = 1 }) },
   { key = "separator", validate = shared.field_type("string") },
 }
 
@@ -100,25 +100,25 @@ local TITLE_ICON_RULES = {
 local LAYOUT_RULES = {
   { key = "style", validate = shared.field_enum(KNOWN_LAYOUT_STYLES), require_truthy = true },
   { key = "max_ratio", validate = shared.field_ratio() },
-  { key = "zindex_base", validate = shared.field_number_range({ min = 1 }) },
+  { key = "zindex_base", validate = shared.field_integer_range({ min = 1 }) },
 }
 
 ---@type PeekstackConfigFieldRule[]
 local LAYOUT_MIN_SIZE_RULES = {
-  { key = "w", validate = shared.field_number_range({ min = 1 }) },
-  { key = "h", validate = shared.field_number_range({ min = 1 }) },
+  { key = "w", validate = shared.field_integer_range({ min = 1 }) },
+  { key = "h", validate = shared.field_integer_range({ min = 1 }) },
 }
 
 ---@type PeekstackConfigFieldRule[]
 local LAYOUT_SHRINK_RULES = {
-  { key = "w", validate = shared.field_number_range({ min = 0 }) },
-  { key = "h", validate = shared.field_number_range({ min = 0 }) },
+  { key = "w", validate = shared.field_integer_range({ min = 0 }) },
+  { key = "h", validate = shared.field_integer_range({ min = 0 }) },
 }
 
 ---@type PeekstackConfigFieldRule[]
 local LAYOUT_OFFSET_RULES = {
-  { key = "row", validate = shared.field_number_range({ min = 0 }) },
-  { key = "col", validate = shared.field_number_range({ min = 0 }) },
+  { key = "row", validate = shared.field_integer_range({ min = 0 }) },
+  { key = "col", validate = shared.field_integer_range({ min = 0 }) },
 }
 
 ---@param map table
