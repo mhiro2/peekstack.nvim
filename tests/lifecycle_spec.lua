@@ -395,4 +395,54 @@ describe("popup lifecycle", function()
       assert.same({ broken }, stack.history_list())
     end)
   end)
+
+  describe("activity tracking", function()
+    local path
+
+    -- A headless test never reaches the main loop, which is where Neovim
+    -- fires CursorMoved, so fire it from the popup window after the motion.
+    local function move_cursor_down()
+      vim.api.nvim_feedkeys("j", "x", false)
+      vim.api.nvim_exec_autocmds("CursorMoved", { buffer = vim.api.nvim_get_current_buf(), modeline = false })
+    end
+
+    before_each(function()
+      path = vim.fn.tempname() .. ".txt"
+      vim.fn.writefile({ "one", "two", "three", "four" }, path)
+    end)
+
+    after_each(function()
+      vim.fn.delete(path)
+    end)
+
+    it("updates last_active_at when the cursor moves in a new popup", function()
+      local model = stack.push(helpers.make_location({ uri = vim.uri_from_fname(path) }))
+      assert.equals(model.winid, vim.api.nvim_get_current_win())
+      model.last_active_at = 0
+
+      move_cursor_down()
+
+      assert.equals(2, vim.api.nvim_win_get_cursor(model.winid)[1])
+      assert.is_true(model.last_active_at > 0)
+    end)
+
+    it("keeps a popup in use open across the auto-close scan", function()
+      config.setup({
+        ui = {
+          quick_peek = { close_events = { "InsertEnter" } },
+          popup = { auto_close = { enabled = true, idle_ms = 1000, check_interval_ms = 60000 } },
+        },
+      })
+      events.setup()
+      local cleanup = require("peekstack.core.cleanup")
+      local model = stack.push(helpers.make_location({ uri = vim.uri_from_fname(path) }))
+      model.last_active_at = vim.uv.now() - 5000
+
+      move_cursor_down()
+      cleanup.scan(vim.uv.now())
+      cleanup.stop()
+
+      assert.is_not_nil(stack.find_by_id(model.id))
+    end)
+  end)
 end)
