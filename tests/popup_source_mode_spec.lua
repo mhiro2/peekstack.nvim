@@ -224,7 +224,8 @@ describe("popup source mode", function()
 
     --- Resolve a mapping the same way Neovim does. Lua callbacks are re-wrapped
     --- by maparg(), so only their presence is compared; behaviour is checked
-    --- by assert_originals_work().
+    --- by assert_originals_work(). A `:map` entry may come back split per mode,
+    --- so the combined mode spelling is ignored.
     ---@param lhs string
     ---@param mode string
     ---@return table
@@ -234,6 +235,8 @@ describe("popup source mode", function()
       end)
       item.lnum = nil
       item.callback = item.callback and true or nil
+      item.mode = nil
+      item.mode_bits = nil
       return item
     end
 
@@ -309,6 +312,7 @@ describe("popup source mode", function()
       local lhs_list = { "<C-j>", "<leader>os", "<C-w>h" }
       local before = vim.tbl_map(resolve, lhs_list)
       local visual_before = resolve_mode(",os", "x")
+      local pending_before = resolve_mode(",os", "o")
 
       local model = open_source_popup()
       assert.equals("Peekstack focus next", resolve("<C-j>").desc)
@@ -322,6 +326,7 @@ describe("popup source mode", function()
       end
       -- The `:noremap` mapping also keeps its visual/operator-pending modes.
       assert.same(visual_before, resolve_mode(",os", "x"))
+      assert.same(pending_before, resolve_mode(",os", "o"))
       assert_originals_work()
     end)
 
@@ -338,6 +343,30 @@ describe("popup source mode", function()
       assert_originals_work()
 
       popup.close(model)
+    end)
+
+    it("keeps other modes of a :map mapping changed while the popup is open", function()
+      local model = open_source_popup()
+      vim.keymap.set("x", ",os", "<Nop>", { buffer = source_bufnr, desc = "Updated visual" })
+      vim.api.nvim_set_current_win(root_win)
+      vim.api.nvim_cmd({ cmd = "enew" }, {})
+      assert.is_not.equals(source_bufnr, vim.api.nvim_get_current_buf())
+
+      popup.close(model)
+
+      assert.equals("Updated visual", resolve_mode(",os", "x").desc)
+      assert.equals(":let g:peekstack_original_leader = 1<CR>", resolve("<leader>os").rhs)
+    end)
+
+    it("cleans up leader mappings after mapleader changes", function()
+      vim.keymap.set("n", ";os", "<Nop>", { buffer = source_bufnr, desc = "Unrelated" })
+      local model = open_source_popup()
+      vim.g.mapleader = ";"
+
+      popup.close(model)
+
+      assert.equals("Unrelated", resolve(";os").desc)
+      assert.equals(":let g:peekstack_original_leader = 1<CR>", resolve(",os").rhs)
     end)
 
     it("does not turn global mappings into buffer-local ones", function()

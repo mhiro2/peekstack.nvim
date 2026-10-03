@@ -8,7 +8,7 @@ local M = {}
 ---@class PeekstackSourcePopupMapState
 ---@field winid integer
 ---@field bufnr integer
----@field lhs string[]
+---@field installed string[] lhs of the installed mappings, as resolved when they were set
 ---@field original table[] maparg() dicts of the buffer-local mappings that were shadowed
 
 --- Buffer-local keymaps temporarily installed for the currently focused
@@ -183,11 +183,14 @@ local function get_buffer_map(bufnr, lhs)
   return item
 end
 
+--- Recreate a snapshot in normal mode only. Installing a normal-mode map
+--- leaves the other modes of a `:map` mapping untouched, so they must not be
+--- reset to the snapshot.
 ---@param bufnr integer
 ---@param item table
 local function restore_buffer_map(bufnr, item)
   vim.api.nvim_buf_call(bufnr, function()
-    vim.fn.mapset(item)
+    vim.fn.mapset("n", false, item)
   end)
 end
 
@@ -204,7 +207,7 @@ local function deactivate_active_source_popup()
 
   -- Delete every installed mapping before restoring, so a restored mapping is
   -- never removed again by another lhs spelling that resolves to the same keys.
-  for _, lhs in ipairs(active.lhs) do
+  for _, lhs in ipairs(active.installed) do
     pcall(vim.keymap.del, "n", lhs, { buffer = active.bufnr })
   end
   for _, item in ipairs(active.original) do
@@ -226,21 +229,28 @@ local function activate_source_popup(popup)
   local specs = mapping_specs()
   ---@type table[]
   local original = {}
-  ---@type string[]
-  local lhs_list = {}
-
   -- Snapshot every original mapping before installing any, so an lhs that
   -- resolves to the same keys as an earlier spec does not capture our own map.
   for _, spec in ipairs(specs) do
     original[#original + 1] = get_buffer_map(popup.bufnr, spec.lhs)
-    lhs_list[#lhs_list + 1] = spec.lhs
   end
   keymap_spec.apply(popup.bufnr, specs)
+
+  -- Record the resolved keys so cleanup does not depend on `mapleader` at
+  -- that later time.
+  ---@type string[]
+  local installed = {}
+  for _, spec in ipairs(specs) do
+    local item = get_buffer_map(popup.bufnr, spec.lhs)
+    if item then
+      installed[#installed + 1] = item.lhs
+    end
+  end
 
   active_source_maps = {
     winid = popup.winid,
     bufnr = popup.bufnr,
-    lhs = lhs_list,
+    installed = installed,
     original = original,
   }
 end
