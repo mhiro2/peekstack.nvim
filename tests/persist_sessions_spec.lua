@@ -477,6 +477,102 @@ describe("peekstack.persist.sessions", function()
     end
   end)
 
+  describe("when the store cannot be read", function()
+    ---@param fn fun()
+    local function silence_warnings(fn)
+      local original_notify = vim.notify
+      vim.notify = function() end
+      local ok, err = pcall(fn)
+      vim.notify = original_notify
+      if not ok then
+        error(err)
+      end
+    end
+
+    ---@param content string
+    local function write_raw(content)
+      local path = fs.scope_path(test_scope)
+      vim.fn.mkdir(vim.fs.dirname(path), "p")
+      assert.equals(0, vim.fn.writefile({ content }, path, "b"))
+    end
+
+    ---@return string
+    local function read_raw()
+      return table.concat(vim.fn.readfile(fs.scope_path(test_scope), "b"), "\n")
+    end
+
+    ---@param name string
+    ---@param opts? { sync?: boolean }
+    ---@return boolean?
+    local function save(name, opts)
+      local saved = nil
+      persist.save_current(name, {
+        silent = true,
+        sync = opts and opts.sync or false,
+        on_done = function(success)
+          saved = success
+        end,
+      })
+      vim.wait(wait_timeout_ms, function()
+        return saved ~= nil
+      end, wait_interval_ms)
+      return saved
+    end
+
+    for _, case in ipairs({
+      { name = "corrupt JSON", content = '{"version": 2, "sessions": {"keep": ' },
+      { name = "an unknown version", content = '{"version":99,"sessions":{"keep":{}}}' },
+      { name = "a JSON value that is not an object", content = "[1, 2]" },
+    }) do
+      it("should not overwrite " .. case.name, function()
+        push_popup("unreadable_" .. case.name:gsub("%W", "_"))
+        write_raw(case.content)
+
+        silence_warnings(function()
+          assert.is_false(save("async_overwrite"))
+          assert.is_false(save("sync_overwrite", { sync = true }))
+          assert.same({}, persist.list_sessions({ silent = true }))
+        end)
+
+        assert.equals(case.content, read_raw())
+      end)
+    end
+
+    it("should not overwrite existing sessions when reading fails with EIO", function()
+      push_popup("unreadable_eio")
+      write_and_wait(test_scope, {
+        version = 2,
+        sessions = { keep = { items = {}, meta = { created_at = 1, updated_at = 1 } } },
+      })
+      local before = read_raw()
+
+      local original_fs_read = vim.uv.fs_read
+      local ok, err = pcall(silence_warnings, function()
+        vim.uv.fs_read = function(_fd, _size, _offset, callback)
+          if callback then
+            callback("EIO: i/o error", nil)
+            return
+          end
+          return nil, "EIO: i/o error", "EIO"
+        end
+        assert.is_false(save("async_overwrite"))
+        assert.is_false(save("sync_overwrite", { sync = true }))
+        persist.delete_session("keep")
+        persist.rename_session("keep", "renamed")
+        vim.wait(100)
+      end)
+      vim.uv.fs_read = original_fs_read
+      if not ok then
+        error(err)
+      end
+
+      assert.equals(before, read_raw())
+      local data = migrate.ensure(read_and_wait(test_scope))
+      assert.is_not_nil(data.sessions.keep)
+      assert.is_nil(data.sessions.renamed)
+    end)
+  end)
+
   it("should keep processing updates after an on_done callback throws", function()
     push_popup("throwing_callback", { title = "Throw" })
 

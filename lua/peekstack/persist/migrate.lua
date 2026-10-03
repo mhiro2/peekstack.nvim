@@ -60,6 +60,13 @@ local function normalize_session(session)
   return session
 end
 
+---Whether `version` is a store format this module can read.
+---@param version any
+---@return boolean
+function M.supports(version)
+  return version == 1 or version == 2
+end
+
 ---Ensure data is in the correct format (migration helper)
 ---@param data any
 ---@return PeekstackStoreData

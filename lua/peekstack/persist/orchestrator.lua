@@ -18,9 +18,19 @@ function M.store_path()
   return fs.scope_path(SCOPE)
 end
 
----@param data PeekstackStoreData
----@return PeekstackStoreData
-function M.ensure_data(data)
+---Migrate data read from `path`. Unsupported versions (e.g. a store written
+---by a newer release) yield nil so that the file is left untouched.
+---@param path string
+---@param data PeekstackStoreData?
+---@return PeekstackStoreData?
+local function ensure_data(path, data)
+  if not data then
+    return nil
+  end
+  if not migrate.supports(data.version) then
+    notify.warn(string.format("Unsupported session data version %s: %s", tostring(data.version), path))
+    return nil
+  end
   return migrate.ensure(data)
 end
 
@@ -38,44 +48,50 @@ function M.ensure_enabled(silent)
 end
 
 ---Asynchronously read store data and pass migrated data to `on_done`.
+---`data` is nil when the store could not be read or decoded; callers must
+---then leave the file alone instead of treating it as empty.
 ---Does NOT touch the cache; callers that want to refresh it should use
 ---`refresh_cache_async` instead. This keeps save/delete/rename flows from
 ---updating the cache before a successful write.
 ---@param path string
----@param on_done fun(data: PeekstackStoreData)
+---@param on_done fun(data: PeekstackStoreData?)
 function M.read_async(path, on_done)
   store.read(path, {
     on_done = function(read_data)
-      on_done(M.ensure_data(read_data))
+      on_done(ensure_data(path, read_data))
     end,
   })
 end
 
 ---Synchronously read and migrate store data without touching the cache.
 ---@param path string
----@return PeekstackStoreData
+---@return PeekstackStoreData? data nil when the store could not be read
 function M.read_sync(path)
-  return M.ensure_data(store.read_sync(path))
+  return ensure_data(path, store.read_sync(path))
 end
 
 ---Asynchronously read store data and refresh the cache from disk.
 ---Used by read-only flows (restore, list_sessions) that should reflect the
----latest persisted state in memory.
+---latest persisted state in memory. A failed read keeps the cache as is.
 ---@param path string
----@param on_done fun(data: PeekstackStoreData)
+---@param on_done fun(data: PeekstackStoreData?)
 function M.refresh_cache_async(path, on_done)
   M.read_async(path, function(data)
-    cache.update(path, data)
+    if data then
+      cache.update(path, data)
+    end
     on_done(data)
   end)
 end
 
 ---Synchronously read store data and refresh the cache from disk.
 ---@param path string
----@return PeekstackStoreData
+---@return PeekstackStoreData? data nil when the store could not be read
 function M.refresh_cache_sync(path)
   local data = M.read_sync(path)
-  cache.update(path, data)
+  if data then
+    cache.update(path, data)
+  end
   return data
 end
 
@@ -143,8 +159,13 @@ local function run_next_update()
     end
   end
 
-  ---@param data PeekstackStoreData
+  ---@param data PeekstackStoreData?
   local function apply(data)
+    if not data then
+      -- Never write over a store that could not be read.
+      finish(false)
+      return
+    end
     local ok, keep = pcall(update.mutate, data)
     if not ok then
       notify.warn("Failed to update session data: " .. tostring(keep))

@@ -145,6 +145,10 @@ function M.restore(name, opts)
   -- move to another window before the session is restored.
   local root_winid = sessions.resolve_root_winid(opts and opts.root_winid or nil)
   orchestrator.refresh_cache_async(orchestrator.store_path(), function(data)
+    if not data then
+      finish(false)
+      return
+    end
     local session = data.sessions[resolved_name]
 
     if not session or not session.items or #session.items == 0 then
@@ -210,7 +214,7 @@ function M.list_sessions(opts)
   local path = orchestrator.store_path()
   if on_done then
     orchestrator.refresh_cache_async(path, function(data)
-      on_done(data.sessions or {})
+      on_done(data and data.sessions or {})
     end)
   elseif not orchestrator.cache_loaded(path) then
     orchestrator.refresh_cache_sync(path)

@@ -18,18 +18,20 @@ function M.encode(data)
   return encoded
 end
 
+---Decode store file content. Empty content is an empty store; content that
+---is not a JSON object returns nil so the caller does not overwrite it.
 ---@param path string
----@param data string?
----@return PeekstackStoreData
+---@param data string
+---@return PeekstackStoreData?
 function M.decode(path, data)
-  if not data or data == "" then
+  if data == "" then
     return M.empty_data()
   end
 
   local ok, decoded = pcall(vim.json.decode, data)
   if not ok or type(decoded) ~= "table" then
     notify.warn("Failed to decode session data: " .. path)
-    return M.empty_data()
+    return nil
   end
 
   return decoded
