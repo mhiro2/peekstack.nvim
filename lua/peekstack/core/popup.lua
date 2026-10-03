@@ -84,13 +84,22 @@ function M.focus(popup)
   return false
 end
 
+---Release the decorations and source-mode keymaps a popup placed on its
+---buffer. Safe to call after the window is gone or more than once.
 ---@param popup PeekstackPopupModel
-function M.close(popup)
-  -- Remove source-mode keymaps before closing the window so they do not
-  -- leak into normal editing of the shared buffer.
-  require("peekstack.ui.keymaps").remove_popup(popup)
+function M.release(popup)
+  -- Remove source-mode keymaps so they do not leak into normal editing of
+  -- the shared buffer.
+  keymaps.remove_popup(popup)
   diagnostics_ui.clear(popup.diagnostics)
   viewport_ui.clear(popup.viewport_marks)
+  popup.diagnostics = nil
+  popup.viewport_marks = nil
+end
+
+---@param popup PeekstackPopupModel
+function M.close(popup)
+  M.release(popup)
   if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
     vim.api.nvim_win_close(popup.winid, true)
   end

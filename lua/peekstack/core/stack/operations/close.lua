@@ -3,52 +3,14 @@ local common = require("peekstack.core.stack.common")
 
 local M = {}
 
-local layout, popup, feedback, user_events, history
-local function deps()
-  if not layout then
-    layout = require("peekstack.core.layout")
-    popup = require("peekstack.core.popup")
-    feedback = require("peekstack.ui.feedback")
-    user_events = require("peekstack.core.user_events")
-    history = require("peekstack.core.history")
-  end
-end
-
 ---@param stack PeekstackStackModel
 ---@param idx integer
 ---@param item PeekstackPopupModel
 local function close_stack_item(stack, idx, item)
-  deps()
   local current_win = vim.api.nvim_get_current_win()
   local should_restore_focus = item.winid == current_win and vim.w[current_win].peekstack_popup_id ~= nil
-  if stack.zoomed_id == item.id then
-    stack.zoomed_id = nil
-  end
-  table.remove(stack.popups, idx)
-  state.unindex_popup(item)
-
-  feedback.highlight_origin(item.origin)
-  popup.close(item)
-
-  common.emit_popup_event("PeekstackClose", item, stack.root_winid)
-
-  history.push_entry(stack, history.build_entry(item, idx))
-
-  user_events.emit("PeekstackHistoryPush", {
-    popup_id = item.id,
-    location = item.location,
-    root_winid = stack.root_winid,
-  })
-
-  layout.reflow(stack)
-
-  if stack.focused_id == item.id then
-    if #stack.popups > 0 then
-      stack.focused_id = stack.popups[#stack.popups].id
-    else
-      stack.focused_id = nil
-    end
-  end
+  common.remove_stack_popup(stack, idx, item)
+  common.settle(stack)
 
   if should_restore_focus and #stack.popups > 0 then
     local next_popup = stack.popups[#stack.popups]
@@ -60,16 +22,9 @@ end
 ---@param winid? integer
 ---@return boolean
 function M.close_by_id(id, winid)
-  deps()
   local ephemeral_id, ephemeral = state.find_ephemeral(id)
   if ephemeral_id and ephemeral then
-    local root_winid = state.ephemeral_root_winid(ephemeral)
-    feedback.highlight_origin(ephemeral.origin)
-    popup.close(ephemeral)
-    state.unregister_ephemeral(ephemeral_id)
-
-    user_events.emit("PeekstackClose", user_events.build_popup_data(ephemeral, root_winid, { ephemeral = true }))
-
+    common.remove_ephemeral(ephemeral_id, ephemeral, { highlight_origin = true })
     return true
   end
 
@@ -139,33 +94,14 @@ end
 
 ---@param winid? integer
 function M.close_all(winid)
-  deps()
   local stack = state.ensure_stack(winid)
+  -- Hidden popups have no window, so there is no origin to point back to.
+  local highlight_origin = not stack.hidden
+  common.remove_stack_popups(stack, function()
+    return true
+  end, { highlight_origin = highlight_origin })
   stack.zoomed_id = nil
-  if stack.hidden then
-    for idx = #stack.popups, 1, -1 do
-      local item = stack.popups[idx]
-      common.emit_popup_event("PeekstackClose", item, stack.root_winid)
-      history.push_entry(stack, history.build_entry(item, idx))
-      state.unindex_popup(item)
-      table.remove(stack.popups, idx)
-    end
-    stack.hidden = false
-    stack.focused_id = nil
-    return
-  end
-  for idx = #stack.popups, 1, -1 do
-    local item = stack.popups[idx]
-    feedback.highlight_origin(item.origin)
-    popup.close(item)
-
-    common.emit_popup_event("PeekstackClose", item, stack.root_winid)
-
-    history.push_entry(stack, history.build_entry(item, idx))
-
-    state.unindex_popup(item)
-    table.remove(stack.popups, idx)
-  end
+  stack.hidden = false
   stack.focused_id = nil
 end
 
