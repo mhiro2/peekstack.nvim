@@ -13,10 +13,11 @@ local function hl(primary, fallback)
   return fallback
 end
 
----@param displayer fun(chunks: table): string
+---Build the display string and its byte-range highlights in the shape Telescope
+---expects from `entry.display`: `{ { { start, finish }, hl_group }, ... }`.
 ---@param item PeekstackPickerExternalItem
----@return string
-local function display_entry(displayer, item)
+---@return string, table
+local function display_entry(item)
   local chunks = {}
   if type(item.symbol) == "string" and item.symbol ~= "" then
     chunks[#chunks + 1] = { item.symbol, hl("TelescopeResultsIdentifier", "Function") }
@@ -41,7 +42,16 @@ local function display_entry(displayer, item)
     chunks[#chunks + 1] = { tostring(item.display_col), hl("TelescopeResultsNumber", "Number") }
   end
 
-  return displayer(chunks)
+  local texts = {}
+  local highlights = {}
+  local offset = 0
+  for _, chunk in ipairs(chunks) do
+    local text = chunk[1]
+    texts[#texts + 1] = text
+    highlights[#highlights + 1] = { { offset, offset + #text }, chunk[2] }
+    offset = offset + #text
+  end
+  return table.concat(texts), highlights
 end
 
 ---Pick a location using Telescope
@@ -55,23 +65,15 @@ function M.pick(locations, opts, cb)
     return
   end
   local finders = require("telescope.finders")
-  local entry_display = require("telescope.pickers.entry_display")
   local conf = require("telescope.config").values
   local telescope_opts = opts or {}
-  local displayer = entry_display.create({
-    separator = "",
-    items = {
-      { remaining = true },
-    },
-  })
-
   local items = picker_util.build_external_items(locations, 1)
   local entries = {}
   for _, item in ipairs(items) do
     table.insert(entries, {
       value = item.value,
       display = function()
-        return display_entry(displayer, item)
+        return display_entry(item)
       end,
       ordinal = string.format("%s %s", item.label, item.file or ""),
       filename = item.file,
