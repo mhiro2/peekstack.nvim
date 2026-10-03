@@ -225,12 +225,22 @@ function M.list_from_lsp(result, provider)
   return items
 end
 
+---Find the loaded buffer for a URI, matching equivalent paths (symlinks,
+---differently escaped URIs) so unsaved buffer text wins over the file on disk.
 ---@param uri string
 ---@return integer?
 local function loaded_buf_for_uri(uri)
+  local fname = fs.uri_to_fname(uri)
+  local real = fname and resolve_realpath(fname)
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_loaded(bufnr) and vim.uri_from_bufnr(bufnr) == uri then
-      return bufnr
+    if vim.api.nvim_buf_is_loaded(bufnr) then
+      if vim.uri_from_bufnr(bufnr) == uri then
+        return bufnr
+      end
+      local name = vim.api.nvim_buf_get_name(bufnr)
+      if real and name ~= "" and resolve_realpath(name) == real then
+        return bufnr
+      end
     end
   end
   return nil
@@ -256,9 +266,13 @@ local function line_reader(uri)
       local file = fname and io.open(fname, "rb")
       if file then
         for line in file:lines() do
-          lines[#lines + 1] = line
+          -- Match the buffer text Neovim would show: no CR from CRLF files.
+          lines[#lines + 1] = line:gsub("\r$", "")
         end
         file:close()
+        if lines[1] then
+          lines[1] = lines[1]:gsub("^\239\187\191", "")
+        end
       end
     end
     return lines[row + 1]

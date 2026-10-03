@@ -143,9 +143,14 @@ local function request(ctx, method, provider, params_modifier, result_mapper, cb
         return
       end
       if not err and result then
-        local ok, locs = pcall(mapper, result, provider, ctx)
+        local ok, locs = pcall(function()
+          local mapped = mapper(result, provider, ctx)
+          if type(mapped) == "table" then
+            location.ranges_to_byte(mapped, client.offset_encoding)
+          end
+          return mapped
+        end)
         if ok and type(locs) == "table" then
-          location.ranges_to_byte(locs, client.offset_encoding)
           vim.list_extend(all_locations, locs)
         end
       end

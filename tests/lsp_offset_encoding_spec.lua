@@ -154,6 +154,99 @@ describe("lsp offset encoding", function()
     assert.equals(-1, vim.fn.bufnr(other))
   end)
 
+  it("ignores a UTF-8 BOM and CRLF line endings in unloaded files", function()
+    local other = tmpdir .. "/bom.txt"
+    local file = assert(io.open(other, "wb"))
+    file:write("\239\187\191" .. CJK_LINE .. "\r\n" .. EMOJI_LINE .. "\r\n")
+    file:close()
+    local other_uri = vim.uri_from_fname(other)
+    vim.lsp.get_clients = function()
+      return {
+        make_client("utf-16", function()
+          return {
+            uri = other_uri,
+            range = {
+              start = { line = 0, character = 4 },
+              -- Past the end of the line: clamps to the line length, not into the CR.
+              ["end"] = { line = 1, character = 99 },
+            },
+          }
+        end),
+      }
+    end
+
+    local locations = collect(lsp_provider.definition, ctx_at(2, 0))
+
+    assert.equals(1, #locations)
+    assert.same({ line = 0, character = 10 }, locations[1].range.start)
+    assert.same({ line = 1, character = #EMOJI_LINE }, locations[1].range["end"])
+  end)
+
+  it("uses unsaved text of a loaded buffer reached through a symlinked path", function()
+    local link = tmpdir .. "/link.txt"
+    assert(vim.uv.fs_symlink(fname, link))
+    -- Disk still has CJK_LINE on line 0; the buffer now has the emoji there.
+    vim.api.nvim_buf_set_lines(0, 0, 1, false, { EMOJI_LINE })
+    vim.lsp.get_clients = function()
+      return {
+        make_client("utf-16", function()
+          return lsp_location(0, 3, vim.uri_from_fname(link))
+        end),
+      }
+    end
+
+    local locations = collect(lsp_provider.definition, ctx_at(2, 0))
+
+    assert.equals(1, #locations)
+    assert.equals(5, locations[1].range.start.character)
+  end)
+
+  it("keeps other clients' results when one response cannot be converted", function()
+    vim.lsp.get_clients = function()
+      return {
+        make_client("utf-16", function()
+          return { uri = uri, range = { start = { line = 0, character = 4 } } }
+        end),
+        make_client("utf-16", function()
+          -- A non-string URI makes the conversion itself throw.
+          return { uri = 42, range = lsp_location(0, 4).range }
+        end),
+        make_client("utf-16", function()
+          return lsp_location(1, 3)
+        end),
+      }
+    end
+
+    local locations = collect(lsp_provider.definition, ctx_at(2, 0))
+
+    assert.equals(2, #locations)
+    assert.same({ line = 0, character = 10 }, locations[1].range.start)
+    assert.same({ line = 0, character = 10 }, locations[1].range["end"])
+    assert.same({ line = 1, character = 5 }, locations[2].range.start)
+  end)
+
+  it("converts a LocationLink's targetSelectionRange", function()
+    vim.lsp.get_clients = function()
+      return {
+        make_client("utf-16", function()
+          return {
+            {
+              targetUri = uri,
+              targetRange = { start = { line = 0, character = 0 }, ["end"] = { line = 1, character = 9 } },
+              targetSelectionRange = { start = { line = 1, character = 3 }, ["end"] = { line = 1, character = 9 } },
+            },
+          }
+        end),
+      }
+    end
+
+    local locations = collect(lsp_provider.definition, ctx_at(2, 0))
+
+    assert.equals(1, #locations)
+    assert.same({ line = 1, character = 5 }, locations[1].range.start)
+    assert.same({ line = 1, character = 11 }, locations[1].range["end"])
+  end)
+
   it("converts document symbol ranges to bytes", function()
     vim.lsp.get_clients = function()
       return {
