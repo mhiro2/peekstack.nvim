@@ -16,7 +16,6 @@ describe("peekstack.picker.telescope", function()
   before_each(function()
     save_module("telescope.pickers")
     save_module("telescope.finders")
-    save_module("telescope.pickers.entry_display")
     save_module("telescope.config")
     save_module("telescope.actions")
     save_module("telescope.actions.state")
@@ -29,7 +28,6 @@ describe("peekstack.picker.telescope", function()
   it("sets preview metadata and returns selected location", function()
     local captured = {}
     local picked = nil
-    local mapped_confirm = nil
 
     package.loaded["telescope.config"] = {
       values = {
@@ -47,18 +45,6 @@ describe("peekstack.picker.telescope", function()
         return opts
       end,
     }
-    package.loaded["telescope.pickers.entry_display"] = {
-      create = function(_opts)
-        return function(chunks)
-          captured.display_chunks = chunks
-          local texts = {}
-          for _, chunk in ipairs(chunks) do
-            texts[#texts + 1] = chunk[1]
-          end
-          return table.concat(texts)
-        end
-      end,
-    }
     package.loaded["telescope.actions"] = {
       close = function(bufnr)
         captured.closed_bufnr = bufnr
@@ -74,13 +60,12 @@ describe("peekstack.picker.telescope", function()
         captured.spec = spec
         return {
           find = function()
+            captured.mappings = {}
             spec.attach_mappings(nil, function(mode, key, fn)
-              captured.mode = mode
-              captured.key = key
-              mapped_confirm = fn
+              captured.mappings[mode .. key] = fn
             end)
             captured.selected = captured.finder.results[2]
-            mapped_confirm(13)
+            captured.mappings["i<CR>"](13)
           end,
         }
       end,
@@ -104,24 +89,97 @@ describe("peekstack.picker.telescope", function()
 
     assert.equals("sorter", captured.spec.sorter)
     assert.equals("previewer", captured.spec.previewer)
-    assert.equals("Alpha - /tmp/a.lua:2:3", captured.finder.results[1].display())
+    local display, highlights = captured.finder.results[1].display()
+    assert.equals("Alpha - /tmp/a.lua:2:3", display)
     assert.same({
-      { "Alpha", "Function" },
-      { " - ", "Comment" },
-      { "/tmp/", "Comment" },
-      { "a.lua", "Directory" },
-      { ":", "Comment" },
-      { "2", "Number" },
-      { ":", "Comment" },
-      { "3", "Number" },
-    }, captured.display_chunks)
+      { { 0, 5 }, "Function" },
+      { { 5, 8 }, "Comment" },
+      { { 8, 13 }, "Comment" },
+      { { 13, 18 }, "Directory" },
+      { { 18, 19 }, "Comment" },
+      { { 19, 20 }, "Number" },
+      { { 20, 21 }, "Comment" },
+      { { 21, 22 }, "Number" },
+    }, highlights)
     assert.equals("Alpha - /tmp/a.lua:2:3 /tmp/a.lua", captured.finder.results[1].ordinal)
     assert.equals("/tmp/a.lua", captured.finder.results[1].filename)
     assert.equals(2, captured.finder.results[1].lnum)
     assert.equals(3, captured.finder.results[1].col)
-    assert.equals("i", captured.mode)
-    assert.equals("<CR>", captured.key)
     assert.equals(13, captured.closed_bufnr)
     assert.are.same(loc2, picked)
+
+    picked = nil
+    captured.selected = captured.finder.results[1]
+    captured.mappings["n<CR>"](14)
+    assert.equals(14, captured.closed_bufnr)
+    assert.are.same(loc1, picked)
+  end)
+  ---@param display string
+  ---@param highlights table
+  ---@return string[]
+  local function highlighted_texts(display, highlights)
+    local texts = {}
+    for _, block in ipairs(highlights) do
+      texts[#texts + 1] = display:sub(block[1][1] + 1, block[1][2])
+    end
+    return texts
+  end
+
+  ---@param locations PeekstackLocation[]
+  ---@return table[]
+  local function collect_entries(locations)
+    local results = nil
+    package.loaded["telescope.config"] = {
+      values = {
+        generic_sorter = function() end,
+        grep_previewer = function() end,
+      },
+    }
+    package.loaded["telescope.finders"] = {
+      new_table = function(opts)
+        results = opts.results
+        return opts
+      end,
+    }
+    package.loaded["telescope.pickers"] = {
+      new = function()
+        return { find = function() end }
+      end,
+    }
+    picker.pick(locations, nil, function() end)
+    return results
+  end
+
+  it("shows the file name, line and column without a symbol", function()
+    local entries = collect_entries({
+      {
+        uri = "file:///tmp/dir/b.lua",
+        range = { start = { line = 4, character = 0 }, ["end"] = { line = 4, character = 0 } },
+        provider = "test",
+      },
+    })
+
+    local display, highlights = entries[1].display()
+    assert.equals("/tmp/dir/b.lua:5:1", display)
+    assert.same({ "/tmp/dir/", "b.lua", ":", "5", ":", "1" }, highlighted_texts(display, highlights))
+  end)
+
+  it("uses byte offsets for multibyte symbols and paths", function()
+    local entries = collect_entries({
+      {
+        uri = "file:///tmp/日本/語.lua",
+        range = { start = { line = 0, character = 3 }, ["end"] = { line = 0, character = 3 } },
+        text = "関数",
+        provider = "test",
+      },
+    })
+
+    local display, highlights = entries[1].display()
+    assert.equals("関数 - /tmp/日本/語.lua:1:4", display)
+    assert.same(
+      { "関数", " - ", "/tmp/日本/", "語.lua", ":", "1", ":", "4" },
+      highlighted_texts(display, highlights)
+    )
+    assert.equals(#display, highlights[#highlights][1][2])
   end)
 end)
