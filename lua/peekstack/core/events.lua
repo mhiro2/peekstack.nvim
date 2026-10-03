@@ -68,6 +68,13 @@ function M.setup()
     end,
   })
 
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = group,
+    callback = function(args)
+      stack.handle_buf_win_enter(vim.api.nvim_get_current_win(), args.buf)
+    end,
+  })
+
   vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, {
     group = group,
     callback = debounced_reflow,

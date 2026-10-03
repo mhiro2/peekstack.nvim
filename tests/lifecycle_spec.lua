@@ -445,4 +445,103 @@ describe("popup lifecycle", function()
       assert.is_not_nil(stack.find_by_id(model.id))
     end)
   end)
+
+  describe("buffer switch inside a popup", function()
+    local first_path, second_path
+
+    before_each(function()
+      first_path = vim.fn.tempname() .. ".txt"
+      second_path = vim.fn.tempname() .. ".txt"
+      vim.fn.writefile({ "first one", "first two" }, first_path)
+      vim.fn.writefile({ "second one", "second two", "second three" }, second_path)
+    end)
+
+    after_each(function()
+      for _, path in ipairs({ first_path, second_path }) do
+        local bufnr = vim.fn.bufnr(path)
+        if bufnr > 0 then
+          pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+        end
+        vim.fn.delete(path)
+      end
+    end)
+
+    ---@param bufnr integer
+    ---@param lhs string
+    ---@return boolean
+    local function has_buffer_map(bufnr, lhs)
+      local item = vim.api.nvim_buf_call(bufnr, function()
+        return vim.fn.maparg(lhs, "n", false, true)
+      end)
+      return item.buffer == 1
+    end
+
+    for _, case in ipairs({
+      { mode = "source", cmd = "buffer" },
+      { mode = "source", cmd = "edit" },
+      { mode = "copy", cmd = "buffer" },
+      { mode = "copy", cmd = "edit" },
+    }) do
+      it(("follows :%s in a %s popup"):format(case.cmd, case.mode), function()
+        local close_key = config.get().ui.keys.close
+        local model =
+          stack.push(helpers.make_location({ uri = vim.uri_from_fname(first_path) }), { buffer_mode = case.mode })
+        local winid = model.winid
+        local first_bufnr = model.source_bufnr
+        local second_bufnr = vim.fn.bufadd(second_path)
+        vim.fn.bufload(second_bufnr)
+
+        vim.api.nvim_cmd(
+          { cmd = case.cmd, args = { case.cmd == "buffer" and tostring(second_bufnr) or second_path } },
+          {}
+        )
+        vim.api.nvim_win_set_cursor(winid, { 3, 2 })
+
+        assert.equals(winid, vim.api.nvim_get_current_win())
+        assert.equals(model, stack.find_by_id(model.id))
+        assert.equals(second_bufnr, model.bufnr)
+        assert.equals("source", model.buffer_mode)
+
+        local ctx = require("peekstack.core.context").current()
+        assert.equals(second_bufnr, ctx.bufnr)
+        assert.equals(model.id, ctx.popup_id)
+        assert.same({ line = 2, character = 2 }, ctx.position)
+        assert.equals(vim.uri_from_bufnr(second_bufnr), model.location.uri)
+        assert.is_truthy(model.title:find(vim.fn.fnamemodify(second_path, ":t"), 1, true))
+
+        assert.is_true(has_buffer_map(second_bufnr, close_key))
+        assert.is_false(has_buffer_map(first_bufnr, close_key))
+
+        stack.close_all()
+        assert.is_false(vim.api.nvim_win_is_valid(winid))
+        assert.is_false(has_buffer_map(second_bufnr, close_key))
+        assert.equals(vim.uri_from_bufnr(second_bufnr), stack.history_list()[1].location.uri)
+      end)
+    end
+
+    it("records the position the switch command leaves the cursor at", function()
+      local model = stack.push(helpers.make_location({ uri = vim.uri_from_fname(first_path) }))
+      vim.cmd("edit +3 " .. vim.fn.fnameescape(second_path))
+      assert.equals(3, vim.api.nvim_win_get_cursor(model.winid)[1])
+
+      assert.is_true(vim.wait(500, function()
+        return model.location.range.start.line == 2
+      end))
+      assert.is_truthy(model.title:find(":3", 1, true))
+
+      stack.close(model.id)
+      local restored = stack.restore_last()
+      assert.equals(3, vim.api.nvim_win_get_cursor(restored.winid)[1])
+    end)
+
+    it("records the final position when the popup closes right after the switch", function()
+      local model = stack.push(helpers.make_location({ uri = vim.uri_from_fname(first_path) }))
+      -- Close in the same tick, before the deferred cursor read runs.
+      vim.cmd("edit +3 " .. vim.fn.fnameescape(second_path))
+      stack.close_all()
+      assert.is_false(vim.api.nvim_win_is_valid(model.winid))
+
+      assert.equals(2, stack.history_list()[1].location.range.start.line)
+    end)
+  end)
 end)

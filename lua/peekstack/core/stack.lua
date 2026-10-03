@@ -53,6 +53,7 @@ M.toggle_pin_by_id = query_ops.toggle_pin_by_id
 
 M.handle_win_closed = events.handle_win_closed
 M.handle_buf_wipeout = events.handle_buf_wipeout
+M.handle_buf_win_enter = events.handle_buf_win_enter
 M.handle_origin_wipeout = events.handle_origin_wipeout
 M.closes_with_origin = common.closes_with_origin
 

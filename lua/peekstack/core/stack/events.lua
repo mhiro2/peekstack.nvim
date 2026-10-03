@@ -54,8 +54,27 @@ function M.handle_buf_wipeout(bufnr)
     return
   end
   remove_matching(function(item)
-    return item.bufnr == bufnr
+    if item.bufnr ~= bufnr then
+      return false
+    end
+    -- A buffer wiped while its popup window still shows it is being replaced
+    -- in that window (`:buffer`, `:edit`); handle_buf_win_enter makes the
+    -- popup follow the new buffer instead.
+    local winid = item.winid
+    return not (winid and vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == bufnr)
   end)
+end
+
+---Follow a buffer that replaced the one shown in a popup window.
+---@param winid integer
+---@param bufnr integer
+function M.handle_buf_win_enter(winid, bufnr)
+  local entry = state.lookup_by_winid(winid)
+  if not entry or entry.popup.bufnr == bufnr then
+    return
+  end
+  require("peekstack.core.popup").retarget(entry.popup, bufnr)
+  require("peekstack.ui.stack_view").refresh_all()
 end
 
 ---@param bufnr integer

@@ -101,7 +101,7 @@ end
 ---Build the title string for a popup window
 ---@param location PeekstackLocation
 ---@return PeekstackTitleChunk[]?
-local function build_title(location)
+function M.build_title(location)
   local ui = config.get().ui
   if not ui.title.enabled then
     return nil
@@ -310,7 +310,7 @@ function M.open(bufnr, location, opts)
     zindex = layout_opts.zindex,
   }
 
-  local title = build_title(location)
+  local title = M.build_title(location)
   if title then
     win_opts.title = title
     win_opts.title_pos = "center"

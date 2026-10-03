@@ -67,6 +67,7 @@
 ---@field last_active_at integer
 ---@field ephemeral boolean
 ---@field win_opts PeekstackRenderWinOpts?
+---@field relocate_pending? boolean cursor of a switched-in buffer not taken yet
 
 ---@class PeekstackStackModel
 ---@field root_winid integer
