@@ -834,6 +834,7 @@ describe("config", function()
         },
         persist = {
           session = "default",
+          auto = 1,
         },
       })
 
@@ -868,6 +869,9 @@ describe("config", function()
 
       assert.is_true(has_message("persist.session must be a table"))
       assert.equals("table", type(cfg.persist.session))
+
+      assert.is_true(has_message("persist.auto must be a table, got number. Falling back to defaults"))
+      assert.same(config.defaults.persist.auto, cfg.persist.auto)
     end)
 
     describe("unknown keys", function()

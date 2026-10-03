@@ -204,9 +204,8 @@ end
 ---@param key string
 ---@param path string
 ---@param defaults table
----@param opts? { fallback: boolean?, message: string? }
 ---@return table?
-function M.ensure_table_field(parent, key, path, defaults, opts)
+function M.ensure_table_field(parent, key, path, defaults)
   local value = parent[key]
   if value == nil then
     return nil
@@ -215,16 +214,7 @@ function M.ensure_table_field(parent, key, path, defaults, opts)
     return value
   end
 
-  if opts and opts.message then
-    notify.warn(opts.message)
-  else
-    notify.warn(string.format("%s must be a table, got %s. Falling back to defaults", path, type(value)))
-  end
-
-  if opts and opts.fallback == false then
-    return nil
-  end
-
+  notify.warn(string.format("%s must be a table, got %s. Falling back to defaults", path, type(value)))
   parent[key] = vim.deepcopy(defaults)
   return parent[key]
 end

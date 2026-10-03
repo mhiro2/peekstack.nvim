@@ -43,13 +43,7 @@ function M.validate(cfg, defaults)
   end
 
   if persist.auto ~= nil then
-    local auto = shared.ensure_table_field(
-      persist,
-      "auto",
-      "persist.auto",
-      defaults.persist.auto,
-      { fallback = false, message = "persist.auto must be a table" }
-    )
+    local auto = shared.ensure_table_field(persist, "auto", "persist.auto", defaults.persist.auto)
     if auto then
       shared.apply_rules(auto, "persist.auto", defaults.persist.auto, PERSIST_AUTO_RULES)
     end
