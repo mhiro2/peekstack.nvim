@@ -1,4 +1,6 @@
 -- Type definitions for Peekstack
+---0-based lines and 0-based byte columns. LSP providers convert from and to
+---each client's offset encoding at the request boundary.
 ---@class PeekstackRange
 ---@field start { line: integer, character: integer }
 ---@field ["end"] { line: integer, character: integer }
@@ -9,7 +11,6 @@
 ---@field text? string
 ---@field kind? integer
 ---@field provider string
----@field origin? PeekstackRange
 
 ---@class PeekstackDiagnosticExtmarks
 ---@field bufnr integer
@@ -156,7 +157,7 @@
 ---@field popup_id integer?
 ---@field buffer_mode "copy"|"source"|nil
 ---@field line_offset integer
----@field position { line: integer, character: integer }
+---@field position { line: integer, character: integer } 0-based line and byte column in `bufnr`
 ---@field root_winid integer
 ---@field from_popup boolean
 

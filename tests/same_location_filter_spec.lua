@@ -74,6 +74,30 @@ describe("same location filter", function()
     assert.equals(loc_other.range.start.line, stack_list[1].location.range.start.line)
   end)
 
+  it("keeps a LocationLink whose targetRange contains the cursor", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "function foo()", "  return 1", "end" })
+    set_cursor(2, 2)
+
+    peekstack.register_provider("lsp.test_filter_link", function(_ctx, cb)
+      cb({
+        {
+          targetUri = vim.uri_from_bufnr(bufnr),
+          targetRange = { start = { line = 0, character = 0 }, ["end"] = { line = 2, character = 3 } },
+          targetSelectionRange = { start = { line = 0, character = 9 }, ["end"] = { line = 0, character = 12 } },
+        },
+      })
+    end)
+
+    peekstack.peek("lsp.test_filter_link", {})
+
+    local stack_list = stack.list()
+    assert.equals(1, #stack_list)
+    assert.same({ line = 0, character = 9 }, stack_list[1].location.range.start)
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+  end)
+
   it("does not filter for non-lsp providers", function()
     set_cursor(1, 0)
     local loc_same = helpers.make_location({
