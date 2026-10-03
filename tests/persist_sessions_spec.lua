@@ -368,6 +368,115 @@ describe("peekstack.persist.sessions", function()
     assert.is_not_nil(data.sessions.sync_side)
   end)
 
+  it("should run a sync save requested from an async save callback", function()
+    push_popup("nested_sync", { title = "Nested" })
+
+    local nested_saved = nil
+    persist.save_current("outer_async", {
+      silent = true,
+      on_done = function()
+        persist.save_current("nested_sync", {
+          silent = true,
+          sync = true,
+          on_done = function(success)
+            nested_saved = success
+          end,
+        })
+      end,
+    })
+
+    local started = vim.uv.now()
+    local waited = vim.wait(wait_timeout_ms, function()
+      return nested_saved ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for the nested sync save")
+    assert.is_true(nested_saved)
+    assert.is_true(vim.uv.now() - started < 1000, "the nested sync save should not wait for its own caller")
+
+    local data = migrate.ensure(read_and_wait(test_scope))
+    assert.is_not_nil(data.sessions.outer_async)
+    assert.is_not_nil(data.sessions.nested_sync)
+  end)
+
+  it("should fail a sync save instead of racing an async write that outlives the wait", function()
+    push_popup("sync_timeout", { title = "Slow" })
+
+    local original_write = store.write
+    local ok, err = pcall(function()
+      -- Hold the first async write past the sync wait, then let it finish.
+      local delayed = false
+      store.write = function(path, data, opts)
+        if delayed then
+          return original_write(path, data, opts)
+        end
+        delayed = true
+        vim.defer_fn(function()
+          original_write(path, data, opts)
+        end, 1300)
+      end
+
+      local slow_done = nil
+      persist.save_current("slow_async", {
+        silent = true,
+        on_done = function(success)
+          slow_done = success
+        end,
+      })
+
+      local warnings = {}
+      local original_notify = vim.notify
+      vim.notify = function(msg, level)
+        if level == vim.log.levels.WARN then
+          warnings[#warnings + 1] = msg
+        end
+      end
+      local sync_saved = nil
+      persist.save_current("sync_after_timeout", {
+        silent = true,
+        sync = true,
+        on_done = function(success)
+          sync_saved = success
+        end,
+      })
+      vim.notify = original_notify
+
+      assert.is_false(sync_saved)
+      assert.is_nil(slow_done, "the delayed async write should still be pending")
+      assert.is_true(#warnings > 0 and warnings[1]:find("Timed out", 1, true) ~= nil)
+
+      local waited = vim.wait(2000, function()
+        return slow_done ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for the delayed async save")
+      assert.is_true(slow_done)
+
+      -- The queue keeps running after the withdrawn sync update.
+      local next_done = nil
+      persist.save_current("after_timeout", {
+        silent = true,
+        on_done = function(success)
+          next_done = success
+        end,
+      })
+      local next_waited = vim.wait(wait_timeout_ms, function()
+        return next_done ~= nil
+      end, wait_interval_ms)
+      assert.is_true(next_waited, "Timed out waiting for the follow-up save")
+      assert.is_true(next_done)
+
+      local data = migrate.ensure(read_and_wait(test_scope))
+      assert.is_not_nil(data.sessions.slow_async)
+      assert.is_not_nil(data.sessions.after_timeout)
+      assert.is_nil(data.sessions.sync_after_timeout)
+    end)
+
+    store.write = original_write
+
+    if not ok then
+      error(err)
+    end
+  end)
+
   it("should keep processing updates after an on_done callback throws", function()
     push_popup("throwing_callback", { title = "Throw" })
 

@@ -112,6 +112,7 @@ end
 ---@field path string
 ---@field mutate fun(data: PeekstackStoreData): boolean
 ---@field on_done? fun(success: boolean)
+---@field sync? boolean read and write with blocking I/O when its turn comes
 
 ---@type PeekstackPersistUpdate[]
 local update_queue = {}
@@ -126,17 +127,24 @@ local function run_next_update()
   update_running = true
 
   local function finish(success)
+    -- Release the queue before the callback so an update it enqueues (e.g. a
+    -- sync save from a PeekstackSave handler) can run instead of waiting on
+    -- this finished one. Earlier queued updates still go first.
+    update_running = false
     if update.on_done then
-      -- A throwing callback must not wedge the queue with update_running=true.
+      -- A throwing callback must not stop the queue.
       local ok, err = pcall(update.on_done, success)
       if not ok then
         notify.warn("Session update callback failed: " .. tostring(err))
       end
     end
-    run_next_update()
+    if not update_running then
+      run_next_update()
+    end
   end
 
-  M.read_async(update.path, function(data)
+  ---@param data PeekstackStoreData
+  local function apply(data)
     local ok, keep = pcall(update.mutate, data)
     if not ok then
       notify.warn("Failed to update session data: " .. tostring(keep))
@@ -147,8 +155,26 @@ local function run_next_update()
       finish(false)
       return
     end
-    M.write_async(update.path, data, finish)
-  end)
+    if update.sync then
+      finish(M.write_sync(update.path, data))
+    else
+      M.write_async(update.path, data, finish)
+    end
+  end
+
+  if update.sync then
+    apply(M.read_sync(update.path))
+  else
+    M.read_async(update.path, apply)
+  end
+end
+
+---@param update PeekstackPersistUpdate
+local function enqueue(update)
+  update_queue[#update_queue + 1] = update
+  if not update_running then
+    run_next_update()
+  end
 end
 
 ---Asynchronously read, mutate and write back store data at `path`.
@@ -161,34 +187,53 @@ end
 ---@param mutate fun(data: PeekstackStoreData): boolean
 ---@param on_done? fun(success: boolean)
 function M.update_async(path, mutate, on_done)
-  update_queue[#update_queue + 1] = { path = path, mutate = mutate, on_done = on_done }
-  if not update_running then
-    run_next_update()
-  end
+  enqueue({ path = path, mutate = mutate, on_done = on_done })
 end
 
----Upper bound for draining in-flight async updates before a sync update.
-local UPDATE_SYNC_DRAIN_MS = 1000
+---Upper bound for waiting on queued updates ahead of a sync update.
+local UPDATE_SYNC_TIMEOUT_MS = 1000
 
 ---Synchronously read, mutate and write back store data at `path`.
----Drains queued async updates first (bounded by UPDATE_SYNC_DRAIN_MS) so a
----sync save issued while an async save is mid-flight does not race it; the
----sync write itself then runs atomically from Lua's point of view.
+---The update joins the same queue as async updates, so it never overlaps an
+---in-flight write. If earlier updates do not finish within
+---UPDATE_SYNC_TIMEOUT_MS, the update is withdrawn and reported as failed
+---rather than racing them with a write that one of them could later clobber.
 ---@param path string
 ---@param mutate fun(data: PeekstackStoreData): boolean
 ---@return boolean success whether the data was written
 function M.update_sync(path, mutate)
-  if update_running then
-    vim.wait(UPDATE_SYNC_DRAIN_MS, function()
-      return not update_running
+  ---@type boolean?
+  local result = nil
+  ---@type PeekstackPersistUpdate
+  local update = {
+    path = path,
+    mutate = mutate,
+    sync = true,
+    on_done = function(success)
+      result = success
+    end,
+  }
+  enqueue(update)
+
+  if result == nil then
+    vim.wait(UPDATE_SYNC_TIMEOUT_MS, function()
+      return result ~= nil
     end, 10)
   end
-
-  local data = M.read_sync(path)
-  if not mutate(data) then
-    return false
+  if result ~= nil then
+    return result
   end
-  return M.write_sync(path, data)
+
+  -- A sync update runs to completion once dequeued, so a pending result means
+  -- it is still queued behind a slow write.
+  for i, queued in ipairs(update_queue) do
+    if queued == update then
+      table.remove(update_queue, i)
+      break
+    end
+  end
+  notify.warn("Timed out waiting for pending session writes: " .. path)
+  return false
 end
 
 ---Reset the in-memory session cache and drop queued updates.
