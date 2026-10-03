@@ -138,6 +138,10 @@ With options:
   })
 <
 
+`setup()` never throws on bad config. Invalid values fall back to their
+defaults with a warning that names the default. Counts, sizes and durations
+must be integers; fractions, NaN and infinities are rejected.
+
 ==============================================================================
 PICKER                                                     *peekstack-picker*
 
@@ -456,6 +460,11 @@ cwd-based storage. The storage is resolved when a save, delete, or rename
 is requested, so changing directory while it is still being written does
 not move it to another repository.
 
+If the storage file cannot be read (an I/O error, invalid JSON, or a
+version this release does not know), peekstack warns and refuses to save,
+delete, or rename sessions in it instead of replacing it with an empty
+store. Fix or move the file to recover.
+
 `persist.session.default_name` is used when a name is omitted, unless
 `persist.session.prompt_if_missing` is true.
 
@@ -472,7 +481,9 @@ The auto session holds a single stack: the one that changed most
 recently, saved to the repository that was current when it changed.
 Leaving Neovim saves that stack even if the cursor is in another window,
 skips the save if no stack changed during the session, and keeps the
-stored session as-is once that stack's window has been closed.
+stored session as-is once that stack's window has been closed. The save on
+leave waits up to one second for earlier saves to finish; if they are
+still writing, it is skipped with a warning rather than racing them.
 
 Auto persistence runs only inside a git repository and always uses
 the repository session storage.
