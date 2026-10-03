@@ -310,4 +310,89 @@ describe("popup lifecycle", function()
       assert_all_floats_tracked()
     end)
   end)
+
+  describe("restore_all", function()
+    ---@return PeekstackPopupModel parent, PeekstackPopupModel child
+    local function push_parent_and_child()
+      local location = helpers.make_location()
+      local parent = stack.push(location)
+      vim.api.nvim_set_current_win(parent.winid)
+      local child = stack.push(location)
+      assert.equals(parent.id, child.parent_popup_id)
+      return parent, child
+    end
+
+    ---@param restored PeekstackPopupModel[]
+    ---@param parent_id integer old id of the parent
+    ---@return PeekstackPopupModel? parent, PeekstackPopupModel? child
+    local function split_restored(restored, parent_id)
+      local parent, child
+      for _, model in ipairs(restored) do
+        if model.parent_popup_id ~= nil then
+          child = model
+        else
+          parent = model
+        end
+      end
+      assert.is_not.equals(parent_id, parent and parent.id)
+      return parent, child
+    end
+
+    it("links the child when the parent was closed first", function()
+      local parent, child = push_parent_and_child()
+      stack.close(parent.id)
+      stack.close(child.id)
+
+      local restored = stack.restore_all()
+      assert.equals(2, #restored)
+      local new_parent, new_child = split_restored(restored, parent.id)
+      assert.is_not_nil(new_parent)
+      assert.is_not_nil(new_child)
+      assert.equals(new_parent.id, new_child.parent_popup_id)
+    end)
+
+    it("links the child when the child was closed first", function()
+      local parent, child = push_parent_and_child()
+      stack.close(child.id)
+      stack.close(parent.id)
+
+      local restored = stack.restore_all()
+      local new_parent, new_child = split_restored(restored, parent.id)
+      assert.is_not_nil(new_child)
+      assert.equals(new_parent.id, new_child.parent_popup_id)
+    end)
+
+    it("announces restored popups only after their parents are linked", function()
+      local parent, child = push_parent_and_child()
+      stack.close(parent.id)
+      stack.close(child.id)
+
+      local parent_at_push = {}
+      local group = vim.api.nvim_create_augroup("PeekstackLifecycleSpec", { clear = true })
+      vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PeekstackRestorePopup",
+        callback = function(args)
+          parent_at_push[args.data.popup_id] = stack.find_by_id(args.data.popup_id).parent_popup_id or false
+        end,
+      })
+
+      local _, new_child = split_restored(stack.restore_all(), parent.id)
+      assert.equals(new_child.parent_popup_id, parent_at_push[new_child.id])
+    end)
+
+    it("keeps the link around an entry that fails to restore", function()
+      local parent, child = push_parent_and_child()
+      stack.close(parent.id)
+      local broken = { location = { uri = nil }, title = "broken", buffer_mode = "copy" }
+      table.insert(stack.history_list(), broken)
+      stack.close(child.id)
+
+      local restored = stack.restore_all()
+      assert.equals(2, #restored)
+      local new_parent, new_child = split_restored(restored, parent.id)
+      assert.equals(new_parent.id, new_child.parent_popup_id)
+      assert.same({ broken }, stack.history_list())
+    end)
+  end)
 end)
