@@ -160,4 +160,74 @@ describe("popup lifecycle", function()
       assert.same({ model.id }, received.PeekstackClose)
     end)
   end)
+
+  describe("cleanup after the parent popup closes", function()
+    local cleanup = require("peekstack.core.cleanup")
+
+    ---@param child_opts? table
+    ---@return PeekstackPopupModel parent, PeekstackPopupModel child
+    local function push_parent_and_child(child_opts)
+      local location = helpers.make_location()
+      local parent = stack.push(location)
+      vim.api.nvim_set_current_win(parent.winid)
+      local child = stack.push(location, child_opts)
+      assert.equals(parent.id, child.parent_popup_id)
+      assert.is_true(child.origin_is_popup)
+      stack.close(parent.id)
+      assert.is_false(vim.api.nvim_buf_is_valid(child.origin.bufnr))
+      return parent, child
+    end
+
+    before_each(function()
+      config.setup({
+        ui = {
+          quick_peek = { close_events = { "InsertEnter" } },
+          popup = {
+            auto_close = { enabled = true, idle_ms = 300000, check_interval_ms = 60000, ignore_pinned = true },
+          },
+        },
+      })
+      events.setup()
+    end)
+
+    after_each(function()
+      cleanup.stop()
+    end)
+
+    it("keeps a child that is still within the idle threshold", function()
+      local _, child = push_parent_and_child()
+      cleanup.scan(vim.uv.now())
+      assert.is_not_nil(stack.find_by_id(child.id))
+    end)
+
+    it("keeps a pinned child", function()
+      local _, child = push_parent_and_child()
+      stack.toggle_pin_by_id(child.id)
+      cleanup.scan(vim.uv.now() + 600000)
+      assert.is_not_nil(stack.find_by_id(child.id))
+    end)
+
+    it("keeps a child whose source buffer is modified", function()
+      local _, child = push_parent_and_child({ buffer_mode = "source" })
+      vim.bo[child.bufnr].modified = true
+      cleanup.scan(vim.uv.now() + 600000)
+      assert.is_not_nil(stack.find_by_id(child.id))
+      vim.bo[child.bufnr].modified = false
+    end)
+
+    it("still closes a popup whose origin buffer was wiped", function()
+      local scratch = vim.api.nvim_create_buf(true, true)
+      local root = vim.api.nvim_get_current_win()
+      local previous = vim.api.nvim_win_get_buf(root)
+      vim.api.nvim_win_set_buf(root, scratch)
+      local model = stack.push(helpers.make_location({ uri = vim.uri_from_bufnr(previous) }))
+      vim.api.nvim_set_current_win(root)
+      vim.api.nvim_win_set_buf(root, previous)
+      -- Wipe without the BufWipeout handler so the periodic scan has to catch it.
+      vim.api.nvim_cmd({ cmd = "bwipeout", args = { tostring(scratch) }, mods = { noautocmd = true } }, {})
+
+      cleanup.scan(vim.uv.now())
+      assert.is_nil(stack.find_by_id(model.id))
+    end)
+  end)
 end)

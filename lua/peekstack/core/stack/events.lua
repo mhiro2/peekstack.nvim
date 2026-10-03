@@ -61,16 +61,7 @@ end
 ---@param bufnr integer
 function M.handle_origin_wipeout(bufnr)
   remove_matching(function(item)
-    if not (item.origin and item.origin.bufnr == bufnr) or item.origin_is_popup == true then
-      return false
-    end
-    if vim.api.nvim_buf_is_valid(bufnr) then
-      local ft = vim.bo[bufnr].filetype
-      if ft == "peekstack-stack" or ft == "peekstack-stack-help" then
-        return false
-      end
-    end
-    return true
+    return common.closes_with_origin(item) and item.origin.bufnr == bufnr
   end)
 end
 

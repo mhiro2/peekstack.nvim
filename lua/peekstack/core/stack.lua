@@ -7,6 +7,7 @@ local history_ops = require("peekstack.core.stack.operations.history")
 local visibility_ops = require("peekstack.core.stack.operations.visibility")
 local cleanup_ops = require("peekstack.core.stack.operations.cleanup")
 local query_ops = require("peekstack.core.stack.operations.query")
+local common = require("peekstack.core.stack.common")
 
 local M = {}
 
@@ -53,6 +54,7 @@ M.toggle_pin_by_id = query_ops.toggle_pin_by_id
 M.handle_win_closed = events.handle_win_closed
 M.handle_buf_wipeout = events.handle_buf_wipeout
 M.handle_origin_wipeout = events.handle_origin_wipeout
+M.closes_with_origin = common.closes_with_origin
 
 ---@return table<integer, PeekstackStackModel>
 function M._all_stacks()

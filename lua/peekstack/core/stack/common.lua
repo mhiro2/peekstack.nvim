@@ -44,6 +44,15 @@ function M.reopen_popup(item, stack)
   return model
 end
 
+---Whether a popup belongs to its origin buffer and should close with it.
+---Popups opened from another popup or the stack view outlive that buffer,
+---which is wiped as soon as its window closes.
+---@param item PeekstackPopupModel
+---@return boolean
+function M.closes_with_origin(item)
+  return item.origin ~= nil and item.origin.bufnr ~= nil and item.origin_is_popup ~= true
+end
+
 ---Remove a stack popup and record its close exactly once.
 ---The model is detached before the window closes, so the WinClosed autocmd
 ---triggered by the close no longer finds it. Decorations and source-mode
