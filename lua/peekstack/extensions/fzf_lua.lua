@@ -51,13 +51,24 @@ local function open_picker(fzf_picker, provider, opts)
   end
 
   local push_opts = { provider = provider, mode = opts.mode }
-  local fzf_opts = vim.tbl_extend("force", opts, {
-    actions = {
-      ["default"] = function(selected, picker_opts)
-        push_action(selected, picker_opts, push_opts)
-      end,
-    },
-  })
+  -- Replace only the confirm action so the caller's other actions keep working.
+  -- fzf-lua maps "default" to "enter" and lets it win over an "enter" entry.
+  local confirm = {
+    ["default"] = function(selected, picker_opts)
+      push_action(selected, picker_opts, push_opts)
+    end,
+  }
+  local user_actions = opts.actions
+  local actions
+  if type(user_actions) == "function" then
+    -- fzf-lua also accepts actions as a function of the picker opts.
+    actions = function(...)
+      return vim.tbl_extend("force", user_actions(...) or {}, confirm)
+    end
+  else
+    actions = vim.tbl_extend("force", user_actions or {}, confirm)
+  end
+  local fzf_opts = vim.tbl_extend("force", opts, { actions = actions })
   fzf_opts.mode = nil
 
   fn(fzf_opts)

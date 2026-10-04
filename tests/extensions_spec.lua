@@ -184,12 +184,126 @@ describe("peekstack.extensions", function()
       end)
     end
 
+    it("keeps the caller's actions and replaces only the confirm action", function()
+      local user_default = function() end
+      local send_to_qf = function() end
+      fzf_ext.push_grep({ actions = { ["default"] = user_default, ["ctrl-q"] = send_to_qf } })
+
+      local actions = fzf_calls[1].opts.actions
+      assert.equals(send_to_qf, actions["ctrl-q"])
+      assert.is_function(actions["default"])
+      assert.are_not.equal(user_default, actions["default"])
+    end)
+
+    it("merges the confirm action into actions given as a function", function()
+      local send_to_qf = function() end
+      fzf_ext.push_grep({
+        actions = function()
+          return { ["ctrl-q"] = send_to_qf }
+        end,
+      })
+
+      local actions = fzf_calls[1].opts.actions({})
+      assert.equals(send_to_qf, actions["ctrl-q"])
+      assert.is_function(actions["default"])
+    end)
+
     it("actions.push takes the picker opts and the push opts separately", function()
       fzf_ext.actions.push({ "src/a.lua:2:3:text" }, { cwd = "/picker/root" }, { provider = "my_grep" })
 
       assert.equals(1, #captured)
       assert.equals(vim.uri_from_fname("/picker/root/src/a.lua"), captured[1].loc.uri)
       assert.equals("my_grep", captured[1].loc.provider)
+    end)
+  end)
+
+  describe("telescope", function()
+    local saved = {}
+    local captured
+    local builtin_calls
+
+    local function stub(name, mod)
+      saved[name] = package.loaded[name]
+      package.loaded[name] = mod
+    end
+
+    before_each(function()
+      captured = {}
+      builtin_calls = {}
+      stub(
+        "peekstack",
+        vim.tbl_extend("force", require("peekstack"), {
+          peek_location = function(loc, opts)
+            table.insert(captured, { loc = loc, opts = opts })
+          end,
+        })
+      )
+      stub("telescope", {
+        register_extension = function(ext)
+          return ext
+        end,
+      })
+      stub("telescope.builtin", {
+        live_grep = function(opts)
+          table.insert(builtin_calls, opts)
+        end,
+      })
+      stub("telescope.actions", { close = function() end })
+      stub("telescope.actions.state", {
+        get_selected_entry = function()
+          return { filename = "/tmp/a.lua", lnum = 3, col = 2 }
+        end,
+      })
+      stub("telescope._extensions.peekstack", nil)
+    end)
+
+    after_each(function()
+      for name, mod in pairs(saved) do
+        package.loaded[name] = mod
+      end
+      saved = {}
+    end)
+
+    ---@return table<string, function>, any
+    local function attach(opts)
+      local ext = require("telescope._extensions.peekstack")
+      ext.exports.push_grep(opts)
+      assert.equals(1, #builtin_calls)
+      local maps = {}
+      local result = builtin_calls[1].attach_mappings(42, function(mode, lhs, fn)
+        maps[mode .. lhs] = fn
+      end)
+      return maps, result
+    end
+
+    it("pushes the selection on <CR> in insert and normal mode", function()
+      local maps, result = attach({ mode = "copy" })
+      assert.is_true(result)
+      assert.is_nil(builtin_calls[1].mode)
+
+      maps["i<CR>"](42)
+      maps["n<CR>"](42)
+
+      assert.equals(2, #captured)
+      assert.equals("extension.grep", captured[1].loc.provider)
+      assert.equals("copy", captured[1].opts.mode)
+    end)
+
+    it("runs the caller's attach_mappings after its own <CR> mapping", function()
+      local user_fn = function() end
+      local received_bufnr
+      local maps, result = attach({
+        attach_mappings = function(prompt_bufnr, map)
+          received_bufnr = prompt_bufnr
+          map("i", "<C-q>", user_fn)
+          return false
+        end,
+      })
+
+      assert.equals(42, received_bufnr)
+      assert.is_false(result)
+      assert.equals(user_fn, maps["i<C-q>"])
+      assert.is_function(maps["i<CR>"])
     end)
   end)
 end)
