@@ -352,15 +352,28 @@ When `persist.enabled = true`, `PeekstackSaveSession` uses `persist.session.defa
 if you do not pass a name. If `persist.session.prompt_if_missing = true`, you'll be prompted
 for a name instead of using the default.
 
+A session holds one stack: the popups of the current window (or of the window the stack view
+belongs to), oldest first, keeping the newest `persist.max_items`. Only locations, titles, pins,
+buffer modes and parent links are saved; edits made in copy-mode popups are not.
+Restoring a session adds its popups to the current window's stack and keeps the popups already there.
+
 > [!WARNING]
 > Persistence uses repository storage when the current working directory is inside a git repository.
 > Outside a git repository, sessions fall back to cwd-based storage.
 > The storage is resolved when a save, delete, or rename is requested, so changing directory while
 > it is still being written does not move it to another repository.
 
-If the storage file cannot be read (an I/O error, invalid JSON, or a version this release does not
-know), peekstack warns and refuses to save, delete, or rename sessions in it instead of replacing
-it with an empty store. Fix or move the file to recover.
+Each git repository (each worktree, found by looking upward from the current window's working
+directory, so `:lcd` / `:tcd` count) has its own storage file, and session names are scoped to it.
+
+- **Empty stacks**: saving an empty stack replaces the session with an empty one; restoring an empty
+  session reports that there is no saved session. Use `:PeekstackDeleteSession` to remove one.
+- **Skipped items**: entries whose file no longer exists or that are malformed are skipped on restore.
+  The warning lists the first five skipped files with their reasons, and the `PeekstackRestore` event
+  data carries every skipped item as `skipped`.
+- **Unreadable storage**: if the storage file cannot be read (an I/O error, invalid JSON, or a version
+  this release does not know), peekstack warns and refuses to save, delete, or rename sessions in it
+  instead of replacing it with an empty store. Fix or move the file to recover.
 
 > [!IMPORTANT]
 > Sessions are written as plain JSON under `vim.fn.stdpath("state") .. "/peekstack/"`. Each entry
@@ -379,10 +392,13 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 - **Save on leave** on `VimLeavePre` if `save_on_leave = true`
 
 The auto session holds a single stack: the one that changed most recently, saved to the repository
-that was current when it changed. Leaving Neovim saves that stack even if the cursor is in another
-window, skips the save if no stack changed during the session, and keeps the stored session as-is
-once that stack's window has been closed. The save on leave waits up to one second for earlier
-saves to finish; if they are still writing, it is skipped with a warning rather than racing them.
+that was current when it changed. Closing every popup of that stack saves it empty, so nothing is
+restored next time.
+
+Leaving Neovim saves that stack synchronously, even if the cursor is in another window. It skips the
+save if no stack changed during the session, and keeps the stored session as-is once that stack's
+window has been closed. The save on leave waits up to one second for earlier saves to finish; if they
+are still writing, it is skipped with a warning rather than racing them.
 
 Auto persist only runs inside a git repository and always uses the repository session storage. Make sure
 `persist.enabled = true` as well.
