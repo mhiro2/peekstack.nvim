@@ -112,10 +112,10 @@ Built-in provider names:
 - `:PeekstackRestoreSession` — restore a saved session
 - `:PeekstackListSessions` — list all saved sessions
 - `:PeekstackDeleteSession [name]` — delete a saved session (prompts to select when no name is given)
-- `:PeekstackRestorePopup` — restore the last closed popup (undo close)
+- `:PeekstackRestorePopup` — restore the last closed popup (undo close), including popups closed with `:q` or `<C-w>c`
 - `:PeekstackRestoreAllPopups` — restore all closed popups
 - `:PeekstackCloseAll` — close all popups in the current stack
-- `:PeekstackToggle` — temporarily hide/show all popups in the current stack
+- `:PeekstackToggle` — temporarily hide/show all popups in the current stack (pushing, focusing or restoring a popup shows it again)
 - `:PeekstackZoom` — toggle zoom (maximize the top popup to fill the editor)
 - `:PeekstackHistory` — show popup history and select to restore
 - `:PeekstackQuickPeek [provider]` — quick peek without stacking (default: `lsp.definition`, accepts any registered provider)
@@ -403,6 +403,9 @@ to future actions, and to existing stacks only after those popups are reopened, 
 - **copy** (default): scratch buffer with copied lines; editing is controlled by `ui.popup.editable`
 - **source**: uses the real source buffer; useful for editing, with safety options in
   `ui.popup.source` (`confirm_on_close`, `prevent_auto_close_if_modified`)
+
+Switching buffers inside a popup (`:buffer`, `:edit`) keeps the popup and makes it follow the new buffer
+as a source popup at the cursor, so its title, keymaps, provider requests and history refer to that buffer.
 
 ## 🧪 Health
 

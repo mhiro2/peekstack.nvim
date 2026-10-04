@@ -346,6 +346,8 @@ describe("stack.handle_buf_wipeout", function()
     local model = stack.push(helpers.make_location())
     assert.is_not_nil(model)
 
+    -- Neovim closes the windows showing a buffer before wiping it.
+    vim.api.nvim_win_close(model.winid, true)
     stack.handle_buf_wipeout(model.bufnr)
 
     local history = stack.history_list()

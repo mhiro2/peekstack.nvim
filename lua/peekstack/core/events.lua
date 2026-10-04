@@ -7,8 +7,6 @@ local M = {}
 ---@type uv.uv_timer_t?
 local reflow_timer = nil
 local REFLOW_DEBOUNCE_MS = 80
----@type table<integer, boolean>
-local popup_cursor_buffers = {}
 
 local function reset_reflow_timer()
   local store = timer_util.get_store()
@@ -34,27 +32,6 @@ local function debounced_reflow()
   end)
 end
 
----@param group integer
----@param bufnr integer
-local function ensure_popup_cursor_tracking(group, bufnr)
-  if popup_cursor_buffers[bufnr] then
-    return
-  end
-  popup_cursor_buffers[bufnr] = true
-
-  vim.api.nvim_create_autocmd("CursorMoved", {
-    group = group,
-    buffer = bufnr,
-    callback = function()
-      local winid = vim.api.nvim_get_current_win()
-      if vim.w[winid].peekstack_popup_id == nil then
-        return
-      end
-      stack.touch(winid)
-    end,
-  })
-end
-
 ---Close ephemeral popups that belong to the current root window.
 local function close_ephemeral_popups()
   stack.close_ephemerals(vim.api.nvim_get_current_win())
@@ -70,7 +47,6 @@ end
 
 function M.setup()
   reset_reflow_timer()
-  popup_cursor_buffers = {}
   local group = vim.api.nvim_create_augroup("PeekstackEvents", { clear = true })
   local keymaps = require("peekstack.ui.keymaps")
 
@@ -89,7 +65,13 @@ function M.setup()
     callback = function(args)
       stack.handle_buf_wipeout(args.buf)
       stack.handle_origin_wipeout(args.buf)
-      popup_cursor_buffers[args.buf] = nil
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = group,
+    callback = function(args)
+      stack.handle_buf_win_enter(vim.api.nvim_get_current_win(), args.buf)
     end,
   })
 
@@ -102,10 +84,6 @@ function M.setup()
     group = group,
     callback = function()
       local winid = vim.api.nvim_get_current_win()
-      if vim.w[winid].peekstack_popup_id ~= nil then
-        local bufnr = vim.api.nvim_win_get_buf(winid)
-        ensure_popup_cursor_tracking(group, bufnr)
-      end
       keymaps.activate_source_popup(winid)
       if is_floating_window(winid) then
         stack.touch(winid)
@@ -125,9 +103,21 @@ function M.setup()
     end,
   })
 
+  -- Registered globally rather than per popup buffer: the first WinEnter
+  -- of a popup fires before the popup is registered, so a per-buffer hook
+  -- installed there would miss every popup that is never re-entered.
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = group,
+    callback = function()
+      local winid = vim.api.nvim_get_current_win()
+      if vim.w[winid].peekstack_popup_id ~= nil then
+        stack.touch(winid)
+      end
+    end,
+  })
+
   local current_winid = vim.api.nvim_get_current_win()
   if vim.w[current_winid].peekstack_popup_id ~= nil then
-    ensure_popup_cursor_tracking(group, vim.api.nvim_win_get_buf(current_winid))
     keymaps.activate_source_popup(current_winid)
   end
 

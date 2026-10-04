@@ -19,6 +19,9 @@ function M.reopen_by_id(id, winid)
   local stack = state.ensure_stack(winid)
   for idx, item in ipairs(stack.popups) do
     if item.id == id then
+      if item.winid and vim.api.nvim_win_is_valid(item.winid) then
+        return item
+      end
       local model = common.reopen_popup(item, stack)
       if not model then
         return nil
@@ -39,6 +42,7 @@ end
 function M.focus_by_id(id, winid)
   deps()
   local stack = state.ensure_stack(winid)
+  require("peekstack.core.stack.operations.visibility").show(stack)
   for _, item in ipairs(stack.popups) do
     if item.id == id or item.winid == id then
       local target = item

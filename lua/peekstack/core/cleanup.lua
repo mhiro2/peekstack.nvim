@@ -25,12 +25,13 @@ function M.scan(now_ms)
   -- Close stale popups
   stack.close_stale(now_ms, auto_close_cfg)
 
-  -- Close popups with invalid origin buffers
-  -- Collect targets first to avoid modifying the table during iteration
+  -- Close popups whose origin buffer is gone, with the same rule as the
+  -- BufWipeout handler. Collect targets first to avoid modifying the table
+  -- during iteration.
   local to_close = {}
   for root_winid, stk in pairs(stack._all_stacks()) do
     for _, item in ipairs(stk.popups) do
-      if item.origin and item.origin.bufnr and not vim.api.nvim_buf_is_valid(item.origin.bufnr) then
+      if stack.closes_with_origin(item) and not vim.api.nvim_buf_is_valid(item.origin.bufnr) then
         table.insert(to_close, { id = item.id, root = root_winid })
       end
     end

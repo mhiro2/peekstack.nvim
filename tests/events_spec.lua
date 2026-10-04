@@ -57,29 +57,6 @@ describe("peekstack.core.events", function()
     assert.equals(1, touch_calls)
   end)
 
-  it("registers CursorMoved autocmd only for popup buffers", function()
-    local winid = vim.api.nvim_get_current_win()
-    local bufnr = vim.api.nvim_get_current_buf()
-
-    events.setup()
-    local before = vim.api.nvim_get_autocmds({
-      group = "PeekstackEvents",
-      event = "CursorMoved",
-      buffer = bufnr,
-    })
-    assert.equals(0, #before)
-
-    vim.w[winid].peekstack_popup_id = 999
-    vim.api.nvim_exec_autocmds("WinEnter", { modeline = false })
-
-    local after = vim.api.nvim_get_autocmds({
-      group = "PeekstackEvents",
-      event = "CursorMoved",
-      buffer = bufnr,
-    })
-    assert.equals(1, #after)
-  end)
-
   it("stops cleanup timer when re-setup disables auto_close", function()
     local timer_store = require("peekstack.util.timer").get_store()
 

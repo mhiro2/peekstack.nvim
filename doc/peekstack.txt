@@ -290,10 +290,13 @@ Commands are registered after `setup()` is called.
     no name is given, prompts to select one from the saved sessions.
 
 :PeekstackRestorePopup                        *:PeekstackRestorePopup*
-    Restore the last closed popup from history (undo close).
+    Restore the last closed popup from history (undo close). Every close is
+    recorded, including popups closed with `:q`, `<C-w>c` or other commands
+    outside peekstack.
 
 :PeekstackRestoreAllPopups                    *:PeekstackRestoreAllPopups*
-    Restore all closed popups from history.
+    Restore all closed popups from history. Parent/child links between the
+    restored popups are kept whatever order they were closed in.
 
 :PeekstackCloseAll                            *:PeekstackCloseAll*
     Close all popups in the current stack.
@@ -301,8 +304,9 @@ Commands are registered after `setup()` is called.
 :PeekstackToggle                                    *:PeekstackToggle*
     Temporarily hide or show all popups in the current stack. When hidden,
     popup windows are closed but the stack state is preserved. Toggling
-    again recreates the windows in their original layout. Pushing a new
-    popup while hidden automatically restores visibility.
+    again recreates the windows in their original layout. Pushing,
+    focusing or restoring a popup while hidden automatically restores
+    visibility.
 
 :PeekstackZoom                                      *:PeekstackZoom*
     Toggle zoom on the top popup. When zoomed, the popup fills the entire
@@ -522,6 +526,10 @@ BUFFER MODES                                           *peekstack-buffer-modes*
     "source" use the real source buffer (useful for editing)
              `ui.popup.source.confirm_on_close` prompts on close if modified
              `ui.popup.source.prevent_auto_close_if_modified` blocks auto-close
+
+Switching buffers inside a popup (`:buffer`, `:edit`) keeps the popup and
+makes it follow the new buffer as a "source" popup at the cursor: its
+title, keymaps, provider requests and history entry refer to that buffer.
 
 ==============================================================================
 STACK VIEW                                             *peekstack-stack-view*

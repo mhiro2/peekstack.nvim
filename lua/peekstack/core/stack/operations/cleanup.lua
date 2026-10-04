@@ -1,14 +1,12 @@
 local state = require("peekstack.core.stack.state")
+local common = require("peekstack.core.stack.common")
 
 local M = {}
 
-local config, layout, popup, user_events
+local config
 local function deps()
   if not config then
     config = require("peekstack.config")
-    layout = require("peekstack.core.layout")
-    popup = require("peekstack.core.popup")
-    user_events = require("peekstack.core.user_events")
   end
 end
 
@@ -21,7 +19,9 @@ function M.close_stale(now_ms, opts)
   local ignore_pinned = opts.ignore_pinned ~= false
   local prevent_modified = config.get().ui.popup.source.prevent_auto_close_if_modified
 
-  local close = require("peekstack.core.stack.operations.close")
+  -- Collect first: closing one popup can wipe buffers whose handlers close
+  -- others while this loop runs.
+  local stale = {}
   for root_winid, stack in pairs(state.stacks) do
     for idx = #stack.popups, 1, -1 do
       local item = stack.popups[idx]
@@ -31,51 +31,27 @@ function M.close_stale(now_ms, opts)
           and vim.api.nvim_buf_is_valid(item.bufnr)
           and vim.bo[item.bufnr].modified
 
-        if not is_modified_source then
-          local idle_time = now_ms - item.last_active_at
-          if idle_time > idle_ms then
-            close.close(item.id, root_winid)
-          end
+        if not is_modified_source and now_ms - item.last_active_at > idle_ms then
+          table.insert(stale, { id = item.id, root_winid = root_winid })
         end
       end
+    end
+  end
+
+  local close = require("peekstack.core.stack.operations.close")
+  for _, target in ipairs(stale) do
+    if state.lookup_by_id(target.id) then
+      close.close_by_id(target.id, target.root_winid)
     end
   end
 end
 
 ---@param winid? integer
 function M.close_ephemerals(winid)
-  deps()
-  local target_root_winid = nil
-  if winid ~= nil or vim.api.nvim_get_current_win() ~= nil then
-    target_root_winid = state.get_root_winid(winid)
-  end
-
-  for _, stack in pairs(state.stacks) do
-    if target_root_winid == nil or stack.root_winid == target_root_winid then
-      local removed = false
-      for idx = #stack.popups, 1, -1 do
-        local item = stack.popups[idx]
-        if item.ephemeral then
-          popup.close(item)
-          state.unindex_popup(item)
-          table.remove(stack.popups, idx)
-          removed = true
-        end
-      end
-      if removed then
-        layout.reflow(stack)
-      end
-    end
-  end
-
+  local target_root_winid = state.get_root_winid(winid)
   for id, item in pairs(state.ephemerals) do
-    local entry = state.lookup_by_id(item.id)
-    local root_winid = entry and entry.root_winid or nil
-    if target_root_winid == nil or root_winid == target_root_winid then
-      local event_root_winid = state.ephemeral_root_winid(item)
-      popup.close(item)
-      state.unregister_ephemeral(id)
-      user_events.emit("PeekstackClose", user_events.build_popup_data(item, event_root_winid, { ephemeral = true }))
+    if state.ephemeral_root_winid(item) == target_root_winid then
+      common.remove_ephemeral(id, item)
     end
   end
 end

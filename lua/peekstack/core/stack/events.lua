@@ -3,59 +3,30 @@ local common = require("peekstack.core.stack.common")
 
 local M = {}
 
-local layout, popup, feedback, history, user_events
-local function deps()
-  if not layout then
-    layout = require("peekstack.core.layout")
-    popup = require("peekstack.core.popup")
-    feedback = require("peekstack.ui.feedback")
-    history = require("peekstack.core.history")
-    user_events = require("peekstack.core.user_events")
+---Remove every stack and ephemeral popup matching `predicate`.
+---@param predicate fun(item: PeekstackPopupModel): boolean
+local function remove_matching(predicate)
+  -- Collect first: a removal can wipe buffers and re-enter this module.
+  local ephemerals = {}
+  for id, item in pairs(state.ephemerals) do
+    if predicate(item) then
+      ephemerals[id] = item
+    end
   end
-end
-
----@param stack PeekstackStackModel
----@param idx integer
----@param item PeekstackPopupModel
----@param opts? { close_window?: boolean, highlight_origin?: boolean }
-local function remove_stack_popup(stack, idx, item, opts)
-  opts = opts or {}
-  if stack.zoomed_id == item.id then
-    stack.zoomed_id = nil
+  for id, item in pairs(ephemerals) do
+    if state.ephemerals[id] == item then
+      common.remove_ephemeral(id, item)
+    end
   end
-  if opts.highlight_origin ~= false then
-    feedback.highlight_origin(item.origin)
+  for _, stack in pairs(vim.tbl_values(state.stacks)) do
+    if common.remove_stack_popups(stack, predicate) then
+      common.settle(stack)
+    end
   end
-  common.emit_popup_event("PeekstackClose", item, stack.root_winid)
-  history.push_entry(stack, history.build_entry(item, idx))
-  user_events.emit("PeekstackHistoryPush", {
-    popup_id = item.id,
-    location = item.location,
-    root_winid = stack.root_winid,
-  })
-  state.unindex_popup(item)
-  table.remove(stack.popups, idx)
-  if opts.close_window ~= false and item.winid and vim.api.nvim_win_is_valid(item.winid) then
-    popup.close(item)
-  end
-end
-
----@param id integer
----@param item PeekstackPopupModel
----@param opts? { close_window?: boolean }
-local function remove_ephemeral(id, item, opts)
-  opts = opts or {}
-  local root_winid = state.ephemeral_root_winid(item)
-  if opts.close_window ~= false and item.winid and vim.api.nvim_win_is_valid(item.winid) then
-    popup.close(item)
-  end
-  state.unregister_ephemeral(id)
-  user_events.emit("PeekstackClose", user_events.build_popup_data(item, root_winid, { ephemeral = true }))
 end
 
 ---@param winid integer
 function M.handle_win_closed(winid)
-  deps()
   if state.suppress_win_events then
     return
   end
@@ -63,144 +34,54 @@ function M.handle_win_closed(winid)
     state.stack_view_wins[winid] = nil
     return
   end
-  for id, item in pairs(state.ephemerals) do
-    if item.winid == winid then
-      user_events.emit(
-        "PeekstackClose",
-        user_events.build_popup_data(item, state.ephemeral_root_winid(item), { ephemeral = true })
-      )
-      state.unregister_ephemeral(id)
-    end
+  local root_stack = state.stacks[winid]
+  if root_stack then
+    -- Drop the stack before closing its popups so their WinClosed events
+    -- do not find it again.
+    state.stacks[winid] = nil
+    common.remove_stack_popups(root_stack, function()
+      return true
+    end, { highlight_origin = false })
   end
-  for root_winid, stack in pairs(state.stacks) do
-    if stack.root_winid == winid then
-      for idx = #stack.popups, 1, -1 do
-        local item = stack.popups[idx]
-        common.emit_popup_event("PeekstackClose", item, root_winid)
-        history.push_entry(stack, history.build_entry(item, idx))
-        table.remove(stack.popups, idx)
-        state.unindex_popup(item)
-        popup.close(item)
-      end
-      state.stacks[root_winid] = nil
-    else
-      local removed = false
-      local focused_removed = false
-      for idx = #stack.popups, 1, -1 do
-        local item = stack.popups[idx]
-        if item.winid == winid then
-          if stack.focused_id == item.id then
-            focused_removed = true
-          end
-          if stack.zoomed_id == item.id then
-            stack.zoomed_id = nil
-          end
-          common.emit_popup_event("PeekstackClose", item, root_winid)
-          feedback.highlight_origin(item.origin)
-          table.remove(stack.popups, idx)
-          state.unindex_popup(item)
-          popup.close(item)
-          removed = true
-        end
-      end
-      if removed then
-        if focused_removed then
-          if #stack.popups > 0 then
-            stack.focused_id = stack.popups[#stack.popups].id
-          else
-            stack.focused_id = nil
-          end
-        end
-        layout.reflow(stack)
-      end
-    end
-  end
+  remove_matching(function(item)
+    return item.winid == winid
+  end)
 end
 
 ---@param bufnr integer
 function M.handle_buf_wipeout(bufnr)
-  deps()
   if state.suppress_win_events then
     return
   end
-  for id, item in pairs(state.ephemerals) do
-    if item.bufnr == bufnr then
-      remove_ephemeral(id, item, { close_window = false })
+  remove_matching(function(item)
+    if item.bufnr ~= bufnr then
+      return false
     end
+    -- A buffer wiped while its popup window still shows it is being replaced
+    -- in that window (`:buffer`, `:edit`); handle_buf_win_enter makes the
+    -- popup follow the new buffer instead.
+    local winid = item.winid
+    return not (winid and vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == bufnr)
+  end)
+end
+
+---Follow a buffer that replaced the one shown in a popup window.
+---@param winid integer
+---@param bufnr integer
+function M.handle_buf_win_enter(winid, bufnr)
+  local entry = state.lookup_by_winid(winid)
+  if not entry or entry.popup.bufnr == bufnr then
+    return
   end
-  for _, stack in pairs(state.stacks) do
-    local removed = false
-    local focused_removed = false
-    for idx = #stack.popups, 1, -1 do
-      local item = stack.popups[idx]
-      if item.bufnr == bufnr then
-        if stack.focused_id == item.id then
-          focused_removed = true
-        end
-        remove_stack_popup(stack, idx, item, { close_window = false })
-        removed = true
-      end
-    end
-    if removed then
-      if focused_removed then
-        if #stack.popups > 0 then
-          stack.focused_id = stack.popups[#stack.popups].id
-        else
-          stack.focused_id = nil
-        end
-      end
-      layout.reflow(stack)
-    end
-  end
+  require("peekstack.core.popup").retarget(entry.popup, bufnr)
+  require("peekstack.ui.stack_view").refresh_all()
 end
 
 ---@param bufnr integer
 function M.handle_origin_wipeout(bufnr)
-  deps()
-  local function should_close_for_origin(item)
-    if not (item.origin and item.origin.bufnr == bufnr) then
-      return false
-    end
-    if item.origin_is_popup == true then
-      return false
-    end
-    if vim.api.nvim_buf_is_valid(bufnr) then
-      local ft = vim.bo[bufnr].filetype
-      if ft == "peekstack-stack" or ft == "peekstack-stack-help" then
-        return false
-      end
-    end
-    return true
-  end
-  for id, item in pairs(state.ephemerals) do
-    if should_close_for_origin(item) then
-      remove_ephemeral(id, item)
-    end
-  end
-  for _, stack in pairs(state.stacks) do
-    local removed = false
-    local focused_removed = false
-    for idx = #stack.popups, 1, -1 do
-      local item = stack.popups[idx]
-      if should_close_for_origin(item) then
-        if stack.focused_id == item.id then
-          focused_removed = true
-        end
-        remove_stack_popup(stack, idx, item)
-        removed = true
-      end
-    end
-    if removed then
-      if focused_removed then
-        if #stack.popups > 0 then
-          stack.focused_id = stack.popups[#stack.popups].id
-        else
-          stack.focused_id = nil
-        end
-      end
-      layout.reflow(stack)
-    end
-  end
+  remove_matching(function(item)
+    return common.closes_with_origin(item) and item.origin.bufnr == bufnr
+  end)
 end
 
 return M

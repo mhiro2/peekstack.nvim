@@ -115,9 +115,7 @@ function M.push(location, opts)
   end
 
   local stack = state.ensure_stack(root_winid)
-  if stack.hidden then
-    require("peekstack.core.stack.operations.visibility").toggle(stack.root_winid)
-  end
+  require("peekstack.core.stack.operations.visibility").show(stack)
   if stack.zoomed_id then
     stack.zoomed_id = nil
   end
