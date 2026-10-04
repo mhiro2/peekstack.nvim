@@ -28,20 +28,28 @@ local function open_builtin(builtin_name, provider, opts)
 
   local push_opts = { provider = provider, mode = opts.mode }
 
-  fn(vim.tbl_extend("force", opts, {
-    attach_mappings = function(_, map)
+  local user_attach = opts.attach_mappings
+  local picker_opts = vim.tbl_extend("force", opts, {
+    attach_mappings = function(prompt_bufnr, map)
       local actions = require("telescope.actions")
       local state = require("telescope.actions.state")
-      local function on_select(prompt_bufnr)
+      local function on_select(bufnr)
         local entry = state.get_selected_entry()
-        actions.close(prompt_bufnr)
+        actions.close(bufnr)
         push_from_telescope(entry, push_opts)
       end
       map("i", "<CR>", on_select)
       map("n", "<CR>", on_select)
+      -- Run the caller's mappings last so they can still override <CR>.
+      if user_attach then
+        return user_attach(prompt_bufnr, map)
+      end
       return true
     end,
-  }))
+  })
+  picker_opts.mode = nil
+
+  fn(picker_opts)
 end
 
 --- Generic action for use in custom telescope mappings.

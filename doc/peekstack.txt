@@ -216,14 +216,17 @@ Custom action:
 >lua
   require("fzf-lua").live_grep({
     actions = {
-      ["default"] = function(selected)
-        require("peekstack.extensions.fzf_lua").actions.push(selected, {
+      ["default"] = function(selected, opts)
+        require("peekstack.extensions.fzf_lua").actions.push(selected, opts, {
           provider = "my_grep",
         })
       end,
     },
   })
 <
+Pass the picker `opts` fzf-lua gives the action so relative entries are
+resolved against the picker `cwd`. The wrappers above do this for you and
+replace only the confirm action, so other `actions` you pass keep working.
 
 TELESCOPE ~
                                               *peekstack-extensions-telescope*
@@ -246,6 +249,8 @@ Custom action:
     end,
   })
 <
+The `push_*` pickers map `<CR>` and then run the `attach_mappings` you pass,
+so your own mappings are kept and may override `<CR>`.
 
 GENERIC PUSH ~
                                               *peekstack-extensions-push-entry*

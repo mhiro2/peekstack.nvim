@@ -74,10 +74,78 @@ describe("peekstack.ui.diagnostics", function()
 
     local ok, result = pcall(diagnostics.decorate, model)
     assert.is_true(ok)
-    -- The virt_lines marker is still added even though the underline is dropped.
     assert.is_not_nil(result)
 
     vim.api.nvim_buf_delete(bufnr, { force = true })
+  end)
+
+  describe("underline range", function()
+    local diagnostics = require("peekstack.ui.diagnostics")
+    local bufnr
+
+    before_each(function()
+      bufnr = vim.api.nvim_create_buf(false, true)
+    end)
+
+    after_each(function()
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    ---@return { row: integer, col: integer, end_row: integer, end_col: integer }?
+    local function underline_for(lines, range, line_offset)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+      local result = diagnostics.decorate({
+        bufnr = bufnr,
+        line_offset = line_offset or 0,
+        location = {
+          provider = "diagnostics.under_cursor",
+          text = "boom",
+          kind = vim.diagnostic.severity.ERROR,
+          range = range,
+        },
+      })
+      assert.is_not_nil(result)
+      for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, result.ns, 0, -1, { details = true })) do
+        local details = mark[4]
+        if details.hl_group then
+          return { row = mark[2], col = mark[3], end_row = details.end_row, end_col = details.end_col }
+        end
+      end
+      return nil
+    end
+
+    local function range(sl, sc, el, ec)
+      return { start = { line = sl, character = sc }, ["end"] = { line = el, character = ec } }
+    end
+
+    it("keeps an end column smaller than the start column on a later line", function()
+      local mark = underline_for({ "local value = 1", "abc" }, range(0, 8, 1, 2))
+      assert.are.same({ row = 0, col = 8, end_row = 1, end_col = 2 }, mark)
+    end)
+
+    it("clamps the end column to the length of a short end line", function()
+      local mark = underline_for({ "local value = 1", "abc" }, range(0, 8, 1, 20))
+      assert.are.same({ row = 0, col = 8, end_row = 1, end_col = 3 }, mark)
+    end)
+
+    it("keeps the start column when the range ends before it on the same line", function()
+      local mark = underline_for({ "local value = 1" }, range(0, 8, 0, 2))
+      assert.are.same({ row = 0, col = 8, end_row = 0, end_col = 8 }, mark)
+    end)
+
+    it("clips a range that starts above the visible lines", function()
+      local mark = underline_for({ "visible one", "visible two" }, range(8, 4, 10, 3), 10)
+      assert.are.same({ row = 0, col = 0, end_row = 0, end_col = 3 }, mark)
+    end)
+
+    it("clips a range that ends below the visible lines", function()
+      local mark = underline_for({ "visible one", "visible two" }, range(10, 8, 15, 1), 10)
+      assert.are.same({ row = 0, col = 8, end_row = 1, end_col = 11 }, mark)
+    end)
+
+    it("does not underline a range entirely outside the visible lines", function()
+      assert.is_nil(underline_for({ "visible one", "visible two" }, range(20, 0, 21, 4), 10))
+    end)
   end)
 
   it("clears diagnostic extmarks on close in source mode", function()

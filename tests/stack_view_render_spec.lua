@@ -224,6 +224,136 @@ describe("peekstack.ui.stack_view.render", function()
     end
   end)
 
+  describe("incremental updates", function()
+    local ns = vim.api.nvim_create_namespace("PeekstackStackView")
+    local original_get_parser
+    local original_query_get
+
+    -- Stub Tree-sitter so every preview line gets a keyword capture on its first 5 bytes.
+    before_each(function()
+      original_get_parser = vim.treesitter.get_parser
+      original_query_get = vim.treesitter.query.get
+      vim.api.nvim_set_hl(0, "@keyword.peekstack_test_ts", { link = "Keyword" })
+      local tree = {
+        root = function()
+          return {
+            range = function()
+              return 0, 0, 100, 0
+            end,
+          }
+        end,
+        lang = function()
+          return "peekstack_test_ts"
+        end,
+      }
+      vim.treesitter.get_parser = function()
+        return {
+          parse = function() end,
+          trees = function()
+            return { tree }
+          end,
+        }
+      end
+      vim.treesitter.query.get = function()
+        return {
+          captures = { "keyword" },
+          iter_captures = function(_, _, _, start_row)
+            local emitted = false
+            return function()
+              if emitted then
+                return nil
+              end
+              emitted = true
+              return 1,
+                {
+                  range = function()
+                    return start_row, 0, start_row, 5
+                  end,
+                }
+            end
+          end,
+        }
+      end
+    end)
+
+    after_each(function()
+      vim.treesitter.get_parser = original_get_parser
+      vim.treesitter.query.get = original_query_get
+    end)
+
+    ---@return string[]
+    local function rendered_marks(bufnr)
+      local marks = {}
+      for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })) do
+        local details = mark[4]
+        marks[#marks + 1] = string.format("%d:%d-%d:%s", mark[2], mark[3], details.end_col or -1, details.hl_group)
+      end
+      table.sort(marks)
+      return marks
+    end
+
+    ---Render `after` incrementally on top of `before` and compare with a fresh render.
+    local function assert_matches_fresh_render(before, after)
+      local bufnr = new_target_buffer()
+      local keys = diff.apply(bufnr, {}, before, {})
+      diff.apply(bufnr, keys, after, {})
+
+      local fresh = new_target_buffer()
+      diff.apply(fresh, {}, after, {})
+
+      assert.are.same(after.lines, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+      assert.are.same(rendered_marks(fresh), rendered_marks(bufnr))
+      return rendered_marks(bufnr)
+    end
+
+    local function items_with_previews(ids)
+      local source_bufnr = new_source_buffer({ "local value = 42", "return value" }, "lua")
+      local items = {}
+      for _, id in ipairs(ids) do
+        items[#items + 1] = popup(id, {
+          title = "Item " .. id,
+          source_bufnr = source_bufnr,
+          bufnr = source_bufnr,
+          location = location_for("/tmp/item.lua", 0, 0),
+        })
+      end
+      return items
+    end
+
+    it("renders exactly the model lines on the first render", function()
+      local bufnr = new_target_buffer()
+      local model = build_model({ items = { popup(1, { title = "Alpha" }) } })
+
+      diff.apply(bufnr, {}, model, {})
+
+      assert.are.same(model.lines, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+    end)
+
+    it("keeps highlights of the unchanged suffix when a middle entry is removed", function()
+      local before = build_model({ items = items_with_previews({ 1, 2, 3 }), focused_id = 3 })
+      local after = build_model({ items = items_with_previews({ 1, 3 }), focused_id = 3 })
+
+      local marks = assert_matches_fresh_render(before, after)
+      local has_treesitter = false
+      for _, mark in ipairs(marks) do
+        has_treesitter = has_treesitter or mark:find(":@", 1, true) ~= nil
+      end
+      assert.is_true(has_treesitter)
+    end)
+
+    it("keeps highlights of the unchanged suffix when preview lines are removed", function()
+      local items = items_with_previews({ 1, 2 })
+      local before = build_model({ items = items, focused_id = 2 })
+      local without_preview = vim.deepcopy(items)
+      without_preview[1].source_bufnr = nil
+      without_preview[1].bufnr = nil
+      local after = build_model({ items = without_preview, focused_id = 2 })
+      assert.is_true(#after.lines < #before.lines)
+
+      assert_matches_fresh_render(before, after)
+    end)
+  end)
+
   it("renders the empty state with a header", function()
     local model = build_model({ items = {} })
     local joined = table.concat(model.lines, "\n")

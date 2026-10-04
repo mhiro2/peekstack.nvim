@@ -36,6 +36,43 @@ local function is_diagnostic_location(location)
   return type(location.provider) == "string" and location.provider:match("^diagnostics%.") ~= nil
 end
 
+---@param bufnr integer
+---@param row integer
+---@return integer
+local function row_length(bufnr, row)
+  return #(vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or "")
+end
+
+---Map a diagnostic range onto the popup buffer, keeping only the part inside it.
+---A range that starts above or ends below the buffer is clipped to its first or
+---last line, and columns are clamped to each line's byte length.
+---@param bufnr integer
+---@param range table
+---@param line_offset integer
+---@return { row: integer, col: integer, end_row: integer, end_col: integer }?
+local function underline_range(bufnr, range, line_offset)
+  local last_row = vim.api.nvim_buf_line_count(bufnr) - 1
+  local start = range.start or {}
+  local finish = range["end"] or start
+  local row = (start.line or 0) - line_offset
+  local end_row = (finish.line or start.line or 0) - line_offset
+  if end_row < 0 or row > last_row then
+    return nil
+  end
+
+  local col = row < 0 and 0 or (start.character or 0)
+  local end_col = end_row > last_row and math.huge or (finish.character or col)
+  row = math.max(row, 0)
+  end_row = math.min(end_row, last_row)
+  col = math.min(math.max(col, 0), row_length(bufnr, row))
+  end_col = math.min(math.max(end_col, 0), row_length(bufnr, end_row))
+  -- Columns are only ordered within a single line.
+  if end_row < row or (end_row == row and end_col < col) then
+    end_row, end_col = row, col
+  end
+  return { row = row, col = col, end_row = end_row, end_col = end_col }
+end
+
 ---@param popup PeekstackPopupModel
 ---@return PeekstackDiagnosticExtmarks?
 function M.decorate(popup)
@@ -58,24 +95,16 @@ function M.decorate(popup)
     return nil
   end
 
-  local range = location.range or {}
-  local start = range.start or {}
-  local finish = range["end"] or start
-  local line_offset = popup.line_offset or 0
-  local line = (start.line or 0) - line_offset
-  local col = start.character or 0
-  local end_line = (finish.line or start.line or 0) - line_offset
-  local end_col = finish.character or col
-
   local line_count = vim.api.nvim_buf_line_count(bufnr)
   if line_count == 0 then
     return nil
   end
 
-  line = math.min(math.max(line, 0), line_count - 1)
-  end_line = math.min(math.max(end_line, line), line_count - 1)
-  col = math.max(col, 0)
-  end_col = math.max(end_col, col)
+  local range = location.range or {}
+  local line_offset = popup.line_offset or 0
+  local start_row = ((range.start or {}).line or 0) - line_offset
+  local line = math.min(math.max(start_row, 0), line_count - 1)
+  local underline = underline_range(bufnr, range, line_offset)
 
   local ids = {}
 
@@ -97,14 +126,11 @@ function M.decorate(popup)
     end
   end
 
-  local underline = severity_hl(location.kind, "DiagnosticUnderline")
-  if underline ~= "" then
-    -- end_col may exceed the line length when the popup buffer is truncated;
-    -- pcall keeps decoration best-effort instead of erroring on the whole popup.
-    local ok, id = pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, line, col, {
-      end_row = end_line,
-      end_col = end_col,
-      hl_group = underline,
+  if underline then
+    local ok, id = pcall(vim.api.nvim_buf_set_extmark, bufnr, NS, underline.row, underline.col, {
+      end_row = underline.end_row,
+      end_col = underline.end_col,
+      hl_group = severity_hl(location.kind, "DiagnosticUnderline"),
     })
     if ok then
       table.insert(ids, id)
