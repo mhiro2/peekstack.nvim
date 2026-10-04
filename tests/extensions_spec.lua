@@ -113,4 +113,83 @@ describe("peekstack.extensions", function()
       assert.is_nil(captured_loc)
     end)
   end)
+
+  describe("fzf-lua", function()
+    local fzf_ext = require("peekstack.extensions.fzf_lua")
+    local captured
+    local fzf_calls
+    local original_peek
+    local original_fzf
+
+    -- Mirrors fzf-lua's path.entry_to_file: relative entries are joined with the picker cwd.
+    local function entry_to_file(entry, opts)
+      opts = opts or {}
+      local path, line, col = entry:match("^(.-):(%d+):(%d+)")
+      path = path or entry
+      if opts.cwd and path:sub(1, 1) ~= "/" then
+        path = opts.cwd .. "/" .. path
+      end
+      return { path = path, line = tonumber(line) or 0, col = tonumber(col) or 0 }
+    end
+
+    local function picker(name)
+      return function(opts)
+        table.insert(fzf_calls, { name = name, opts = opts })
+      end
+    end
+
+    before_each(function()
+      captured = {}
+      fzf_calls = {}
+      original_peek = require("peekstack").peek_location
+      require("peekstack").peek_location = function(loc, opts)
+        table.insert(captured, { loc = loc, opts = opts })
+      end
+      original_fzf = package.loaded["fzf-lua"]
+      package.loaded["fzf-lua"] = {
+        path = { entry_to_file = entry_to_file },
+        files = picker("files"),
+        live_grep = picker("live_grep"),
+        lsp_references = picker("lsp_references"),
+      }
+    end)
+
+    after_each(function()
+      require("peekstack").peek_location = original_peek
+      package.loaded["fzf-lua"] = original_fzf
+    end)
+
+    ---Simulate fzf-lua confirming `line`: actions receive the picker opts.
+    local function confirm(call, line)
+      call.opts.actions["default"]({ line }, call.opts)
+    end
+
+    for _, case in ipairs({
+      { fn = "push_file", entry = "same.lua", line = 0, col = 0 },
+      { fn = "push_grep", entry = "same.lua:3:5:text", line = 2, col = 4 },
+      { fn = "push_lsp_references", entry = "same.lua:7:2:text", line = 6, col = 1 },
+    }) do
+      it(case.fn .. " resolves entries against the picker cwd", function()
+        fzf_ext[case.fn]({ cwd = "/picker/root", mode = "copy" })
+        assert.equals(1, #fzf_calls)
+        assert.is_nil(fzf_calls[1].opts.mode)
+
+        confirm(fzf_calls[1], case.entry)
+
+        assert.equals(1, #captured)
+        assert.equals(vim.uri_from_fname("/picker/root/same.lua"), captured[1].loc.uri)
+        assert.equals(case.line, captured[1].loc.range.start.line)
+        assert.equals(case.col, captured[1].loc.range.start.character)
+        assert.equals("copy", captured[1].opts.mode)
+      end)
+    end
+
+    it("actions.push takes the picker opts and the push opts separately", function()
+      fzf_ext.actions.push({ "src/a.lua:2:3:text" }, { cwd = "/picker/root" }, { provider = "my_grep" })
+
+      assert.equals(1, #captured)
+      assert.equals(vim.uri_from_fname("/picker/root/src/a.lua"), captured[1].loc.uri)
+      assert.equals("my_grep", captured[1].loc.provider)
+    end)
+  end)
 end)

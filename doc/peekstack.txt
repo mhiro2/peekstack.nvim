@@ -216,14 +216,16 @@ Custom action:
 >lua
   require("fzf-lua").live_grep({
     actions = {
-      ["default"] = function(selected)
-        require("peekstack.extensions.fzf_lua").actions.push(selected, {
+      ["default"] = function(selected, opts)
+        require("peekstack.extensions.fzf_lua").actions.push(selected, opts, {
           provider = "my_grep",
         })
       end,
     },
   })
 <
+Pass the picker `opts` fzf-lua gives the action so relative entries are
+resolved against the picker `cwd`. The wrappers above do this for you.
 
 TELESCOPE ~
                                               *peekstack-extensions-telescope*
