@@ -105,6 +105,11 @@ Built-in provider names:
 `diagnostics.under_cursor`, `diagnostics.in_buffer`, `file.under_cursor`, `grep.search`, `marks.buffer`,
 `marks.global`, `marks.all` (marks require their provider enabled; `grep.search` requires `rg`).
 
+The marks providers show the characters in `providers.marks.include`, letters only by default.
+Numbered marks (`0`-`9`) appear only after adding them to `include`. Special marks
+(`` ' ` ^ . < > [ ] " ``) need both `include_special = true` and their character in `include`;
+`include_special` alone adds nothing.
+
 ## 💻 Commands
 
 - `:PeekstackStack` — open the stack view panel

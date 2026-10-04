@@ -356,8 +356,24 @@ Marks (requires providers.marks.enable = true):
     marks.buffer               buffer-local marks
     marks.global               global marks
     marks.all                  buffer + global marks
-    Filter with providers.marks.include / include_special.
     Scope is selected by the provider name.
+
+    `providers.marks.include` lists the mark characters to show; the
+    default is the letters `a`-`z` and `A`-`Z`. Numbered marks (`0`-`9`)
+    are shown only after adding them to `include`. Special marks
+    (`'` `` ` `` `^` `.` `<` `>` `[` `]` `"`) need both
+    `include_special = true` and their character in `include`;
+    `include_special` alone adds nothing.
+>lua
+    providers = {
+      marks = {
+        enable = true,
+        include = "abcdefghijklmnopqrstuvwxyz"
+          .. "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.^",
+        include_special = true,
+      },
+    }
+<
 
 ==============================================================================
 API                                                       *peekstack-api*
