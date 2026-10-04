@@ -34,9 +34,20 @@ local function format_failure_message(stderr)
   return "rg failed: " .. message
 end
 
+---@param path string
+---@param cwd string
+---@return string
+local function resolve_path(path, cwd)
+  if vim.fn.isabsolutepath(path) ~= 1 then
+    path = vim.fs.joinpath(cwd, path)
+  end
+  return vim.fs.normalize(path, { expand_env = false })
+end
+
 ---@param line string
+---@param cwd string
 ---@return string?, integer?, integer?, string?
-local function parse_rg_line(line)
+local function parse_rg_line(line, cwd)
   local candidates = {}
   local search_from = 1
 
@@ -60,25 +71,27 @@ local function parse_rg_line(line)
 
   for i = #candidates, 1, -1 do
     local candidate = candidates[i]
-    local resolved = vim.fn.fnamemodify(vim.fn.expand(candidate.path), ":p")
+    local resolved = resolve_path(candidate.path, cwd)
     local stat = vim.uv.fs_stat(resolved)
     if stat and stat.type == "file" then
-      return candidate.path, candidate.lnum, candidate.col, candidate.text
+      return resolved, candidate.lnum, candidate.col, candidate.text
     end
   end
 
   local candidate = candidates[1]
-  return candidate.path, candidate.lnum, candidate.col, candidate.text
+  return resolve_path(candidate.path, cwd), candidate.lnum, candidate.col, candidate.text
 end
 
+---Parse `rg --vimgrep` output, resolving relative paths against the directory rg ran in.
 ---@param output string
+---@param cwd string
 ---@return PeekstackLocation[]
-local function parse_rg_output(output)
+local function parse_rg_output(output, cwd)
   local items = {}
   for _, line in ipairs(vim.split(output, "\n", { trimempty = true })) do
-    local path, lnum, col, text = parse_rg_line(line)
+    local path, lnum, col, text = parse_rg_line(line, cwd)
     if path and lnum and col then
-      local uri = fs.fname_to_uri(vim.fn.fnamemodify(path, ":p"))
+      local uri = fs.fname_to_uri(path)
       local loc = location.normalize({
         uri = uri,
         range = {
@@ -104,20 +117,24 @@ function M.search(_, cb)
     return
   end
 
+  -- Pin the directory before prompting so a later :cd cannot split the search
+  -- and the path resolution between two directories.
+  local cwd = vim.fn.getcwd()
+
   vim.ui.input({ prompt = "rg > " }, function(query)
     if not query or query == "" then
       cb({})
       return
     end
 
-    vim.system({ "rg", "--vimgrep", "--max-count=1000", "--", query }, { text = true }, function(result)
+    vim.system({ "rg", "--vimgrep", "--max-count=1000", "--", query }, { cwd = cwd, text = true }, function(result)
       vim.schedule(function()
         if result.code ~= 0 and result.code ~= 1 then
           notify.warn(format_failure_message(result.stderr))
           cb({})
           return
         end
-        cb(parse_rg_output(result.stdout or ""))
+        cb(parse_rg_output(result.stdout or "", cwd))
       end)
     end)
   end)
