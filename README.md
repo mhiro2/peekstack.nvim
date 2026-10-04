@@ -389,9 +389,12 @@ Auto persist only runs inside a git repository and always uses the repository se
 
 ## 🔁 Re-running setup
 
-Calling `require("peekstack").setup()` again replaces config, re-registers providers, commands,
-autocmds, picker backends, and auto-persist hooks. Providers and pickers registered with
-`register_provider()` / `register_picker()` are kept.
+Calling `require("peekstack").setup()` again replaces config, re-registers the built-in providers and
+picker backends for the new config, and recreates the autocmds and auto-persist hooks. Providers and
+pickers registered with `register_provider()` / `register_picker()` are kept.
+
+User commands are created by the first `setup()` call and reused afterwards; they read the config
+when they run, so they always use the latest settings.
 
 It does not migrate existing popup windows, stack entries, or history in place. Updated settings apply
 to future actions, and to existing stacks only after those popups are reopened, restored, or recreated.

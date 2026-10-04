@@ -267,7 +267,8 @@ For picker-agnostic integration:
 ==============================================================================
 COMMANDS                                                   *peekstack-cmds*
 
-Commands are registered after `setup()` is called.
+Commands are created by the first `setup()` call
+(see |peekstack-setup-reload|).
 
 :PeekstackStack                              *:PeekstackStack*
     Open the stack view panel listing all active popups.
@@ -511,10 +512,13 @@ paths or symbol names are sensitive.
 ==============================================================================
 SETUP RELOAD                                            *peekstack-setup-reload*
 
-Calling `require("peekstack").setup()` again replaces config and re-registers
-providers, commands, autocmds, picker backends, and auto-persist hooks.
-Providers and pickers registered with `register_provider()` /
-`register_picker()` are kept.
+Calling `require("peekstack").setup()` again replaces config, re-registers
+the built-in providers and picker backends for the new config, and recreates
+the autocmds and auto-persist hooks. Providers and pickers registered with
+`register_provider()` / `register_picker()` are kept.
+
+User commands are created by the first `setup()` call and reused afterwards;
+they read the config when they run, so they always use the latest settings.
 
 It does not migrate existing popup windows, stack entries, or history in
 place. Updated settings apply to future actions, and to existing stacks only
