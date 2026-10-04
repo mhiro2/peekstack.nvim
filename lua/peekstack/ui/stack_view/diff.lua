@@ -131,12 +131,17 @@ function M.apply(bufnr, old_keys, model, preview_cache)
   local start_idx, old_end, new_end = diff_range(old_keys, new_keys)
   if start_idx then
     local replace = slice_lines(model.lines, start_idx, new_end)
+    -- Without previous keys the buffer only holds the empty line of a new
+    -- buffer, so replace it instead of inserting above it.
+    local old_stop = #old_keys == 0 and -1 or old_end
 
+    -- Clear while the old rows are still in place: after the replacement the
+    -- unchanged suffix may have moved into the old range.
+    vim.api.nvim_buf_clear_namespace(bufnr, NS, start_idx - 1, old_stop)
     vim.bo[bufnr].modifiable = true
-    vim.api.nvim_buf_set_lines(bufnr, start_idx - 1, old_end, false, replace)
+    vim.api.nvim_buf_set_lines(bufnr, start_idx - 1, old_stop, false, replace)
     vim.bo[bufnr].modifiable = false
 
-    vim.api.nvim_buf_clear_namespace(bufnr, NS, start_idx - 1, old_end)
     apply_highlights_in_range(bufnr, model.highlights, model.preview_lines, start_idx, new_end, preview_cache)
   end
 
