@@ -562,6 +562,17 @@ BUFFER MODES                                           *peekstack-buffer-modes*
              `ui.popup.source.confirm_on_close` prompts on close if modified
              `ui.popup.source.prevent_auto_close_if_modified` blocks auto-close
 
+A copy popup is a snapshot taken when it opens (up to 500 lines around the
+target in large files) and does not follow later changes to the file.
+Edits made in it with `ui.popup.editable = true` stay in the popup: they are
+never written to the file and are dropped when it closes, so history,
+sessions and promote reopen the file itself.
+
+A source popup edits the real buffer, so `:w` saves the file. Closing the
+popup keeps the buffer loaded with any unsaved changes; `confirm_on_close`
+asks before the close key (`ui.keys.close`) closes a modified popup, and
+`prevent_auto_close_if_modified` keeps auto close away from it.
+
 Switching buffers inside a popup (`:buffer`, `:edit`) keeps the popup and
 makes it follow the new buffer as a "source" popup at the cursor: its
 title, keymaps, provider requests and history entry refer to that buffer.
@@ -574,6 +585,14 @@ STACK VIEW                                             *peekstack-stack-view*
     "right"  (default) right-side panel
     "left"             left-side panel
     "bottom"           bottom panel across full editor width
+
+The panel is read-only and closes as soon as focus leaves it, so `<CR>`,
+which moves to the selected popup, also closes it. Motions, visual
+selection and yanking work as usual; editing commands fail because the
+buffer is not modifiable, and `/` filters the list instead of searching.
+
+`z` toggles zoom of the top popup (the most recently pushed one), not of
+the selected entry, the same as |:PeekstackZoom|.
 
 ==============================================================================
 EVENTS                                                   *peekstack-events*
@@ -615,7 +634,7 @@ Default keymaps inside popup windows:
 
 Stack view keymaps:
 
-    `<CR>`        Focus the selected popup
+    `<CR>`        Focus the selected popup (closes the panel)
     `dd`          Close the selected popup
     `u`           Undo close (restore last closed popup)
     `U`           Restore all closed popups
@@ -625,7 +644,7 @@ Stack view keymaps:
     `/`           Filter the list
     `gg/G`        Jump to first/last stack item
     `j/k`         Move cursor by stack item (skip header/preview lines)
-    `z`           Toggle zoom (maximize top popup)
+    `z`           Toggle zoom of the top popup (not the selected entry)
     `?`           Toggle help
     `q`           Close the stack view
 

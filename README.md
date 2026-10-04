@@ -136,7 +136,7 @@ Defaults inside popup windows:
 
 Defaults in stack view:
 
-- `<CR>` — focus selected popup
+- `<CR>` — focus selected popup (moves to it, which closes the panel)
 - `dd` — close selected popup
 - `u` — undo close (restore last)
 - `U` — restore all closed popups
@@ -146,9 +146,13 @@ Defaults in stack view:
 - `/` — filter
 - `gg/G` — jump to first/last stack item
 - `j/k` — move cursor by stack item (skip header/preview lines)
-- `z` — toggle zoom (maximize top popup)
+- `z` — toggle zoom of the top popup (the most recently pushed one, not the selected entry)
 - `?` — help
 - `q` — close
+
+The stack view is a read-only panel that closes as soon as focus leaves it. Motions, visual selection
+and yanking work as usual; editing commands fail because the buffer is not modifiable, and `/` filters
+the list instead of searching.
 
 ## ⚙️ Configuration
 
@@ -422,6 +426,15 @@ to future actions, and to existing stacks only after those popups are reopened, 
 - **copy** (default): scratch buffer with copied lines; editing is controlled by `ui.popup.editable`
 - **source**: uses the real source buffer; useful for editing, with safety options in
   `ui.popup.source` (`confirm_on_close`, `prevent_auto_close_if_modified`)
+
+A copy popup is a snapshot taken when it opens (up to 500 lines around the target in large files)
+and does not follow later changes to the file. Edits made in it with `ui.popup.editable = true`
+stay in the popup: they are never written to the file and are dropped when it closes, so history,
+sessions and promote reopen the file itself.
+
+A source popup edits the real buffer, so `:w` saves the file. Closing the popup keeps the buffer
+loaded with any unsaved changes; `confirm_on_close` asks before the close key closes a modified
+popup, and `prevent_auto_close_if_modified` keeps auto close away from it.
 
 Switching buffers inside a popup (`:buffer`, `:edit`) keeps the popup and makes it follow the new buffer
 as a source popup at the cursor, so its title, keymaps, provider requests and history refer to that buffer.
