@@ -105,6 +105,11 @@ Built-in provider names:
 `diagnostics.under_cursor`, `diagnostics.in_buffer`, `file.under_cursor`, `grep.search`, `marks.buffer`,
 `marks.global`, `marks.all` (marks require their provider enabled; `grep.search` requires `rg`).
 
+The marks providers show the characters in `providers.marks.include`, letters only by default.
+Numbered marks (`0`-`9`) appear only after adding them to `include`. Special marks
+(`` ' ` ^ . < > [ ] " ``) need both `include_special = true` and their character in `include`;
+`include_special` alone adds nothing.
+
 ## 💻 Commands
 
 - `:PeekstackStack` — open the stack view panel
@@ -136,7 +141,7 @@ Defaults inside popup windows:
 
 Defaults in stack view:
 
-- `<CR>` — focus selected popup
+- `<CR>` — focus selected popup (moves to it, which closes the panel)
 - `dd` — close selected popup
 - `u` — undo close (restore last)
 - `U` — restore all closed popups
@@ -146,9 +151,13 @@ Defaults in stack view:
 - `/` — filter
 - `gg/G` — jump to first/last stack item
 - `j/k` — move cursor by stack item (skip header/preview lines)
-- `z` — toggle zoom (maximize top popup)
+- `z` — toggle zoom of the top popup (the most recently pushed one, not the selected entry)
 - `?` — help
 - `q` — close
+
+The stack view is a read-only panel that closes as soon as focus leaves it. Motions, visual selection
+and yanking work as usual; editing commands fail because the buffer is not modifiable, and `/` filters
+the list instead of searching.
 
 ## ⚙️ Configuration
 
@@ -352,15 +361,28 @@ When `persist.enabled = true`, `PeekstackSaveSession` uses `persist.session.defa
 if you do not pass a name. If `persist.session.prompt_if_missing = true`, you'll be prompted
 for a name instead of using the default.
 
+A session holds one stack: the popups of the current window (or of the window the stack view
+belongs to), oldest first, keeping the newest `persist.max_items`. Only locations, titles, pins,
+buffer modes and parent links are saved; edits made in copy-mode popups are not.
+Restoring a session adds its popups to the current window's stack and keeps the popups already there.
+
 > [!WARNING]
 > Persistence uses repository storage when the current working directory is inside a git repository.
 > Outside a git repository, sessions fall back to cwd-based storage.
 > The storage is resolved when a save, delete, or rename is requested, so changing directory while
 > it is still being written does not move it to another repository.
 
-If the storage file cannot be read (an I/O error, invalid JSON, or a version this release does not
-know), peekstack warns and refuses to save, delete, or rename sessions in it instead of replacing
-it with an empty store. Fix or move the file to recover.
+Each git repository (each worktree, found by looking upward from the current window's working
+directory, so `:lcd` / `:tcd` count) has its own storage file, and session names are scoped to it.
+
+- **Empty stacks**: saving an empty stack replaces the session with an empty one; restoring an empty
+  session reports that there is no saved session. Use `:PeekstackDeleteSession` to remove one.
+- **Skipped items**: entries whose file no longer exists or that are malformed are skipped on restore.
+  The warning lists the first five skipped files with their reasons, and the `PeekstackRestore` event
+  data carries every skipped item as `skipped`.
+- **Unreadable storage**: if the storage file cannot be read (an I/O error, invalid JSON, or a version
+  this release does not know), peekstack warns and refuses to save, delete, or rename sessions in it
+  instead of replacing it with an empty store. Fix or move the file to recover.
 
 > [!IMPORTANT]
 > Sessions are written as plain JSON under `vim.fn.stdpath("state") .. "/peekstack/"`. Each entry
@@ -379,19 +401,25 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 - **Save on leave** on `VimLeavePre` if `save_on_leave = true`
 
 The auto session holds a single stack: the one that changed most recently, saved to the repository
-that was current when it changed. Leaving Neovim saves that stack even if the cursor is in another
-window, skips the save if no stack changed during the session, and keeps the stored session as-is
-once that stack's window has been closed. The save on leave waits up to one second for earlier
-saves to finish; if they are still writing, it is skipped with a warning rather than racing them.
+that was current when it changed. Closing every popup of that stack saves it empty, so nothing is
+restored next time.
+
+Leaving Neovim saves that stack synchronously, even if the cursor is in another window. It skips the
+save if no stack changed during the session, and keeps the stored session as-is once that stack's
+window has been closed. The save on leave waits up to one second for earlier saves to finish; if they
+are still writing, it is skipped with a warning rather than racing them.
 
 Auto persist only runs inside a git repository and always uses the repository session storage. Make sure
 `persist.enabled = true` as well.
 
 ## 🔁 Re-running setup
 
-Calling `require("peekstack").setup()` again replaces config, re-registers providers, commands,
-autocmds, picker backends, and auto-persist hooks. Providers and pickers registered with
-`register_provider()` / `register_picker()` are kept.
+Calling `require("peekstack").setup()` again replaces config, re-registers the built-in providers and
+picker backends for the new config, and recreates the autocmds and auto-persist hooks. Providers and
+pickers registered with `register_provider()` / `register_picker()` are kept.
+
+User commands are created by the first `setup()` call and reused afterwards; they read the config
+when they run, so they always use the latest settings.
 
 It does not migrate existing popup windows, stack entries, or history in place. Updated settings apply
 to future actions, and to existing stacks only after those popups are reopened, restored, or recreated.
@@ -403,6 +431,15 @@ to future actions, and to existing stacks only after those popups are reopened, 
 - **copy** (default): scratch buffer with copied lines; editing is controlled by `ui.popup.editable`
 - **source**: uses the real source buffer; useful for editing, with safety options in
   `ui.popup.source` (`confirm_on_close`, `prevent_auto_close_if_modified`)
+
+A copy popup is a snapshot taken when it opens (up to 500 lines around the target in large files)
+and does not follow later changes to the file. Edits made in it with `ui.popup.editable = true`
+stay in the popup: they are never written to the file and are dropped when it closes, so history,
+sessions and promote reopen the file itself.
+
+A source popup edits the real buffer, so `:w` saves the file. Closing the popup keeps the buffer
+loaded with any unsaved changes; `confirm_on_close` asks before the close key closes a modified
+popup, and `prevent_auto_close_if_modified` keeps auto close away from it.
 
 Switching buffers inside a popup (`:buffer`, `:edit`) keeps the popup and makes it follow the new buffer
 as a source popup at the cursor, so its title, keymaps, provider requests and history refer to that buffer.

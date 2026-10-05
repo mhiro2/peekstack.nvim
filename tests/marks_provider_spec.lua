@@ -127,6 +127,28 @@ describe("marks provider", function()
       vim.api.nvim_buf_delete(bufnr, { force = true })
     end)
 
+    it("adds special marks only when they are also listed in include", function()
+      local bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "line1", "line2", "line3" })
+      vim.api.nvim_set_current_buf(bufnr)
+      vim.api.nvim_buf_set_mark(bufnr, "<", 2, 0, {})
+
+      local function has_mark(include)
+        local locations = marks_util.collect("buffer", bufnr, { include = include, include_special = true })
+        for _, loc in ipairs(locations) do
+          if loc.text and loc.text:find("[<]", 1, true) then
+            return true
+          end
+        end
+        return false
+      end
+
+      assert.is_false(has_mark("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+      assert.is_true(has_mark("<"))
+
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
     it("returns locations with valid structure", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello world", "second line" })

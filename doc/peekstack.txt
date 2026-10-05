@@ -267,7 +267,8 @@ For picker-agnostic integration:
 ==============================================================================
 COMMANDS                                                   *peekstack-cmds*
 
-Commands are registered after `setup()` is called.
+Commands are created by the first `setup()` call
+(see |peekstack-setup-reload|).
 
 :PeekstackStack                              *:PeekstackStack*
     Open the stack view panel listing all active popups.
@@ -355,8 +356,24 @@ Marks (requires providers.marks.enable = true):
     marks.buffer               buffer-local marks
     marks.global               global marks
     marks.all                  buffer + global marks
-    Filter with providers.marks.include / include_special.
     Scope is selected by the provider name.
+
+    `providers.marks.include` lists the mark characters to show; the
+    default is the letters `a`-`z` and `A`-`Z`. Numbered marks (`0`-`9`)
+    are shown only after adding them to `include`. Special marks
+    (`'` `` ` `` `^` `.` `<` `>` `[` `]` `"`) need both
+    `include_special = true` and their character in `include`;
+    `include_special` alone adds nothing.
+>lua
+    providers = {
+      marks = {
+        enable = true,
+        include = "abcdefghijklmnopqrstuvwxyz"
+          .. "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.^",
+        include_special = true,
+      },
+    }
+<
 
 ==============================================================================
 API                                                       *peekstack-api*
@@ -463,16 +480,38 @@ PERSIST                                                   *peekstack-persist*
 
 Persistence is disabled by default. Enable with `persist.enabled = true`.
 
+A session holds one stack: the popups of the current window (or of the
+window the stack view belongs to), oldest first, keeping the newest
+`persist.max_items`. Only locations, titles, pins, buffer modes and parent
+links are saved; edits made in copy-mode popups are not. Restoring a
+session adds its popups to the current window's stack and keeps the popups
+already there.
+
 Persistence uses repository storage when the current working directory is
 inside a git repository. Outside a git repository, it falls back to
-cwd-based storage. The storage is resolved when a save, delete, or rename
-is requested, so changing directory while it is still being written does
-not move it to another repository.
+cwd-based storage. Each git repository (each worktree, found by looking
+upward from the current window's working directory, so |:lcd| and |:tcd|
+count) has its own storage file, and session names are scoped to it. The
+storage is resolved when a save, delete, or rename is requested, so
+changing directory while it is still being written does not move it to
+another repository.
 
-If the storage file cannot be read (an I/O error, invalid JSON, or a
-version this release does not know), peekstack warns and refuses to save,
-delete, or rename sessions in it instead of replacing it with an empty
-store. Fix or move the file to recover.
+Empty stacks:
+    Saving an empty stack replaces the session with an empty one; restoring
+    an empty session reports that there is no saved session. Use
+    |:PeekstackDeleteSession| to remove one.
+
+Skipped items:
+    Entries whose file no longer exists or that are malformed are skipped
+    on restore. The warning lists the first five skipped files with their
+    reasons, and the `PeekstackRestore` event data carries every skipped
+    item as `skipped` (a list of `{ uri?, reason }`).
+
+Unreadable storage:
+    If the storage file cannot be read (an I/O error, invalid JSON, or a
+    version this release does not know), peekstack warns and refuses to
+    save, delete, or rename sessions in it instead of replacing it with an
+    empty store. Fix or move the file to recover.
 
 `persist.session.default_name` is used when a name is omitted, unless
 `persist.session.prompt_if_missing` is true.
@@ -488,11 +527,15 @@ Auto persistence (`persist.auto`) requires `persist.enabled = true`:
 
 The auto session holds a single stack: the one that changed most
 recently, saved to the repository that was current when it changed.
-Leaving Neovim saves that stack even if the cursor is in another window,
-skips the save if no stack changed during the session, and keeps the
-stored session as-is once that stack's window has been closed. The save on
-leave waits up to one second for earlier saves to finish; if they are
-still writing, it is skipped with a warning rather than racing them.
+Closing every popup of that stack saves it empty, so nothing is restored
+next time.
+
+Leaving Neovim saves that stack synchronously, even if the cursor is in
+another window. It skips the save if no stack changed during the session,
+and keeps the stored session as-is once that stack's window has been
+closed. The save on leave waits up to one second for earlier saves to
+finish; if they are still writing, it is skipped with a warning rather
+than racing them.
 
 Auto persistence runs only inside a git repository and always uses
 the repository session storage.
@@ -511,10 +554,13 @@ paths or symbol names are sensitive.
 ==============================================================================
 SETUP RELOAD                                            *peekstack-setup-reload*
 
-Calling `require("peekstack").setup()` again replaces config and re-registers
-providers, commands, autocmds, picker backends, and auto-persist hooks.
-Providers and pickers registered with `register_provider()` /
-`register_picker()` are kept.
+Calling `require("peekstack").setup()` again replaces config, re-registers
+the built-in providers and picker backends for the new config, and recreates
+the autocmds and auto-persist hooks. Providers and pickers registered with
+`register_provider()` / `register_picker()` are kept.
+
+User commands are created by the first `setup()` call and reused afterwards;
+they read the config when they run, so they always use the latest settings.
 
 It does not migrate existing popup windows, stack entries, or history in
 place. Updated settings apply to future actions, and to existing stacks only
@@ -532,6 +578,17 @@ BUFFER MODES                                           *peekstack-buffer-modes*
              `ui.popup.source.confirm_on_close` prompts on close if modified
              `ui.popup.source.prevent_auto_close_if_modified` blocks auto-close
 
+A copy popup is a snapshot taken when it opens (up to 500 lines around the
+target in large files) and does not follow later changes to the file.
+Edits made in it with `ui.popup.editable = true` stay in the popup: they are
+never written to the file and are dropped when it closes, so history,
+sessions and promote reopen the file itself.
+
+A source popup edits the real buffer, so `:w` saves the file. Closing the
+popup keeps the buffer loaded with any unsaved changes; `confirm_on_close`
+asks before the close key (`ui.keys.close`) closes a modified popup, and
+`prevent_auto_close_if_modified` keeps auto close away from it.
+
 Switching buffers inside a popup (`:buffer`, `:edit`) keeps the popup and
 makes it follow the new buffer as a "source" popup at the cursor: its
 title, keymaps, provider requests and history entry refer to that buffer.
@@ -544,6 +601,14 @@ STACK VIEW                                             *peekstack-stack-view*
     "right"  (default) right-side panel
     "left"             left-side panel
     "bottom"           bottom panel across full editor width
+
+The panel is read-only and closes as soon as focus leaves it, so `<CR>`,
+which moves to the selected popup, also closes it. Motions, visual
+selection and yanking work as usual; editing commands fail because the
+buffer is not modifiable, and `/` filters the list instead of searching.
+
+`z` toggles zoom of the top popup (the most recently pushed one), not of
+the selected entry, the same as |:PeekstackZoom|.
 
 ==============================================================================
 EVENTS                                                   *peekstack-events*
@@ -566,7 +631,7 @@ Persist events:
 
 Event data keys (vary per event):
     event, popup_id, winid, bufnr, root_winid, provider, location
-    session, item_count, from, to, action, ephemeral
+    session, item_count, skipped, from, to, action, ephemeral
 
 ==============================================================================
 KEYMAPS                                                *peekstack-keymaps*
@@ -585,7 +650,7 @@ Default keymaps inside popup windows:
 
 Stack view keymaps:
 
-    `<CR>`        Focus the selected popup
+    `<CR>`        Focus the selected popup (closes the panel)
     `dd`          Close the selected popup
     `u`           Undo close (restore last closed popup)
     `U`           Restore all closed popups
@@ -595,7 +660,7 @@ Stack view keymaps:
     `/`           Filter the list
     `gg/G`        Jump to first/last stack item
     `j/k`         Move cursor by stack item (skip header/preview lines)
-    `z`           Toggle zoom (maximize top popup)
+    `z`           Toggle zoom of the top popup (not the selected entry)
     `?`           Toggle help
     `q`           Close the stack view
 

@@ -21,11 +21,15 @@ end
 ---@param item PeekstackSessionItem
 ---@param id_remap table<integer, integer>
 ---@param root_winid integer stack root frozen when the restore was requested
----@return boolean restored whether a popup was actually created
+---@return string? skip_reason nil when a popup was created
 local function restore_item(item, id_remap, root_winid)
   local loc = location.normalize({ uri = item.uri, range = item.range }, item.provider or "persist")
   if not loc then
-    return false
+    return "invalid location"
+  end
+  -- A deleted or moved file would otherwise come back as an empty popup.
+  if vim.startswith(loc.uri, "file://") and not vim.uv.fs_stat(vim.uri_to_fname(loc.uri)) then
+    return "file not found"
   end
 
   local parent_id = item.parent_popup_id
@@ -47,7 +51,7 @@ local function restore_item(item, id_remap, root_winid)
     root_winid = root_winid,
   })
   if not model then
-    return false
+    return "failed to open popup"
   end
 
   if item.pinned then
@@ -56,7 +60,31 @@ local function restore_item(item, id_remap, root_winid)
   if item.popup_id then
     id_remap[item.popup_id] = model.id
   end
-  return true
+  return nil
+end
+
+---Maximum number of skipped items listed in the restore warning.
+local MAX_REPORTED_SKIPS = 5
+
+---@param name string
+---@param skipped PeekstackSessionSkippedItem[]
+---@return string
+local function format_skipped(name, skipped)
+  local lines = { string.format("Session restored with %d skipped item(s): %s", #skipped, name) }
+  for idx = 1, math.min(#skipped, MAX_REPORTED_SKIPS) do
+    local entry = skipped[idx]
+    local target = "<unknown>"
+    if entry.uri then
+      -- A uri without a scheme makes vim.uri_to_fname() throw.
+      local ok, fname = pcall(vim.uri_to_fname, entry.uri)
+      target = ok and vim.fn.fnamemodify(fname, ":~:.") or entry.uri
+    end
+    table.insert(lines, string.format("  %s: %s", target, entry.reason))
+  end
+  if #skipped > MAX_REPORTED_SKIPS then
+    table.insert(lines, string.format("  ... and %d more", #skipped - MAX_REPORTED_SKIPS))
+  end
+  return table.concat(lines, "\n")
 end
 
 ---@param success boolean
@@ -162,14 +190,27 @@ function M.restore(name, opts)
     ---@type table<integer, integer>
     local id_remap = {}
     local restored_count = 0
+    ---@type PeekstackSessionSkippedItem[]
+    local skipped = {}
     for _, item in ipairs(session.items) do
       -- Isolate each item: a single corrupt entry (bad type or a push failure)
       -- must not abort restoring the rest of the session.
+      local reason
       if is_valid_item(item) then
-        local ok, restored = pcall(restore_item, item, id_remap, root_winid)
-        if ok and restored then
-          restored_count = restored_count + 1
+        local ok, result = pcall(restore_item, item, id_remap, root_winid)
+        if ok then
+          reason = result
+        else
+          reason = tostring(result)
         end
+      else
+        reason = "invalid entry"
+      end
+      if reason then
+        local uri = type(item) == "table" and type(item.uri) == "string" and item.uri or nil
+        table.insert(skipped, { uri = uri, reason = reason })
+      else
+        restored_count = restored_count + 1
       end
     end
 
@@ -177,11 +218,9 @@ function M.restore(name, opts)
       stack.reflow(root_winid)
     end
 
-    local skipped = #session.items - restored_count
-
     if not silent then
-      if skipped > 0 then
-        notify.warn(string.format("Session restored with %d skipped item(s): %s", skipped, resolved_name))
+      if #skipped > 0 then
+        notify.warn(format_skipped(resolved_name, skipped))
       else
         notify.info("Session restored: " .. resolved_name)
       end
@@ -190,6 +229,7 @@ function M.restore(name, opts)
     user_events.emit("PeekstackRestore", {
       session = resolved_name,
       item_count = restored_count,
+      skipped = skipped,
     })
     finish(restored_count > 0)
   end)

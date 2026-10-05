@@ -32,6 +32,10 @@
 ---@field buffer_mode? "copy"|"source"
 ---@field parent_popup_id? integer
 
+---@class PeekstackSessionSkippedItem
+---@field uri? string missing when the stored entry had no usable uri
+---@field reason string why the item was not restored
+
 ---@class PeekstackSessionMeta
 ---@field created_at integer
 ---@field updated_at integer

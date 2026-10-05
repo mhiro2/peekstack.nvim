@@ -635,6 +635,78 @@ describe("peekstack.persist.sessions", function()
     assert.is_nil(sessions.broken)
   end)
 
+  it("should report each skipped item with its reason when restoring", function()
+    local kept = make_file("restore_kept", { "line" })
+    local missing = vim.fn.tempname() .. "_restore_missing.lua"
+    local range = {
+      start = { line = 0, character = 0 },
+      ["end"] = { line = 0, character = 0 },
+    }
+    write_and_wait(test_scope, {
+      version = 2,
+      sessions = {
+        partial = {
+          items = {
+            { uri = vim.uri_from_fname(kept), range = range },
+            { uri = vim.uri_from_fname(missing), range = range },
+            { range = range },
+            { uri = "broken", range = range },
+            42,
+          },
+          meta = { created_at = 1, updated_at = 1 },
+        },
+      },
+    })
+    persist._reset_cache()
+
+    local original_notify = vim.notify
+    local warnings = {}
+    vim.notify = function(msg, level)
+      if level == vim.log.levels.WARN and msg:find("skipped item(s)", 1, true) then
+        table.insert(warnings, msg)
+      end
+    end
+    local event_data = nil
+    local group = vim.api.nvim_create_augroup("PeekstackRestoreSkipTest", { clear = true })
+    vim.api.nvim_create_autocmd("User", {
+      group = group,
+      pattern = "PeekstackRestore",
+      callback = function(args)
+        event_data = args.data
+      end,
+    })
+
+    local restored = nil
+    persist.restore("partial", {
+      on_done = function(result)
+        restored = result
+      end,
+    })
+    local waited = vim.wait(wait_timeout_ms, function()
+      return restored ~= nil
+    end, wait_interval_ms)
+    vim.notify = original_notify
+    vim.api.nvim_del_augroup_by_id(group)
+    assert.is_true(waited, "Timed out waiting for restore")
+
+    assert.is_true(restored)
+    assert.equals(1, #stack.list())
+    assert.equals(1, #warnings)
+    assert.truthy(warnings[1]:find("4 skipped item(s): partial", 1, true))
+    assert.truthy(warnings[1]:find(vim.fn.fnamemodify(missing, ":~:.") .. ": file not found", 1, true))
+    assert.truthy(warnings[1]:find("<unknown>: invalid entry", 1, true))
+    assert.truthy(warnings[1]:find("broken: failed to open popup", 1, true))
+
+    assert.is_not_nil(event_data)
+    assert.equals(1, event_data.item_count)
+    assert.same({
+      { uri = vim.uri_from_fname(missing), reason = "file not found" },
+      { reason = "invalid entry" },
+      { uri = "broken", reason = "failed to open popup" },
+      { reason = "invalid entry" },
+    }, event_data.skipped)
+  end)
+
   it("should rename a session", function()
     push_popup("rename_session", { title = "Rename me" })
     persist.save_current("old_name", { silent = true, sync = true })
@@ -725,13 +797,13 @@ describe("peekstack.persist.sessions", function()
         batched = {
           items = {
             {
-              uri = "file:///tmp/a.lua",
+              uri = vim.uri_from_fname(make_file("a")),
               range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
               provider = "test",
               ts = os.time(),
             },
             {
-              uri = "file:///tmp/b.lua",
+              uri = vim.uri_from_fname(make_file("b")),
               range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
               provider = "test",
               ts = os.time(),
@@ -793,7 +865,7 @@ describe("peekstack.persist.sessions", function()
         optional_fields = {
           items = {
             {
-              uri = "file:///tmp/optional.lua",
+              uri = vim.uri_from_fname(make_file("optional")),
               range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
               ts = os.time(),
             },
@@ -1041,7 +1113,7 @@ describe("peekstack.persist.sessions", function()
         restore_fields = {
           items = {
             {
-              uri = "file:///tmp/a.lua",
+              uri = vim.uri_from_fname(make_file("a")),
               range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
               provider = "test",
               ts = os.time(),
@@ -1104,14 +1176,14 @@ describe("peekstack.persist.sessions", function()
         remap_parent = {
           items = {
             {
-              uri = "file:///tmp/parent.lua",
+              uri = vim.uri_from_fname(make_file("parent")),
               range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
               provider = "test",
               ts = os.time(),
               popup_id = 100,
             },
             {
-              uri = "file:///tmp/child.lua",
+              uri = vim.uri_from_fname(make_file("child")),
               range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
               provider = "test",
               ts = os.time(),
@@ -1176,7 +1248,7 @@ describe("peekstack.persist.sessions", function()
         orphan_parent = {
           items = {
             {
-              uri = "file:///tmp/orphan.lua",
+              uri = vim.uri_from_fname(make_file("orphan")),
               range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
               provider = "test",
               ts = os.time(),
@@ -1228,6 +1300,8 @@ describe("peekstack.persist.sessions", function()
   it("should skip corrupt items and still restore valid ones", function()
     local original_push = stack.push
     local original_reflow = stack.reflow
+    local valid_a = vim.uri_from_fname(make_file("valid_a"))
+    local valid_b = vim.uri_from_fname(make_file("valid_b"))
 
     write_and_wait(test_scope, {
       version = 2,
@@ -1235,7 +1309,7 @@ describe("peekstack.persist.sessions", function()
         corrupt_items = {
           items = {
             {
-              uri = "file:///tmp/valid_a.lua",
+              uri = valid_a,
               range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
               provider = "test",
               ts = os.time(),
@@ -1248,13 +1322,13 @@ describe("peekstack.persist.sessions", function()
             },
             -- Non-table range: fails the coarse type check.
             {
-              uri = "file:///tmp/corrupt.lua",
+              uri = vim.uri_from_fname(make_file("corrupt")),
               range = 42,
               provider = "test",
               ts = os.time(),
             },
             {
-              uri = "file:///tmp/valid_b.lua",
+              uri = valid_b,
               range = { start = { line = 2, character = 0 }, ["end"] = { line = 2, character = 1 } },
               provider = "test",
               ts = os.time(),
@@ -1292,8 +1366,8 @@ describe("peekstack.persist.sessions", function()
 
       assert.is_true(restored)
       assert.equals(2, #pushed)
-      assert.equals("file:///tmp/valid_a.lua", pushed[1])
-      assert.equals("file:///tmp/valid_b.lua", pushed[2])
+      assert.equals(valid_a, pushed[1])
+      assert.equals(valid_b, pushed[2])
       assert.equals(1, reflow_calls)
     end)
 
@@ -1308,6 +1382,9 @@ describe("peekstack.persist.sessions", function()
   it("should isolate a push failure to a single item when restoring", function()
     local original_push = stack.push
     local original_reflow = stack.reflow
+    local ok1 = vim.uri_from_fname(make_file("ok1"))
+    local boom = vim.uri_from_fname(make_file("boom"))
+    local ok2 = vim.uri_from_fname(make_file("ok2"))
 
     write_and_wait(test_scope, {
       version = 2,
@@ -1315,19 +1392,19 @@ describe("peekstack.persist.sessions", function()
         push_failure = {
           items = {
             {
-              uri = "file:///tmp/ok1.lua",
+              uri = ok1,
               range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
               provider = "test",
               ts = os.time(),
             },
             {
-              uri = "file:///tmp/boom.lua",
+              uri = boom,
               range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
               provider = "test",
               ts = os.time(),
             },
             {
-              uri = "file:///tmp/ok2.lua",
+              uri = ok2,
               range = { start = { line = 2, character = 0 }, ["end"] = { line = 2, character = 1 } },
               provider = "test",
               ts = os.time(),
@@ -1343,7 +1420,7 @@ describe("peekstack.persist.sessions", function()
 
     local ok, err = pcall(function()
       stack.push = function(loc, _opts)
-        if loc.uri == "file:///tmp/boom.lua" then
+        if loc.uri == boom then
           error("simulated push failure")
         end
         table.insert(pushed, loc.uri)
@@ -1369,8 +1446,8 @@ describe("peekstack.persist.sessions", function()
       -- The failing item is isolated; the surrounding valid items still restore.
       assert.is_true(restored)
       assert.equals(2, #pushed)
-      assert.equals("file:///tmp/ok1.lua", pushed[1])
-      assert.equals("file:///tmp/ok2.lua", pushed[2])
+      assert.equals(ok1, pushed[1])
+      assert.equals(ok2, pushed[2])
       assert.equals(1, reflow_calls)
     end)
 
@@ -1392,7 +1469,7 @@ describe("peekstack.persist.sessions", function()
         all_fail = {
           items = {
             {
-              uri = "file:///tmp/unrestorable.lua",
+              uri = vim.uri_from_fname(make_file("unrestorable")),
               range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 1 } },
               provider = "test",
               ts = os.time(),
