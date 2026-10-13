@@ -371,7 +371,10 @@ Each popup comes back in the buffer mode it was opened with, whatever `ui.popup.
 > Persistence uses repository storage when the current working directory is inside a git repository.
 > Outside a git repository, sessions fall back to cwd-based storage.
 > The storage is resolved when a save, delete, or rename is requested, so changing directory while
-> it is still being written does not move it to another repository.
+> it is still being written does not move it to another repository. Session commands resolve it, and
+> the window whose stack they act on, when the command runs: changing directory or window while a
+> name prompt, session picker, or delete confirmation is open does not redirect them, and a save or
+> restore is dropped if that window has been closed by then.
 
 Each git repository (each worktree, found by looking upward from the current window's working
 directory, so `:lcd` / `:tcd` count) has its own storage file, and session names are scoped to it.

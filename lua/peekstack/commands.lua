@@ -67,12 +67,32 @@ local function complete_session_names(arg_lead)
   return filter_by_prefix(list_session_names(), arg_lead)
 end
 
+---Storage and stack a session command acts on.
+---Prompts and pickers answer asynchronously, and the user may change
+---directory or window before they do, so both are fixed when the command
+---runs and handed to every later step.
+---@class PeekstackSessionCommandTarget
+---@field store_path string
+---@field root_winid integer
+
+---@return PeekstackSessionCommandTarget
+local function capture_session_target()
+  return {
+    store_path = require("peekstack.persist.orchestrator").store_path(),
+    -- The resolved stack root, so closing the popup or stack view the command
+    -- ran from does not lose the stack; saves and restores are dropped once
+    -- the root window itself is gone.
+    root_winid = require("peekstack.persist.sessions").resolve_root_winid() --[[@as integer]],
+  }
+end
+
 ---Confirm and delete a named session.
 ---@param name string
-local function confirm_delete_session(name)
+---@param target PeekstackSessionCommandTarget
+local function confirm_delete_session(name, target)
   vim.ui.select({ "Yes", "No" }, { prompt = "Delete session '" .. name .. "'?" }, function(choice)
     if choice == "Yes" then
-      require("peekstack.persist").delete_session(name)
+      require("peekstack.persist").delete_session(name, { store_path = target.store_path })
     end
   end)
 end
@@ -92,11 +112,15 @@ function M.setup()
     local cfg = require("peekstack.config").get()
 
     if not name and cfg.persist.session and cfg.persist.session.prompt_if_missing then
+      local target = capture_session_target()
       vim.ui.input(
         { prompt = "Session name: ", default = cfg.persist.session.default_name or "default" },
         function(input)
           if input and input ~= "" then
-            require("peekstack.persist").save_current(input)
+            require("peekstack.persist").save_current(input, {
+              store_path = target.store_path,
+              root_winid = target.root_winid,
+            })
           end
         end
       )
@@ -116,7 +140,9 @@ function M.setup()
 
   vim.api.nvim_create_user_command("PeekstackListSessions", function()
     local persist = require("peekstack.persist")
+    local target = capture_session_target()
     persist.list_sessions({
+      store_path = target.store_path,
       on_done = function(sessions)
         local names = vim.tbl_keys(sessions)
         table.sort(names)
@@ -137,7 +163,7 @@ function M.setup()
           )
           vim.ui.select({ "Restore", "Info only" }, { prompt = info }, function(action)
             if action == "Restore" then
-              persist.restore(selected)
+              persist.restore(selected, { store_path = target.store_path, root_winid = target.root_winid })
             end
           end)
         end)
@@ -147,12 +173,14 @@ function M.setup()
 
   vim.api.nvim_create_user_command("PeekstackDeleteSession", function(opts)
     local name = opts.args and opts.args ~= "" and opts.args or nil
+    local target = capture_session_target()
     if name then
-      confirm_delete_session(name)
+      confirm_delete_session(name, target)
       return
     end
 
     require("peekstack.persist").list_sessions({
+      store_path = target.store_path,
       on_done = function(sessions)
         local names = vim.tbl_keys(sessions)
         table.sort(names)
@@ -164,7 +192,7 @@ function M.setup()
           if not selected then
             return
           end
-          confirm_delete_session(selected)
+          confirm_delete_session(selected, target)
         end)
       end,
     })

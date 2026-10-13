@@ -108,6 +108,13 @@ local function notify_save_result(success, name, items, silent)
   end
 end
 
+---@param silent boolean
+local function notify_missing_window(silent)
+  if not silent then
+    notify.warn("The window of the session's stack was closed")
+  end
+end
+
 ---Save the current stack to persistent storage with optional name.
 ---@param name? string
 ---`store_path` pins the store file; it defaults to the current repository's
@@ -129,7 +136,13 @@ function M.save_current(name, opts)
   end
 
   local resolved_name = sessions.resolve_name(name)
-  local items = sessions.collect_items(opts and opts.root_winid or nil)
+  local root_winid = sessions.resolve_root_winid(opts and opts.root_winid or nil)
+  if not root_winid then
+    notify_missing_window(silent)
+    finish(false)
+    return
+  end
+  local items = sessions.collect_items(root_winid)
   local path = opts and opts.store_path or orchestrator.store_path()
 
   if sync then
@@ -152,8 +165,10 @@ function M.save_current(name, opts)
 end
 
 ---Restore a named session from persistent storage.
+---`store_path` pins the store file; it defaults to the current repository's
+---store, resolved when the restore is requested.
 ---@param name? string
----@param opts? { root_winid?: integer, silent?: boolean, on_done?: fun(restored: boolean) }
+---@param opts? { root_winid?: integer, store_path?: string, silent?: boolean, on_done?: fun(restored: boolean) }
 function M.restore(name, opts)
   local silent = opts and opts.silent or false
   local on_done = opts and opts.on_done or nil
@@ -172,7 +187,13 @@ function M.restore(name, opts)
   -- Freeze the target stack now: the read below is async and the user may
   -- move to another window before the session is restored.
   local root_winid = sessions.resolve_root_winid(opts and opts.root_winid or nil)
-  orchestrator.refresh_cache_async(orchestrator.store_path(), function(data)
+  if not root_winid then
+    notify_missing_window(silent)
+    finish(false)
+    return
+  end
+  local path = opts and opts.store_path or orchestrator.store_path()
+  orchestrator.refresh_cache_async(path, function(data)
     if not data then
       finish(false)
       return
@@ -236,7 +257,7 @@ function M.restore(name, opts)
 end
 
 ---List all saved sessions.
----@param opts? { on_done?: fun(sessions: table<string, PeekstackSession>), silent?: boolean }
+---@param opts? { on_done?: fun(sessions: table<string, PeekstackSession>), store_path?: string, silent?: boolean }
 ---@return table<string, PeekstackSession>
 function M.list_sessions(opts)
   local on_done = opts and opts.on_done or nil
@@ -251,7 +272,7 @@ function M.list_sessions(opts)
     return {}
   end
 
-  local path = orchestrator.store_path()
+  local path = opts and opts.store_path or orchestrator.store_path()
   if on_done then
     orchestrator.refresh_cache_async(path, function(data)
       on_done(data and data.sessions or {})
@@ -265,13 +286,14 @@ end
 
 ---Delete a named session.
 ---@param name string
-function M.delete_session(name)
+---@param opts? { store_path?: string }
+function M.delete_session(name, opts)
   if not orchestrator.ensure_enabled() then
     return
   end
 
   local found = false
-  orchestrator.update_async(orchestrator.store_path(), function(data)
+  orchestrator.update_async(opts and opts.store_path or orchestrator.store_path(), function(data)
     found = sessions.delete(data, name)
     if not found then
       notify.warn("Session not found: " .. name)
@@ -295,7 +317,8 @@ end
 ---Rename a session.
 ---@param from string
 ---@param to string
-function M.rename_session(from, to)
+---@param opts? { store_path?: string }
+function M.rename_session(from, to, opts)
   if not orchestrator.ensure_enabled() then
     return
   end
@@ -306,7 +329,7 @@ function M.rename_session(from, to)
   end
 
   local renamed = false
-  orchestrator.update_async(orchestrator.store_path(), function(data)
+  orchestrator.update_async(opts and opts.store_path or orchestrator.store_path(), function(data)
     local result = sessions.rename(data, from, to)
     renamed = result.ok
     if result.err == "missing" then

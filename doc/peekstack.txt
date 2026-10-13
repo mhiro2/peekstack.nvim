@@ -495,7 +495,11 @@ upward from the current window's working directory, so |:lcd| and |:tcd|
 count) has its own storage file, and session names are scoped to it. The
 storage is resolved when a save, delete, or rename is requested, so
 changing directory while it is still being written does not move it to
-another repository.
+another repository. Session commands resolve it, and the window whose
+stack they act on, when the command runs: changing directory or window
+while a name prompt, session picker, or delete confirmation is open does
+not redirect them, and a save or restore is dropped if that window has
+been closed by then.
 
 Empty stacks:
     Saving an empty stack replaces the session with an empty one; restoring

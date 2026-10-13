@@ -19,23 +19,28 @@ function M.resolve_name(name)
   return "default"
 end
 
----Resolve the root window id to use when collecting stack items.
+---Resolve the stack root a session operation acts on.
+---Without `root_winid` this is the current window's stack. An explicit
+---`root_winid` that no longer exists yields nil instead of falling back to the
+---current window, whose stack is unrelated.
 ---@param root_winid? integer
----@return integer
+---@return integer?
 function M.resolve_root_winid(root_winid)
-  if root_winid and type(root_winid) == "number" and vim.api.nvim_win_is_valid(root_winid) then
+  if root_winid == nil then
+    return stack.get_root_winid(vim.api.nvim_get_current_win())
+  end
+  if type(root_winid) == "number" and vim.api.nvim_win_is_valid(root_winid) then
     return stack.get_root_winid(root_winid)
   end
-
-  return stack.get_root_winid(vim.api.nvim_get_current_win())
+  return nil
 end
 
----Collect the current stack items (truncated to `persist.max_items`).
----@param root_winid? integer
+---Collect the items of a stack (truncated to `persist.max_items`).
+---@param root_winid integer resolved stack root
 ---@return PeekstackSessionItem[]
 function M.collect_items(root_winid)
   local data_items = {}
-  for _, popup in ipairs(stack.list(M.resolve_root_winid(root_winid))) do
+  for _, popup in ipairs(stack.list(root_winid)) do
     data_items[#data_items + 1] = {
       uri = popup.location.uri,
       range = popup.location.range,
