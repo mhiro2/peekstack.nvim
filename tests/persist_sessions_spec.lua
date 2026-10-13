@@ -1081,8 +1081,40 @@ describe("peekstack.persist.sessions", function()
     local items = data.sessions.pinned_session.items
     assert.equals(2, #items)
     assert.is_true(items[1].pinned)
+    assert.equals("copy", items[1].buffer_mode)
     assert.equals("source", items[2].buffer_mode)
   end)
+
+  for _, default_mode in ipairs({ "copy", "source" }) do
+    it("should restore each popup's buffer mode under a " .. default_mode .. " default", function()
+      config.setup({ persist = { enabled = true }, ui = { popup = { buffer_mode = default_mode } } })
+      local path = make_file("restore_mode_" .. default_mode, { "line1", "line2" })
+      assert.is_not_nil(stack.push(make_location(path, 0), { title = "Copy", buffer_mode = "copy" }))
+      assert.is_not_nil(stack.push(make_location(path, 1), { title = "Source", buffer_mode = "source" }))
+      persist.save_current("buffer_modes", { silent = true, sync = true })
+      cleanup_stack()
+
+      local restored = nil
+      persist.restore("buffer_modes", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+      local waited = vim.wait(wait_timeout_ms, function()
+        return restored ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for restore callback")
+      assert.is_true(restored)
+
+      local popups = stack.list()
+      assert.equals(2, #popups)
+      assert.equals("copy", popups[1].buffer_mode)
+      assert.are_not.equal(vim.fn.bufnr(path), popups[1].bufnr)
+      assert.equals("source", popups[2].buffer_mode)
+      assert.equals(vim.fn.bufnr(path), popups[2].bufnr)
+    end)
+  end
 
   it("should save parent_popup_id in session items", function()
     local path = make_file("parent_child", { "line1", "line2" })

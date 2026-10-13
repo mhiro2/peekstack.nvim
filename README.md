@@ -365,6 +365,7 @@ A session holds one stack: the popups of the current window (or of the window th
 belongs to), oldest first, keeping the newest `persist.max_items`. Only locations, titles, pins,
 buffer modes and parent links are saved; edits made in copy-mode popups are not.
 Restoring a session adds its popups to the current window's stack and keeps the popups already there.
+Each popup comes back in the buffer mode it was opened with, whatever `ui.popup.buffer_mode` is set to.
 
 > [!WARNING]
 > Persistence uses repository storage when the current working directory is inside a git repository.

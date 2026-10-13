@@ -44,7 +44,9 @@ function M.collect_items(root_winid)
       ts = os.time(),
       popup_id = popup.id,
       pinned = popup.pinned or nil,
-      buffer_mode = popup.buffer_mode ~= "copy" and popup.buffer_mode or nil,
+      -- Saved even when it matches the default, so a restore under another
+      -- `ui.popup.buffer_mode` brings the popup back the way it was opened.
+      buffer_mode = popup.buffer_mode,
       parent_popup_id = popup.parent_popup_id,
     }
   end
