@@ -1,6 +1,7 @@
 local config = require("peekstack.config")
 local fs = require("peekstack.util.fs")
 local cache = require("peekstack.persist.cache")
+local lock = require("peekstack.persist.lock")
 local migrate = require("peekstack.persist.migrate")
 local store = require("peekstack.persist.store")
 local notify = require("peekstack.util.notify")
@@ -142,7 +143,14 @@ local function run_next_update()
   end
   update_running = true
 
+  ---@type (fun())?
+  local release = nil
+
   local function finish(success)
+    if release then
+      release()
+      release = nil
+    end
     -- Release the queue before the callback so an update it enqueues (e.g. a
     -- sync save from a PeekstackSave handler) can run instead of waiting on
     -- this finished one. Earlier queued updates still go first.
@@ -183,10 +191,25 @@ local function run_next_update()
     end
   end
 
+  -- Hold the store lock from the read through the write, so another
+  -- Neovim cannot write in between and have that write overwritten with
+  -- data read before it.
   if update.sync then
+    release = lock.acquire_sync(update.path)
+    if not release then
+      finish(false)
+      return
+    end
     apply(M.read_sync(update.path))
   else
-    M.read_async(update.path, apply)
+    lock.acquire(update.path, function(acquired)
+      if not acquired then
+        finish(false)
+        return
+      end
+      release = acquired
+      M.read_async(update.path, apply)
+    end)
   end
 end
 
@@ -201,7 +224,8 @@ end
 ---Asynchronously read, mutate and write back store data at `path`.
 ---Updates are serialized: each one reads the file only after the previous
 ---write finished, so overlapping save/delete/rename calls cannot clobber each
----other with a stale snapshot (read-modify-write lost update).
+---other with a stale snapshot (read-modify-write lost update). Across Neovim
+---processes the same holds through the store lock.
 ---`mutate` returns true to persist the change or false to abort without
 ---writing; `on_done` receives whether the data was written successfully.
 ---@param path string
@@ -257,11 +281,13 @@ function M.update_sync(path, mutate)
   return false
 end
 
----Reset the in-memory session cache and drop queued updates.
+---Reset the in-memory session cache, drop queued updates and release the
+---store lock an in-flight update holds.
 function M.reset_cache()
   cache.reset()
   update_queue = {}
   update_running = false
+  lock.release_all()
 end
 
 ---@param path string

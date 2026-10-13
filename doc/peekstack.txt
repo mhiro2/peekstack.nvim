@@ -518,6 +518,14 @@ Unreadable storage:
     save, delete, or rename sessions in it instead of replacing it with an
     empty store. Fix or move the file to recover.
 
+Several Neovim instances:
+    Instances sharing a storage file take turns through a `<file>.lock`
+    file held for each read and write, so saving different sessions at
+    the same time keeps both. Saving the same name keeps the later save.
+    If another instance holds the lock for more than a second, the
+    operation fails with a warning instead of writing. A lock is removed
+    only once the instance that created it has exited.
+
 `persist.session.default_name` is used when a name is omitted, unless
 `persist.session.prompt_if_missing` is true.
 

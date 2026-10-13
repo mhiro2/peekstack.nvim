@@ -387,6 +387,11 @@ directory, so `:lcd` / `:tcd` count) has its own storage file, and session names
 - **Unreadable storage**: if the storage file cannot be read (an I/O error, invalid JSON, or a version
   this release does not know), peekstack warns and refuses to save, delete, or rename sessions in it
   instead of replacing it with an empty store. Fix or move the file to recover.
+- **Several Neovim instances**: instances sharing a storage file take turns through a `<file>.lock`
+  file held for each read and write, so saving different sessions at the same time keeps both. Saving
+  the same name keeps the later save. If another instance holds the lock for more than a second, the
+  operation fails with a warning instead of writing. A lock is removed only once the instance that
+  created it has exited.
 
 > [!IMPORTANT]
 > Sessions are written as plain JSON under `vim.fn.stdpath("state") .. "/peekstack/"`. Each entry
