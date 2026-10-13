@@ -255,4 +255,82 @@ describe("peekstack.persist.auto", function()
     assert.equals(0, #calls)
     assert.is_false(auto.schedule_save({ root_winid = closing }))
   end)
+
+  describe("with real popups and store", function()
+    local store = require("peekstack.persist.store")
+    local temp_file = nil
+
+    ---@param winid? integer
+    ---@param opts? table
+    ---@return PeekstackPopupModel
+    local function push_popup(winid, opts)
+      local model = stack.push({
+        uri = vim.uri_from_fname(temp_file),
+        range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
+        provider = "test",
+      }, vim.tbl_extend("force", { root_winid = winid }, opts or {}))
+      assert.is_not_nil(model)
+      return model
+    end
+
+    ---@return PeekstackSessionItem[]?
+    local function saved_items()
+      local data = store.read_sync(store_path_for(repo))
+      local session = data and data.sessions.auto
+      return session and session.items or nil
+    end
+
+    ---@param count integer
+    local function wait_for_saved_items(count)
+      local ok = vim.wait(500, function()
+        local items = saved_items()
+        return items ~= nil and #items == count
+      end, 10)
+      assert.is_true(ok, "Timed out waiting for " .. count .. " saved item(s)")
+    end
+
+    local function settle()
+      vim.wait(80, function()
+        return false
+      end, 10)
+    end
+
+    before_each(function()
+      persist._reset_cache()
+      vim.fn.delete(store_path_for(repo))
+      temp_file = vim.fn.tempname() .. ".lua"
+      vim.fn.writefile({ "line1", "line2", "line3" }, temp_file)
+    end)
+
+    after_each(function()
+      vim.api.nvim_create_augroup("PeekstackPersistAuto", { clear = true })
+      pcall(stack.close_ephemerals)
+      stack._reset()
+      vim.fn.delete(store_path_for(repo))
+      if temp_file then
+        vim.fn.delete(temp_file)
+      end
+      persist._reset_cache()
+    end)
+
+    it("keeps the saved session when a quick peek opens and closes elsewhere", function()
+      auto.setup()
+      local first = vim.api.nvim_get_current_win()
+      push_popup(first)
+      wait_for_saved_items(1)
+
+      vim.api.nvim_set_current_win(first)
+      vim.cmd("vsplit")
+      local second = vim.api.nvim_get_current_win()
+      local quick = push_popup(second, { stack = false })
+      assert.is_true(quick.ephemeral)
+      settle()
+      stack.close(quick.id)
+      settle()
+
+      assert.equals(1, #stack.list(first))
+      assert.equals(0, #stack.list(second))
+      assert.equals(1, #saved_items())
+    end)
+  end)
 end)

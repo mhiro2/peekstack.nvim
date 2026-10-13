@@ -402,7 +402,8 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 
 The auto session holds a single stack: the one that changed most recently, saved to the repository
 that was current when it changed. Closing every popup of that stack saves it empty, so nothing is
-restored next time.
+restored next time. Quick peek popups never join a stack, so opening or closing one does not touch
+the auto session.
 
 Leaving Neovim saves that stack synchronously, even if the cursor is in another window. It skips the
 save if no stack changed during the session, and keeps the stored session as-is once that stack's

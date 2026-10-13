@@ -260,8 +260,14 @@ function M.setup()
       group = group,
       pattern = { "PeekstackPush", "PeekstackClose", "PeekstackRestorePopup" },
       callback = function(args)
-        local root_winid = args.data and args.data.root_winid or nil
-        M.schedule_save({ root_winid = root_winid })
+        local data = args.data or {}
+        -- Quick peek popups never join a stack, so opening or closing one
+        -- leaves nothing to save; treating it as a change would overwrite the
+        -- session with the (usually empty) stack of the window it opened in.
+        if data.ephemeral then
+          return
+        end
+        M.schedule_save({ root_winid = data.root_winid })
       end,
     })
   end
