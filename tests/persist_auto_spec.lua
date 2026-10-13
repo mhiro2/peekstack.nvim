@@ -332,5 +332,39 @@ describe("peekstack.persist.auto", function()
       assert.equals(0, #stack.list(second))
       assert.equals(1, #saved_items())
     end)
+
+    it("saves on leave when only save_on_leave is enabled", function()
+      config.setup({
+        persist = {
+          enabled = true,
+          auto = { enabled = true, restore = false, save = false, save_on_leave = true, debounce_ms = 20 },
+        },
+      })
+      auto.setup()
+      push_popup(vim.api.nvim_get_current_win())
+      settle()
+      assert.is_nil(saved_items())
+
+      vim.cmd("vsplit")
+      vim.api.nvim_exec_autocmds("VimLeavePre", { group = "PeekstackPersistAuto" })
+      assert.equals(1, #saved_items())
+    end)
+
+    it("does not save on leave when only debounced saves are enabled", function()
+      config.setup({
+        persist = {
+          enabled = true,
+          auto = { enabled = true, restore = false, save = true, save_on_leave = false, debounce_ms = 20 },
+        },
+      })
+      auto.setup()
+      local winid = vim.api.nvim_get_current_win()
+      push_popup(winid)
+      wait_for_saved_items(1)
+
+      push_popup(winid)
+      vim.api.nvim_exec_autocmds("VimLeavePre", { group = "PeekstackPersistAuto" })
+      assert.equals(1, #saved_items())
+    end)
   end)
 end)

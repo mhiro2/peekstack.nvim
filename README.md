@@ -398,7 +398,8 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 
 - **Restore** on `VimEnter` / `DirChanged` (only when the stack is empty if `restore_if_empty = true`)
 - **Save** on `PeekstackPush` / `PeekstackClose` / `PeekstackRestorePopup` with a debounce
-- **Save on leave** on `VimLeavePre` if `save_on_leave = true`
+- **Save on leave** on `VimLeavePre` if `save_on_leave = true` (works on its own: with `save = false`
+  the stack is written only when leaving)
 
 The auto session holds a single stack: the one that changed most recently, saved to the repository
 that was current when it changed. Closing every popup of that stack saves it empty, so nothing is

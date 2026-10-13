@@ -523,7 +523,8 @@ Auto persistence (`persist.auto`) requires `persist.enabled = true`:
     restore_if_empty   only restore when the stack is empty
     save               save on PeekstackPush/Close/RestorePopup (debounced)
     debounce_ms        debounce time for auto save
-    save_on_leave      save on VimLeavePre
+    save_on_leave      save on VimLeavePre (also with `save = false`, in
+                       which case the stack is written only when leaving)
 
 The auto session holds a single stack: the one that changed most
 recently, saved to the repository that was current when it changed.

@@ -146,20 +146,24 @@ function M.maybe_restore()
   return true
 end
 
+---Record a stack change and debounce a save of it when `auto.save` is on.
+---The change is tracked either way, so the leave-time save still knows
+---which stack to write when only `auto.save_on_leave` is enabled.
 ---@param opts? { root_winid?: integer }
----@return boolean
+---@return boolean scheduled whether a debounced save was scheduled
 function M.schedule_save(opts)
   if not is_enabled() then
     return false
   end
 
-  local cfg = config.get()
-  if not cfg.persist.auto.save then
-    return false
-  end
-
   local target = capture_target(opts and opts.root_winid or nil)
   if not target then
+    return false
+  end
+  tracked_target = target
+
+  local cfg = config.get()
+  if not cfg.persist.auto.save then
     return false
   end
 
@@ -172,7 +176,6 @@ function M.schedule_save(opts)
     flush_pending()
   end
   pending_target = target
-  tracked_target = target
 
   local debounce_ms = tonumber(cfg.persist.auto.debounce_ms) or 1000
   if save_timer then
@@ -255,7 +258,9 @@ function M.setup()
     })
   end
 
-  if cfg.persist.auto.save then
+  -- Changes are observed for the leave-time save too, which needs to know
+  -- the stack to write even when debounced saves are off.
+  if cfg.persist.auto.save or cfg.persist.auto.save_on_leave then
     vim.api.nvim_create_autocmd("User", {
       group = group,
       pattern = { "PeekstackPush", "PeekstackClose", "PeekstackRestorePopup" },
