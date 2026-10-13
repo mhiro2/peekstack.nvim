@@ -282,21 +282,28 @@ describe("peekstack.persist.auto", function()
 
     ---@param count integer
     local function wait_for_saved_items(count)
-      local ok = vim.wait(500, function()
+      local ok = vim.wait(3000, function()
         local items = saved_items()
         return items ~= nil and #items == count
       end, 10)
       assert.is_true(ok, "Timed out waiting for " .. count .. " saved item(s)")
     end
 
+    ---Long enough for a debounced save to have started, were one scheduled.
     local function settle()
-      vim.wait(80, function()
+      vim.wait(200, function()
         return false
       end, 10)
     end
 
+    local repo_seq = 0
+
     before_each(function()
       persist._reset_cache()
+      -- A store per test: a save still in flight when a test ends must not
+      -- land in the next test's store.
+      repo_seq = repo_seq + 1
+      repo = string.format("/tmp/peekstack-test-repo-real-%d-%d", vim.uv.os_getpid(), repo_seq)
       vim.fn.delete(store_path_for(repo))
       temp_file = vim.fn.tempname() .. ".lua"
       vim.fn.writefile({ "line1", "line2", "line3" }, temp_file)

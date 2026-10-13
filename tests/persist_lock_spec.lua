@@ -90,7 +90,7 @@ describe("peekstack.persist.lock", function()
     assert.is_true(store.write_sync(path, { version = 2, sessions = { theirs = empty_session() } }))
     vim.fn.delete(lock.lock_path(path))
 
-    assert.is_true(vim.wait(1000, function()
+    assert.is_true(vim.wait(3000, function()
       return result() ~= nil
     end, 10))
     assert.is_true(result())

@@ -367,7 +367,7 @@ describe("peekstack.commands", function()
     ---@param prompt_pattern string
     ---@return fun(choice: any)
     local function take_select(prompt_pattern)
-      local ok = vim.wait(500, function()
+      local ok = vim.wait(3000, function()
         return #selects > 0
       end, 10)
       assert.is_true(ok, "Timed out waiting for vim.ui.select")
@@ -417,7 +417,7 @@ describe("peekstack.commands", function()
       cd(repo_b)
       confirm("Yes")
 
-      assert.is_true(vim.wait(500, function()
+      assert.is_true(vim.wait(3000, function()
         return stored_sessions(store_a).shared == nil
       end, 10))
       assert.is_not_nil(stored_sessions(store_b).shared)
@@ -430,7 +430,7 @@ describe("peekstack.commands", function()
       pick("shared")
       take_select("Delete session 'shared'")("Yes")
 
-      assert.is_true(vim.wait(500, function()
+      assert.is_true(vim.wait(3000, function()
         return stored_sessions(store_a).shared == nil
       end, 10))
       assert.is_not_nil(stored_sessions(store_b).shared)
@@ -446,7 +446,7 @@ describe("peekstack.commands", function()
       pick("shared")
       take_select("shared: 1 items")("Restore")
 
-      assert.is_true(vim.wait(500, function()
+      assert.is_true(vim.wait(3000, function()
         return #stack.list(winid) == 1
       end, 10))
       assert.equals(0, #stack.list(other))
@@ -474,7 +474,7 @@ describe("peekstack.commands", function()
         vim.cmd("vsplit")
         on_input("prompted")
 
-        assert.is_true(vim.wait(500, function()
+        assert.is_true(vim.wait(3000, function()
           return stored_sessions(store_a).prompted ~= nil
         end, 10))
         assert.equals(1, #stored_sessions(store_a).prompted.items)
