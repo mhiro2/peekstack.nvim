@@ -365,12 +365,16 @@ A session holds one stack: the popups of the current window (or of the window th
 belongs to), oldest first, keeping the newest `persist.max_items`. Only locations, titles, pins,
 buffer modes and parent links are saved; edits made in copy-mode popups are not.
 Restoring a session adds its popups to the current window's stack and keeps the popups already there.
+Each popup comes back in the buffer mode it was opened with, whatever `ui.popup.buffer_mode` is set to.
 
 > [!WARNING]
 > Persistence uses repository storage when the current working directory is inside a git repository.
 > Outside a git repository, sessions fall back to cwd-based storage.
 > The storage is resolved when a save, delete, or rename is requested, so changing directory while
-> it is still being written does not move it to another repository.
+> it is still being written does not move it to another repository. Session commands resolve it, and
+> the window whose stack they act on, when the command runs: changing directory or window while a
+> name prompt, session picker, or delete confirmation is open does not redirect them, and a save or
+> restore is dropped if that window has been closed by then.
 
 Each git repository (each worktree, found by looking upward from the current window's working
 directory, so `:lcd` / `:tcd` count) has its own storage file, and session names are scoped to it.
@@ -383,6 +387,11 @@ directory, so `:lcd` / `:tcd` count) has its own storage file, and session names
 - **Unreadable storage**: if the storage file cannot be read (an I/O error, invalid JSON, or a version
   this release does not know), peekstack warns and refuses to save, delete, or rename sessions in it
   instead of replacing it with an empty store. Fix or move the file to recover.
+- **Several Neovim instances**: instances sharing a storage file take turns through a `<file>.lock`
+  file held for each read and write, so saving different sessions at the same time keeps both. Saving
+  the same name keeps the later save. If another instance holds the lock for more than a second, the
+  operation fails with a warning instead of writing. A lock is removed only once the instance that
+  created it has exited.
 
 > [!IMPORTANT]
 > Sessions are written as plain JSON under `vim.fn.stdpath("state") .. "/peekstack/"`. Each entry
@@ -398,11 +407,13 @@ When `persist.auto.enabled = true`, peekstack can automatically restore and save
 
 - **Restore** on `VimEnter` / `DirChanged` (only when the stack is empty if `restore_if_empty = true`)
 - **Save** on `PeekstackPush` / `PeekstackClose` / `PeekstackRestorePopup` with a debounce
-- **Save on leave** on `VimLeavePre` if `save_on_leave = true`
+- **Save on leave** on `VimLeavePre` if `save_on_leave = true` (works on its own: with `save = false`
+  the stack is written only when leaving)
 
 The auto session holds a single stack: the one that changed most recently, saved to the repository
 that was current when it changed. Closing every popup of that stack saves it empty, so nothing is
-restored next time.
+restored next time. Quick peek popups never join a stack, so opening or closing one does not touch
+the auto session.
 
 Leaving Neovim saves that stack synchronously, even if the cursor is in another window. It skips the
 save if no stack changed during the session, and keeps the stored session as-is once that stack's
