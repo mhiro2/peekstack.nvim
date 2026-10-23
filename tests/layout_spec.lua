@@ -217,25 +217,47 @@ describe("layout.reflow", function()
   it("recalculates popup dimensions after screen size change", function()
     local original_columns = vim.o.columns
     local original_lines = vim.o.lines
+    local original_cmdheight = vim.o.cmdheight
+    config.setup({
+      ui = {
+        layout = {
+          style = "stack",
+          offset = { row = 1, col = 2 },
+          shrink = { w = 4, h = 2 },
+          min_size = { w = 20, h = 5 },
+          max_ratio = 0.65,
+          zindex_base = 50,
+        },
+      },
+    })
+    vim.o.columns = 160
+    vim.o.lines = 51
+    vim.o.cmdheight = 1
 
-    local loc = helpers.make_location()
-    local m1 = stack.push(loc)
+    local m1 = stack.push(helpers.make_location())
     assert.is_not_nil(m1)
-
     local cfg_before = vim.api.nvim_win_get_config(m1.winid)
+    -- 160 * 0.65 and 50 * 0.65, centered on the 160x50 editor area.
+    assert.equals(104, cfg_before.width)
+    assert.equals(32, cfg_before.height)
 
-    -- Simulate screen resize
-    vim.o.columns = math.floor(original_columns / 2)
-    vim.o.lines = math.floor(original_lines / 2)
-
-    local s = stack.current_stack()
-    layout.reflow(s)
-
+    vim.o.columns = 80
+    vim.o.lines = 25
+    local ok, err = pcall(layout.reflow, stack.current_stack())
     local cfg_after = vim.api.nvim_win_get_config(m1.winid)
-    assert.is_true(cfg_after.width <= cfg_before.width)
-
     vim.o.columns = original_columns
     vim.o.lines = original_lines
+    vim.o.cmdheight = original_cmdheight
+    assert.is_true(ok, tostring(err))
+
+    -- 80 * 0.65 and 24 * 0.65, centered on the 80x24 editor area.
+    assert.equals(52, cfg_after.width)
+    assert.equals(15, cfg_after.height)
+    assert.equals(3, cfg_after.row)
+    assert.equals(13, cfg_after.col)
+    -- The border (one cell per side) stays on screen too.
+    assert.is_true(cfg_after.col + cfg_after.width + 2 <= 80)
+    assert.is_true(cfg_after.row + cfg_after.height + 2 <= 24)
   end)
 end)
 

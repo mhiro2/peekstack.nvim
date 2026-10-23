@@ -160,25 +160,34 @@ describe("stack.toggle", function()
   it("keymaps reference correct popup id after hide/show cycle", function()
     local loc = helpers.make_location()
     local m1 = stack.push(loc)
+    local m2 = stack.push(loc)
+    local first_id, second_id = m1.id, m2.id
+    local old_winids = { m1.winid, m2.winid }
 
-    local original_id = m1.id
-
-    -- Hide then show (recreates buffer + keymaps)
+    -- Hide then show (recreates windows, buffers and keymaps)
     stack.toggle()
     stack.toggle()
 
     local s = stack.current_stack()
-    local restored = s.popups[1]
-    assert.equals(original_id, restored.id)
+    assert.equals(2, #s.popups)
+    local first, second = s.popups[1], s.popups[2]
+    assert.equals(first_id, first.id)
+    assert.equals(second_id, second.id)
+    for _, old in ipairs(old_winids) do
+      assert.is_false(vim.api.nvim_win_is_valid(old))
+    end
+    assert.equals(first_id, vim.b[first.bufnr].peekstack_popup_id)
 
-    -- The close keymap should work via the buffer variable
-    assert.equals(original_id, vim.b[restored.bufnr].peekstack_popup_id)
+    -- Press the configured close key in the first (non-top) popup.
+    vim.api.nvim_set_current_win(first.winid)
+    local close_key = vim.api.nvim_replace_termcodes(config.get().ui.keys.close, true, false, true)
+    vim.api.nvim_feedkeys(close_key, "x", false)
 
-    -- Simulate what the close keymap does: resolve + close by popup_id
-    local found = stack.find_by_id(original_id)
-    assert.is_not_nil(found)
-    assert.equals(restored.bufnr, found.bufnr)
-    assert.is_true(stack.close(original_id))
+    assert.is_false(vim.api.nvim_win_is_valid(first.winid))
+    assert.is_nil(stack.find_by_id(first_id))
+    assert.is_true(vim.api.nvim_win_is_valid(second.winid))
+    assert.equals(second, stack.find_by_id(second_id))
+    assert.same({ second }, stack.list())
   end)
 
   it("does not leak popups to history when hiding", function()

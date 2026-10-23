@@ -32,13 +32,67 @@ describe("peekstack.core.cleanup", function()
 
   after_each(function()
     cleanup.stop()
+    -- stack._reset only clears state, so close the popups tests leave open.
+    for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_get_config(winid).relative ~= "" then
+        pcall(vim.api.nvim_win_close, winid, true)
+      end
+    end
     stack._reset()
   end)
 
-  it("should start and stop the timer", function()
+  it("should scan periodically after start and stop scanning after stop", function()
+    config.setup({
+      ui = {
+        popup = {
+          auto_close = {
+            enabled = true,
+            idle_ms = 300000,
+            check_interval_ms = 20,
+            ignore_pinned = true,
+          },
+        },
+      },
+    })
+    local timer_store = require("peekstack.util.timer").get_store()
+    local location = {
+      uri = vim.uri_from_bufnr(0),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+    }
+
+    local stale = stack.push(location)
+    assert.is_not_nil(stale)
+    stale.last_active_at = vim.uv.now() - 400000
+
     cleanup.start()
+    local handle = timer_store.cleanup
+    assert.is_not_nil(handle)
+    assert.is_true(handle:is_active())
+    assert.is_true(vim.wait(1000, function()
+      return stack.find_by_id(stale.id) == nil
+    end, 10))
+    assert.is_false(vim.api.nvim_win_is_valid(stale.winid))
+
+    -- A popup going stale after the first scan is closed by a later one.
+    focus_normal_window()
+    local later = stack.push(location)
+    assert.is_not_nil(later)
+    later.last_active_at = vim.uv.now() - 400000
+    assert.is_true(vim.wait(1000, function()
+      return stack.find_by_id(later.id) == nil
+    end, 10))
+
     cleanup.stop()
-    -- Should not error
+    assert.is_nil(timer_store.cleanup)
+    assert.is_true(handle:is_closing())
+
+    focus_normal_window()
+    local survivor = stack.push(location)
+    assert.is_not_nil(survivor)
+    survivor.last_active_at = vim.uv.now() - 400000
+    -- Several intervals pass without a scan once the timer is stopped.
+    vim.wait(100)
+    assert.is_not_nil(stack.find_by_id(survivor.id))
   end)
 
   it("should update last_active_at on touch", function()
@@ -49,28 +103,20 @@ describe("peekstack.core.cleanup", function()
 
     local model = stack.push(location)
     assert.is_not_nil(model)
-    assert.is_not_nil(model.last_active_at)
+    model.last_active_at = 0
 
-    local before = model.last_active_at
+    -- Touching a window that is not a popup leaves the popup untouched.
+    focus_normal_window()
+    stack.touch(vim.api.nvim_get_current_win())
+    assert.equals(0, model.last_active_at)
 
-    -- Wait a bit to ensure time has passed
-    vim.wait(10)
-
+    local before_touch = vim.uv.now()
     stack.touch(model.winid)
 
-    -- Find the popup again to check updated time
-    local items = stack.list()
-    local found = nil
-    for _, item in ipairs(items) do
-      if item.winid == model.winid then
-        found = item
-        break
-      end
-    end
-
-    assert.is_not_nil(found)
-    local after = found.last_active_at
-    assert.is_true(after >= before)
+    local found = stack.find_by_id(model.id)
+    assert.equals(model, found)
+    assert.is_true(found.last_active_at >= before_touch)
+    assert.is_true(found.last_active_at <= vim.uv.now())
   end)
 
   it("should close stale popups when idle_ms is exceeded", function()
@@ -177,20 +223,35 @@ describe("peekstack.core.cleanup", function()
     assert.is_nil(found)
   end)
 
-  it("should respect enabled setting", function()
+  it("should neither start the timer nor close popups when disabled", function()
     config.setup({
       ui = {
         popup = {
           auto_close = {
             enabled = false,
+            idle_ms = 1000,
+            check_interval_ms = 20,
           },
         },
       },
     })
+    local timer_store = require("peekstack.util.timer").get_store()
+    local location = {
+      uri = vim.uri_from_bufnr(0),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+    }
+
+    local model = stack.push(location)
+    assert.is_not_nil(model)
+    model.last_active_at = vim.uv.now() - 400000
 
     cleanup.start()
+    assert.is_nil(timer_store.cleanup)
+
     cleanup.scan(vim.uv.now())
-    -- Should not error even when disabled
+    vim.wait(100)
+    assert.equals(model, stack.find_by_id(model.id))
+    assert.is_true(vim.api.nvim_win_is_valid(model.winid))
   end)
 
   it("should not auto-close modified source-mode popup when prevent_auto_close_if_modified is true", function()

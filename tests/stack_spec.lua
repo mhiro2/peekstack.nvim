@@ -2,6 +2,37 @@ local stack = require("peekstack.core.stack")
 local config = require("peekstack.config")
 local helpers = require("tests.helpers")
 
+---@return integer[]
+local function floating_wins()
+  local wins = {}
+  for _, winid in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(winid).relative ~= "" then
+      table.insert(wins, winid)
+    end
+  end
+  return wins
+end
+
+---Close every remaining popup window, then clear the stack state.
+---Resetting the state alone leaves the windows open for the next test.
+local function reset_stack()
+  for _, winid in ipairs(floating_wins()) do
+    pcall(vim.api.nvim_win_close, winid, true)
+  end
+  stack._reset()
+end
+
+---Close a popup window behind the plugin's back: no WinClosed handler runs,
+---so the model still refers to the closed window.
+---@param winid integer
+local function close_window_silently(winid)
+  vim.api.nvim_cmd({
+    cmd = "call",
+    args = { ("nvim_win_close(%d, v:true)"):format(winid) },
+    mods = { noautocmd = true },
+  }, {})
+end
+
 describe("stack.focus_by_id", function()
   before_each(function()
     stack._reset()
@@ -13,7 +44,7 @@ describe("stack.focus_by_id", function()
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
     end
-    stack._reset()
+    reset_stack()
   end)
 
   it("raises focused popup zindex", function()
@@ -49,7 +80,7 @@ describe("stack.focus_relative", function()
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
     end
-    stack._reset()
+    reset_stack()
   end)
 
   it("updates zindex when focus_prev changes focused popup", function()
@@ -82,7 +113,7 @@ describe("stack.handle_win_closed", function()
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
     end
-    stack._reset()
+    reset_stack()
   end)
 
   it("keeps focus zindex when unrelated window closes", function()
@@ -192,7 +223,7 @@ describe("stack parent popup chain", function()
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
     end
-    stack._reset()
+    reset_stack()
   end)
 
   it("sets parent_popup_id when pushing from a popup window", function()
@@ -232,7 +263,7 @@ describe("stack.close focus restore", function()
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
     end
-    stack._reset()
+    reset_stack()
   end)
 
   it("restores focus to the remaining popup when closing the current popup", function()
@@ -270,7 +301,7 @@ describe("stack.handle_origin_wipeout", function()
   end)
 
   after_each(function()
-    stack._reset()
+    reset_stack()
   end)
 
   it("keeps popups whose origin is another popup", function()
@@ -329,7 +360,7 @@ describe("stack.handle_buf_wipeout", function()
   end)
 
   after_each(function()
-    stack._reset()
+    reset_stack()
   end)
 
   it("pushes history and emits events when the popup buffer is wiped", function()
@@ -371,23 +402,30 @@ describe("stack.close_by_id", function()
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
     end
-    stack._reset()
+    reset_stack()
   end)
 
   it("closes only by id even if winid matches another popup", function()
     local loc = helpers.make_location()
-    local m1 = stack.push(loc)
-    local m2 = stack.push(loc)
-    assert.is_not_nil(m1)
-    assert.is_not_nil(m2)
+    local root_winid = vim.api.nvim_get_current_win()
+    local by_winid = stack.push(loc)
+    assert.is_not_nil(by_winid)
+    vim.api.nvim_set_current_win(root_winid)
+    -- The second popup's id equals the first popup's window id.
+    local by_id = stack.push(loc, { id = by_winid.winid })
+    assert.is_not_nil(by_id)
+    assert.equals(by_winid.winid, by_id.id)
+    assert.equals(by_id, stack.find_by_id(by_id.id))
 
-    local collide_id = m2.winid
-    m1.id = collide_id
+    assert.is_true(stack.close_by_id(by_id.id))
 
-    assert.is_true(stack.close_by_id(collide_id))
-    local s = stack.current_stack()
-    assert.equals(1, #s.popups)
-    assert.equals(m2.winid, s.popups[1].winid)
+    assert.same({ by_winid }, stack.list(root_winid))
+    assert.is_false(vim.api.nvim_win_is_valid(by_id.winid))
+    assert.is_true(vim.api.nvim_win_is_valid(by_winid.winid))
+    assert.same({ by_winid.winid }, floating_wins())
+    assert.is_nil(stack.find_by_id(by_id.id))
+    local _, found = stack.find_by_winid(by_winid.winid)
+    assert.equals(by_winid, found)
   end)
 end)
 
@@ -402,7 +440,7 @@ describe("stack lookup indexes", function()
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
     end
-    stack._reset()
+    reset_stack()
   end)
 
   it("finds stack popups by id and winid", function()
@@ -454,27 +492,40 @@ describe("stack focus reopen", function()
   end)
 
   after_each(function()
-    stack._reset()
+    reset_stack()
   end)
 
   it("reopens popup when focus_by_id target window is invalid", function()
     local loc = helpers.make_location()
+    local root_winid = vim.api.nvim_get_current_win()
     local model = stack.push(loc)
     assert.is_not_nil(model)
     local old_winid = model.winid
+    vim.api.nvim_set_current_win(root_winid)
 
-    model.winid = -1
-    local ok = stack.focus_by_id(model.id)
-    assert.is_true(ok)
+    close_window_silently(old_winid)
+    assert.is_false(vim.api.nvim_win_is_valid(old_winid))
+    assert.equals(model, stack.find_by_id(model.id))
 
-    stack.close(model.id)
-    if vim.api.nvim_win_is_valid(old_winid) then
-      vim.api.nvim_win_close(old_winid, true)
-    end
+    assert.is_true(stack.focus_by_id(model.id))
+
+    local reopened = stack.find_by_id(model.id)
+    assert.is_not_nil(reopened)
+    assert.is_not.equals(old_winid, reopened.winid)
+    assert.is_true(vim.api.nvim_win_is_valid(reopened.winid))
+    assert.equals(reopened.winid, vim.api.nvim_get_current_win())
+    assert.equals(model.id, stack.focused_id(root_winid))
+    assert.same({ reopened }, stack.list(root_winid))
+    assert.same({ reopened.winid }, floating_wins())
+    local _, by_old_winid = stack.find_by_winid(old_winid)
+    assert.is_nil(by_old_winid)
+    local _, by_new_winid = stack.find_by_winid(reopened.winid)
+    assert.equals(reopened, by_new_winid)
   end)
 
   it("keeps parent_popup_id when reopening a child popup", function()
     local loc = helpers.make_location()
+    local root_winid = vim.api.nvim_get_current_win()
     local parent = stack.push(loc)
     assert.is_not_nil(parent)
 
@@ -482,13 +533,25 @@ describe("stack focus reopen", function()
     local child = stack.push(loc)
     assert.is_not_nil(child)
     assert.equals(parent.id, child.parent_popup_id)
+    local old_winid = child.winid
+    vim.api.nvim_set_current_win(root_winid)
 
-    child.winid = -1
-    local reopened = stack.reopen_by_id(child.id)
+    close_window_silently(old_winid)
+    local reopened = stack.reopen_by_id(child.id, root_winid)
     assert.is_not_nil(reopened)
+    assert.equals(child.id, reopened.id)
     assert.equals(parent.id, reopened.parent_popup_id)
+    assert.is_not.equals(old_winid, reopened.winid)
+    assert.is_true(vim.api.nvim_win_is_valid(reopened.winid))
+    assert.equals(reopened, stack.find_by_id(child.id))
+    local _, by_old_winid = stack.find_by_winid(old_winid)
+    assert.is_nil(by_old_winid)
 
-    stack.close(child.id)
+    local winids = { parent.winid, reopened.winid }
+    table.sort(winids)
+    local floats = floating_wins()
+    table.sort(floats)
+    assert.same(winids, floats)
   end)
 end)
 
@@ -503,7 +566,7 @@ describe("stack.focused_id", function()
     for i = #s.popups, 1, -1 do
       stack.close(s.popups[i].id)
     end
-    stack._reset()
+    reset_stack()
   end)
 
   it("is set to the pushed popup id after push", function()
@@ -576,21 +639,5 @@ describe("stack.focused_id", function()
     assert.equals(m2.id, stack.focused_id())
     stack.close_all()
     assert.is_nil(stack.focused_id())
-  end)
-
-  it("is updated when focused popup window is closed externally", function()
-    local loc = helpers.make_location()
-    local m1 = stack.push(loc)
-    local m2 = stack.push(loc)
-    assert.is_not_nil(m1)
-    assert.is_not_nil(m2)
-
-    assert.equals(m2.id, stack.focused_id())
-
-    -- Simulate external window close
-    vim.api.nvim_win_close(m2.winid, true)
-    stack.handle_win_closed(m2.winid)
-
-    assert.equals(m1.id, stack.focused_id())
   end)
 end)

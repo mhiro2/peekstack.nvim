@@ -13,8 +13,10 @@ describe("stack history", function()
     stack._reset()
   end)
 
-  it("saves buffer_mode and source_bufnr in history on close", function()
-    local loc = helpers.make_location()
+  it("saves location, buffer_mode and source_bufnr in history on close", function()
+    local loc = helpers.make_location({
+      range = { start = { line = 0, character = 2 }, ["end"] = { line = 0, character = 5 } },
+    })
     local model = stack.push(loc)
     assert.is_not_nil(model)
 
@@ -23,6 +25,9 @@ describe("stack history", function()
 
     local hist = stack.history_list()
     assert.equals(1, #hist)
+    assert.equals(loc.uri, hist[1].location.uri)
+    assert.same(loc.range, hist[1].location.range)
+    assert.equals("test", hist[1].location.provider)
     assert.equals("copy", hist[1].buffer_mode)
     assert.is_not_nil(hist[1].source_bufnr)
     assert.is_not_nil(hist[1].closed_at)
@@ -163,18 +168,6 @@ describe("stack history", function()
     end
   end)
 
-  it("history_list returns history entries", function()
-    local loc = helpers.make_location()
-    local model = stack.push(loc)
-    assert.is_not_nil(model)
-
-    stack.close(model.id)
-
-    local hist = stack.history_list()
-    assert.equals(1, #hist)
-    assert.is_not_nil(hist[1].location)
-  end)
-
   it("clear_history empties the history", function()
     local loc = helpers.make_location()
     local model = stack.push(loc)
@@ -198,52 +191,6 @@ describe("stack history", function()
     local hist = stack.history_list()
     assert.equals(1, #hist)
     assert.equals(original_id, hist[1].popup_id)
-  end)
-
-  it("restore_all remaps parent_popup_id for parent-child popups", function()
-    local loc = helpers.make_location()
-    local parent = stack.push(loc)
-    assert.is_not_nil(parent)
-    vim.api.nvim_set_current_win(parent.winid)
-
-    local child = stack.push(loc)
-    assert.is_not_nil(child)
-    assert.equals(parent.id, child.parent_popup_id)
-
-    local parent_original_id = parent.id
-
-    -- Close child first, then parent (history stores newest last)
-    stack.close(child.id)
-    stack.close(parent.id)
-    assert.equals(2, #stack.history_list())
-
-    -- Restore all: parent is restored first (from end of history),
-    -- then child. Child's parent_popup_id should be remapped to the
-    -- new parent ID.
-    local restored = stack.restore_all()
-    assert.equals(2, #restored)
-
-    -- Find the restored child (the one with a parent_popup_id)
-    local restored_child = nil
-    local restored_parent = nil
-    for _, r in ipairs(restored) do
-      if r.parent_popup_id then
-        restored_child = r
-      else
-        restored_parent = r
-      end
-    end
-
-    assert.is_not_nil(restored_parent)
-    assert.is_not_nil(restored_child)
-    -- The parent_popup_id should point to the NEW parent id, not the old one
-    assert.equals(restored_parent.id, restored_child.parent_popup_id)
-    assert.is_not.equals(parent_original_id, restored_parent.id)
-
-    -- Cleanup
-    for _, r in ipairs(restored) do
-      stack.close(r.id)
-    end
   end)
 
   it("restore_last remaps parent_popup_id to new parent id", function()
@@ -301,7 +248,7 @@ describe("stack history", function()
     stack.close(restored.id)
   end)
 
-  it("restore_from_history remaps parent_popup_id using id_remap", function()
+  it("restore_from_history keeps parent_popup_id while the parent is open", function()
     local loc = helpers.make_location()
     local parent = stack.push(loc)
     assert.is_not_nil(parent)
@@ -322,6 +269,39 @@ describe("stack history", function()
     -- Cleanup
     stack.close(restored.id)
     stack.close(parent.id)
+  end)
+
+  it("restore_from_history links the child to the restored parent's new id", function()
+    local loc = helpers.make_location()
+    local parent = stack.push(loc)
+    assert.is_not_nil(parent)
+    vim.api.nvim_set_current_win(parent.winid)
+
+    local child = stack.push(loc)
+    assert.is_not_nil(child)
+    assert.equals(parent.id, child.parent_popup_id)
+
+    stack.close(child.id)
+    stack.close(parent.id)
+    local hist = stack.history_list()
+    assert.equals(2, #hist)
+    assert.equals(child.id, hist[1].popup_id)
+    assert.equals(parent.id, hist[2].popup_id)
+
+    local restored_parent = stack.restore_from_history(2)
+    assert.is_not_nil(restored_parent)
+    assert.is_not.equals(parent.id, restored_parent.id)
+    assert.is_nil(stack.find_by_id(parent.id))
+
+    -- The child entry still refers to the parent's id from before the close.
+    assert.equals(parent.id, stack.history_list()[1].parent_popup_id)
+    local restored_child = stack.restore_from_history(1)
+    assert.is_not_nil(restored_child)
+    assert.equals(restored_parent.id, restored_child.parent_popup_id)
+    assert.equals(0, #stack.history_list())
+
+    stack.close(restored_child.id)
+    stack.close(restored_parent.id)
   end)
 
   it("respects history max_items from config", function()

@@ -148,14 +148,26 @@ describe("popup source mode", function()
     vim.fn.delete(temp)
   end)
 
+  ---Press `lhs` in normal mode in `winid`.
+  ---@param winid integer
+  ---@param lhs string
+  local function press_in(winid, lhs)
+    vim.api.nvim_set_current_win(winid)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(lhs, true, false, true), "x", false)
+  end
+
   it("restores existing source buffer keymaps after popup close", function()
     local temp = vim.fn.tempname() .. ".lua"
     vim.fn.writefile({ "print('peekstack')" }, temp)
     vim.api.nvim_cmd({ cmd = "edit", args = { temp } }, {})
+    local root_win = vim.api.nvim_get_current_win()
     local source_bufnr = vim.api.nvim_get_current_buf()
     local close_key = config.get().ui.keys.close
+    local original_calls = 0
 
-    vim.keymap.set("n", close_key, function() end, {
+    vim.keymap.set("n", close_key, function()
+      original_calls = original_calls + 1
+    end, {
       buffer = source_bufnr,
       desc = "Original buffer close",
     })
@@ -176,6 +188,8 @@ describe("popup source mode", function()
     local restored = get_buffer_map(source_bufnr, close_key)
     assert.is_not_nil(restored)
     assert.equals("Original buffer close", restored.desc)
+    press_in(root_win, close_key)
+    assert.equals(1, original_calls)
 
     vim.fn.delete(temp)
   end)
@@ -188,8 +202,11 @@ describe("popup source mode", function()
     local root_win = vim.api.nvim_get_current_win()
     local source_bufnr = vim.api.nvim_get_current_buf()
     local close_key = config.get().ui.keys.close
+    local original_calls = 0
 
-    vim.keymap.set("n", close_key, function() end, {
+    vim.keymap.set("n", close_key, function()
+      original_calls = original_calls + 1
+    end, {
       buffer = source_bufnr,
       desc = "Original buffer close",
     })
@@ -210,6 +227,10 @@ describe("popup source mode", function()
     local restored = get_buffer_map(source_bufnr, close_key)
     assert.is_not_nil(restored)
     assert.equals("Original buffer close", restored.desc)
+    -- The original mapping runs in the source window while the popup stays open.
+    press_in(root_win, close_key)
+    assert.equals(1, original_calls)
+    assert.is_true(vim.api.nvim_win_is_valid(model.winid))
 
     popup.close(model)
     vim.fn.delete(temp)
@@ -394,7 +415,7 @@ describe("popup source mode", function()
     popup.close(model)
   end)
 
-  it("<C-w>l navigates from popup to adjacent split", function()
+  it("<C-w>h navigates from popup to the split on the left", function()
     -- Create a vertical split so there are two windows.
     vim.api.nvim_cmd({ cmd = "vsplit" }, {})
     local left_win = vim.api.nvim_get_current_win()
