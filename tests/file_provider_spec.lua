@@ -69,7 +69,7 @@ describe("peekstack.providers.file", function()
   end)
 
   it("returns location when target is a valid file", function()
-    local tmpdir = vim.fn.tempname()
+    local tmpdir = vim.fn.resolve(vim.fn.tempname())
     vim.fn.mkdir(tmpdir, "p")
     local target = tmpdir .. "/target.lua"
     vim.fn.writefile({ "-- target" }, target)
@@ -85,16 +85,56 @@ describe("peekstack.providers.file", function()
     file_provider.under_cursor(make_ctx({ bufnr = bufnr }), function(locations)
       result = locations
     end)
-    assert.is_table(result)
-    assert.equals(1, #result)
-    assert.equals("file.under_cursor", result[1].provider)
+    assert.same({
+      {
+        uri = vim.uri_from_fname(target),
+        range = {
+          start = { line = 0, character = 0 },
+          ["end"] = { line = 0, character = 0 },
+        },
+        provider = "file.under_cursor",
+      },
+    }, result)
+
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+    vim.fn.delete(tmpdir, "rf")
+  end)
+
+  it("resolves a quoted reference without the surrounding punctuation", function()
+    local tmpdir = vim.fn.resolve(vim.fn.tempname())
+    vim.fn.mkdir(tmpdir, "p")
+    local target = tmpdir .. "/target.lua"
+    vim.fn.writefile({ "-- target" }, target)
+    local source = tmpdir .. "/source.lua"
+    vim.fn.writefile({ 'dofile("target.lua")' }, source)
+
+    local bufnr = vim.fn.bufadd(source)
+    vim.fn.bufload(bufnr)
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_win_set_cursor(0, { 1, 8 })
+
+    local result = nil
+    file_provider.under_cursor(make_ctx({ bufnr = bufnr }), function(locations)
+      result = locations
+    end)
+
+    assert.same({
+      {
+        uri = vim.uri_from_fname(target),
+        range = {
+          start = { line = 0, character = 0 },
+          ["end"] = { line = 0, character = 0 },
+        },
+        provider = "file.under_cursor",
+      },
+    }, result)
 
     vim.api.nvim_buf_delete(bufnr, { force = true })
     vim.fn.delete(tmpdir, "rf")
   end)
 
   it("resolves path suffix with line and column", function()
-    local tmpdir = vim.fn.tempname()
+    local tmpdir = vim.fn.resolve(vim.fn.tempname())
     vim.fn.mkdir(tmpdir, "p")
     local target = tmpdir .. "/target.lua"
     vim.fn.writefile({ "first", "second", "third", "fourth" }, target)
@@ -111,17 +151,23 @@ describe("peekstack.providers.file", function()
       result = locations
     end)
 
-    assert.is_table(result)
-    assert.equals(1, #result)
-    assert.equals(2, result[1].range.start.line)
-    assert.equals(3, result[1].range.start.character)
+    assert.same({
+      {
+        uri = vim.uri_from_fname(target),
+        range = {
+          start = { line = 2, character = 3 },
+          ["end"] = { line = 2, character = 3 },
+        },
+        provider = "file.under_cursor",
+      },
+    }, result)
 
     vim.api.nvim_buf_delete(bufnr, { force = true })
     vim.fn.delete(tmpdir, "rf")
   end)
 
   it("defaults column to 1 when only a line number is present", function()
-    local tmpdir = vim.fn.tempname()
+    local tmpdir = vim.fn.resolve(vim.fn.tempname())
     vim.fn.mkdir(tmpdir, "p")
     local target = tmpdir .. "/target.lua"
     vim.fn.writefile({ "first", "second", "third" }, target)
@@ -138,10 +184,16 @@ describe("peekstack.providers.file", function()
       result = locations
     end)
 
-    assert.is_table(result)
-    assert.equals(1, #result)
-    assert.equals(1, result[1].range.start.line)
-    assert.equals(0, result[1].range.start.character)
+    assert.same({
+      {
+        uri = vim.uri_from_fname(target),
+        range = {
+          start = { line = 1, character = 0 },
+          ["end"] = { line = 1, character = 0 },
+        },
+        provider = "file.under_cursor",
+      },
+    }, result)
 
     vim.api.nvim_buf_delete(bufnr, { force = true })
     vim.fn.delete(tmpdir, "rf")

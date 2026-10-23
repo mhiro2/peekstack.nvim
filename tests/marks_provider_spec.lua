@@ -44,33 +44,33 @@ describe("marks provider", function()
     end)
 
     it("collects local marks with scope buffer", function()
-      local bufnr = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "line1", "line2", "line3" })
+      local tmpfile = vim.fn.resolve(vim.fn.tempname()) .. ".txt"
+      vim.fn.writefile({ "hello world", "second line" }, tmpfile)
+      local bufnr = vim.fn.bufadd(tmpfile)
+      vim.fn.bufload(bufnr)
       vim.api.nvim_set_current_buf(bufnr)
 
-      -- Set a local mark
-      vim.api.nvim_buf_set_mark(bufnr, "a", 2, 0, {})
+      vim.api.nvim_buf_set_mark(bufnr, "a", 2, 3, {})
 
       local locations = marks_util.collect("buffer", bufnr, {
         include = "abcdefghijklmnopqrstuvwxyz",
         include_special = false,
       })
-      assert.is_table(locations)
-      assert.is_true(#locations >= 1)
 
-      -- Verify the mark location structure
-      local found = false
-      for _, loc in ipairs(locations) do
-        if loc.text and loc.text:find("%[a%]") then
-          found = true
-          assert.equals(1, loc.range.start.line) -- 0-indexed line 2 = 1
-          assert.equals(0, loc.range.start.character)
-          assert.equals("marks.buffer", loc.provider)
-        end
-      end
-      assert.is_true(found)
+      assert.same({
+        {
+          uri = vim.uri_from_fname(tmpfile),
+          range = {
+            start = { line = 1, character = 3 },
+            ["end"] = { line = 1, character = 3 },
+          },
+          text = "[a] second line",
+          provider = "marks.buffer",
+        },
+      }, locations)
 
       vim.api.nvim_buf_delete(bufnr, { force = true })
+      vim.fn.delete(tmpfile)
     end)
 
     it("filters marks by include string", function()
@@ -108,21 +108,30 @@ describe("marks provider", function()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "line1", "line2", "line3" })
       vim.api.nvim_set_current_buf(bufnr)
 
-      -- include_special = false, include has all letters
-      local locations = marks_util.collect("buffer", bufnr, {
-        include = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'`^.<>[]\"",
-        include_special = false,
-      })
-
-      -- None of the locations should have special mark characters
-      for _, loc in ipairs(locations) do
-        if loc.text then
-          assert.is_nil(loc.text:match("%['%]"))
-          assert.is_nil(loc.text:match("%[`%]"))
-          assert.is_nil(loc.text:match("%[%^%]"))
-          assert.is_nil(loc.text:match("%[%.%]"))
-        end
+      vim.api.nvim_buf_set_mark(bufnr, "a", 1, 0, {})
+      for _, mark in ipairs({ "'", '"', "[", "]", "<", ">" }) do
+        vim.api.nvim_buf_set_mark(bufnr, mark, 2, 0, {})
       end
+
+      local include = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'`^.<>[]\""
+      local function collected_marks(include_special)
+        local chars = {}
+        local locations = marks_util.collect("buffer", bufnr, { include = include, include_special = include_special })
+        for _, loc in ipairs(locations) do
+          table.insert(chars, loc.text:match("^%[(.)%]"))
+        end
+        table.sort(chars)
+        return chars
+      end
+
+      -- The special marks are really there: listing them with include_special
+      -- returns them alongside the regular mark. "." is set by the line edit.
+      local with_special = collected_marks(true)
+      for _, mark in ipairs({ "'", '"', ".", "[", "]", "<", ">" }) do
+        assert.is_true(vim.list_contains(with_special, mark), "missing special mark " .. mark)
+      end
+
+      assert.same({ "a" }, collected_marks(false))
 
       vim.api.nvim_buf_delete(bufnr, { force = true })
     end)
@@ -148,72 +157,111 @@ describe("marks provider", function()
 
       vim.api.nvim_buf_delete(bufnr, { force = true })
     end)
-
-    it("returns locations with valid structure", function()
-      local bufnr = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello world", "second line" })
-      vim.api.nvim_set_current_buf(bufnr)
-
-      vim.api.nvim_buf_set_mark(bufnr, "a", 1, 3, {})
-
-      local locations = marks_util.collect("buffer", bufnr, {
-        include = "a",
-        include_special = false,
-      })
-
-      assert.is_true(#locations >= 1)
-      local loc = locations[1]
-      assert.is_string(loc.uri)
-      assert.is_table(loc.range)
-      assert.is_table(loc.range.start)
-      assert.is_table(loc.range["end"])
-      assert.is_number(loc.range.start.line)
-      assert.is_number(loc.range.start.character)
-      assert.is_string(loc.provider)
-      assert.is_string(loc.text)
-
-      vim.api.nvim_buf_delete(bufnr, { force = true })
-    end)
   end)
 
   describe("providers/marks", function()
-    it("buffer provider accepts ctx and returns locations", function()
-      local marks_provider = require("peekstack.providers.marks")
-      local bufnr = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "line1", "line2" })
-      vim.api.nvim_set_current_buf(bufnr)
+    local marks_provider = require("peekstack.providers.marks")
+    local root
+    local file_a
+    local file_b
+    local buf_a
+    local buf_b
 
-      local ctx = make_ctx({ bufnr = bufnr })
-      local called = false
-      marks_provider.buffer(ctx, function(locations)
-        called = true
-        assert.is_table(locations)
+    ---@param provider_fn fun(ctx: PeekstackProviderContext, cb: fun(locations: PeekstackLocation[]))
+    ---@param ctx PeekstackProviderContext
+    ---@return PeekstackLocation[]
+    local function run_provider(provider_fn, ctx)
+      local result = nil
+      provider_fn(ctx, function(locations)
+        result = locations
       end)
-      assert.is_true(called)
+      assert.is_table(result, "provider did not invoke its callback")
+      return result
+    end
 
-      vim.api.nvim_buf_delete(bufnr, { force = true })
+    ---@param path string
+    ---@param line integer 0-based
+    ---@param text string
+    ---@param provider string
+    ---@return PeekstackLocation
+    local function mark_location(path, line, text, provider)
+      return {
+        uri = vim.uri_from_fname(path),
+        range = {
+          start = { line = line, character = 0 },
+          ["end"] = { line = line, character = 0 },
+        },
+        text = text,
+        provider = provider,
+      }
+    end
+
+    before_each(function()
+      vim.cmd("delmarks A-Z0-9")
+      root = vim.fn.resolve(vim.fn.tempname())
+      vim.fn.mkdir(root, "p")
+      file_a = root .. "/a.txt"
+      file_b = root .. "/b.txt"
+      vim.fn.writefile({ "a1", "a2", "a3" }, file_a)
+      vim.fn.writefile({ "b1", "b2", "b3" }, file_b)
+      buf_a = vim.fn.bufadd(file_a)
+      vim.fn.bufload(buf_a)
+      buf_b = vim.fn.bufadd(file_b)
+      vim.fn.bufload(buf_b)
+
+      -- The current buffer and ctx.bufnr each hold a local mark, and the
+      -- global mark lives in ctx.bufnr, so every scope has a distinct answer.
+      vim.api.nvim_buf_set_mark(buf_a, "a", 2, 0, {})
+      vim.api.nvim_buf_set_mark(buf_b, "b", 1, 0, {})
+      vim.api.nvim_buf_set_mark(buf_b, "A", 3, 0, {})
+      vim.api.nvim_set_current_buf(buf_a)
     end)
 
-    it("global provider accepts ctx and returns locations", function()
-      local marks_provider = require("peekstack.providers.marks")
-      local ctx = make_ctx()
-      local called = false
-      marks_provider.global(ctx, function(locations)
-        called = true
-        assert.is_table(locations)
-      end)
-      assert.is_true(called)
+    after_each(function()
+      vim.cmd("delmarks A-Z0-9")
+      for _, bufnr in ipairs({ buf_a, buf_b }) do
+        if vim.api.nvim_buf_is_valid(bufnr) then
+          vim.api.nvim_buf_delete(bufnr, { force = true })
+        end
+      end
+      vim.fn.delete(root, "rf")
     end)
 
-    it("all provider accepts ctx and returns locations", function()
-      local marks_provider = require("peekstack.providers.marks")
-      local ctx = make_ctx()
-      local called = false
-      marks_provider.all(ctx, function(locations)
-        called = true
-        assert.is_table(locations)
-      end)
-      assert.is_true(called)
+    it("buffer provider returns the local marks of ctx.bufnr only", function()
+      local locations = run_provider(marks_provider.buffer, make_ctx({ bufnr = buf_b }))
+
+      assert.same({ mark_location(file_b, 0, "[b] b1", "marks.buffer") }, locations)
+    end)
+
+    it("global provider returns the global marks only", function()
+      local locations = run_provider(marks_provider.global, make_ctx({ bufnr = buf_b }))
+
+      assert.same({ mark_location(file_b, 2, "[A] b3", "marks.global") }, locations)
+    end)
+
+    it("all provider returns the global marks and the local marks of ctx.bufnr", function()
+      local locations = run_provider(marks_provider.all, make_ctx({ bufnr = buf_b }))
+
+      assert.same({
+        mark_location(file_b, 2, "[A] b3", "marks.global"),
+        mark_location(file_b, 0, "[b] b1", "marks.buffer"),
+      }, locations)
+    end)
+
+    it("applies the configured include filter", function()
+      config.setup({
+        providers = {
+          marks = {
+            enable = true,
+            include = "A",
+            include_special = false,
+          },
+        },
+      })
+
+      local locations = run_provider(marks_provider.all, make_ctx({ bufnr = buf_b }))
+
+      assert.same({ mark_location(file_b, 2, "[A] b3", "marks.global") }, locations)
     end)
   end)
 end)

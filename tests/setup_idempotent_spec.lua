@@ -59,8 +59,8 @@ describe("peekstack.setup idempotent", function()
     assert.is_true(found, "marks provider should not remain registered after re-setup")
   end)
 
-  it("clears persist auto timer on repeated setup", function()
-    peekstack.setup({
+  it("closes the pending persist auto timer on repeated setup", function()
+    local auto_opts = {
       persist = {
         enabled = true,
         auto = {
@@ -68,23 +68,39 @@ describe("peekstack.setup idempotent", function()
           restore = false,
           save = true,
           save_on_leave = false,
-          debounce_ms = 200,
+          debounce_ms = 50,
         },
       },
-    })
+    }
+    peekstack.setup(auto_opts)
 
-    assert.is_true(auto.schedule_save({ root_winid = vim.api.nvim_get_current_win() }))
-    assert.is_not_nil(timer_store.persist_auto)
+    local saves = 0
+    local original_save_current = persist.save_current
+    persist.save_current = function()
+      saves = saves + 1
+    end
 
-    peekstack.setup({
-      persist = {
-        enabled = false,
-        auto = {
-          enabled = false,
-        },
-      },
-    })
+    local ok, err = pcall(function()
+      assert.is_true(auto.schedule_save({ root_winid = vim.api.nvim_get_current_win() }))
+      local handle = timer_store.persist_auto
+      assert.is_not_nil(handle)
+      assert.is_true(handle:is_active())
 
-    assert.is_nil(timer_store.persist_auto)
+      -- Auto save stays enabled, so only setup discarding the pending save
+      -- keeps it from being written once the debounce elapses.
+      peekstack.setup(auto_opts)
+
+      assert.is_nil(timer_store.persist_auto)
+      assert.is_true(handle:is_closing())
+
+      vim.wait(200, function()
+        return saves > 0
+      end, 10)
+      assert.equals(0, saves)
+    end)
+    persist.save_current = original_save_current
+    if not ok then
+      error(err)
+    end
   end)
 end)

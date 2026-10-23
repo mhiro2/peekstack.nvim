@@ -1,5 +1,31 @@
 local fs = require("peekstack.util.fs")
 
+---Build two sibling repositories (one with a subdirectory) and a plain
+---directory outside any repository, all under a fresh temp root.
+---cleanup() restores the original cwd and removes the tree.
+local function make_repo_fixture()
+  local original_cwd = vim.fn.getcwd()
+  -- Resolve symlinks (e.g. /var -> /private/var) so paths match getcwd().
+  local root = vim.fn.resolve(vim.fn.tempname())
+  local fixture = {
+    repo = root .. "/repo",
+    repo_sub = root .. "/repo/src/nested",
+    other_repo = root .. "/other",
+    plain = root .. "/plain",
+  }
+  vim.fn.mkdir(fixture.repo .. "/.git", "p")
+  vim.fn.mkdir(fixture.repo_sub, "p")
+  vim.fn.mkdir(fixture.other_repo .. "/.git", "p")
+  vim.fn.mkdir(fixture.plain, "p")
+
+  function fixture.cleanup()
+    vim.api.nvim_set_current_dir(original_cwd)
+    vim.fn.delete(root, "rf")
+  end
+
+  return fixture
+end
+
 describe("fs", function()
   describe("slug", function()
     it("returns 'default' for nil input", function()
@@ -10,23 +36,22 @@ describe("fs", function()
       assert.equals("default", fs.slug(""))
     end)
 
-    it("returns a sha256 hash for normal input", function()
-      local result = fs.slug("/home/user/project")
-      assert.is_string(result)
-      assert.is_true(#result > 0)
-      assert.not_equals("default", result)
+    it("returns the sha256 hex digest of the input", function()
+      assert.equals("9dad1e4e08b0b11cbcd860257e8bdfa6b8e5f01790e10a6a0b1f4870c13e686b", fs.slug("/home/user/project"))
+      assert.equals("ae1608896372720b6ebb58261e0c0092c608324b0804bc99267c1753990faaa8", fs.slug("test-input"))
     end)
 
-    it("returns consistent results for same input", function()
-      local a = fs.slug("test-input")
-      local b = fs.slug("test-input")
-      assert.equals(a, b)
-    end)
+    it("falls back to a filename-safe slug when sha256 is unavailable", function()
+      local original_sha256 = vim.fn.sha256
+      vim.fn.sha256 = function()
+        error("sha256 unavailable")
+      end
 
-    it("returns different results for different input", function()
-      local a = fs.slug("input-a")
-      local b = fs.slug("input-b")
-      assert.not_equals(a, b)
+      local ok, result = pcall(fs.slug, "/home/user/my project:v1.2-x_y")
+      vim.fn.sha256 = original_sha256
+
+      assert.is_true(ok, tostring(result))
+      assert.equals("_home_user_my_project_v1.2-x_y", result)
     end)
   end)
 
@@ -174,10 +199,37 @@ describe("fs", function()
       assert.is_true(path:find(".json") ~= nil)
     end)
 
-    it("returns a repo-based path for 'repo' scope when in a git repo", function()
-      local path = fs.scope_path("repo")
-      assert.is_true(path:find("peekstack/") ~= nil)
-      assert.is_true(path:find(".json") ~= nil)
+    describe("with a repository fixture", function()
+      local fixture
+
+      before_each(function()
+        fixture = make_repo_fixture()
+      end)
+
+      after_each(function()
+        fixture.cleanup()
+      end)
+
+      it("names the 'repo' scope after the repository root from a subdirectory", function()
+        vim.api.nvim_set_current_dir(fixture.repo_sub)
+        local base = vim.fn.stdpath("state") .. "/peekstack"
+
+        assert.equals(base .. "/repo_" .. vim.fn.sha256(fixture.repo) .. ".json", fs.scope_path("repo"))
+      end)
+
+      it("gives another repository its own 'repo' scope path", function()
+        vim.api.nvim_set_current_dir(fixture.other_repo)
+        local base = vim.fn.stdpath("state") .. "/peekstack"
+
+        assert.equals(base .. "/repo_" .. vim.fn.sha256(fixture.other_repo) .. ".json", fs.scope_path("repo"))
+      end)
+
+      it("falls back to the cwd path for 'repo' scope outside a repository", function()
+        vim.api.nvim_set_current_dir(fixture.plain)
+        local base = vim.fn.stdpath("state") .. "/peekstack"
+
+        assert.equals(base .. "/cwd_" .. vim.fn.sha256(fixture.plain) .. ".json", fs.scope_path("repo"))
+      end)
     end)
 
     it("path contains the state directory", function()
@@ -236,11 +288,21 @@ describe("fs", function()
       fs._reset_repo_root_cache()
     end)
 
-    it("finds repo root from current directory", function()
-      local root = fs.repo_root()
-      -- We're running in the plugin repo, so this should find a root
-      if root then
-        assert.is_string(root)
+    it("finds the enclosing repository root from the current directory", function()
+      local fixture = make_repo_fixture()
+      local ok, err = pcall(function()
+        vim.api.nvim_set_current_dir(fixture.repo_sub)
+        assert.equals(fixture.repo, fs.repo_root())
+
+        vim.api.nvim_set_current_dir(fixture.other_repo)
+        assert.equals(fixture.other_repo, fs.repo_root())
+
+        vim.api.nvim_set_current_dir(fixture.plain)
+        assert.is_nil(fs.repo_root())
+      end)
+      fixture.cleanup()
+      if not ok then
+        error(err)
       end
     end)
 

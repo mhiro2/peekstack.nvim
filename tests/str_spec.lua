@@ -66,10 +66,32 @@ describe("str.relative_path", function()
 end)
 
 describe("str.truncate_middle", function()
-  it("truncates long text with ellipsis within width", function()
+  it("keeps both ends of long text around the ellipsis", function()
+    -- 7 cells remain after the ellipsis: 4 from the start, 3 from the end.
+    assert.equals("path...lua", str.truncate_middle("path/to/very/long/file.lua", 10))
+    assert.equals("pat...ua", str.truncate_middle("path/to/very/long/file.lua", 8))
+  end)
+
+  it("returns text that already fits unchanged", function()
+    assert.equals("file.lua", str.truncate_middle("file.lua", 8))
+    assert.equals("file.lua", str.truncate_middle("file.lua", 20))
+  end)
+
+  it("returns only as much of the ellipsis as fits in tiny widths", function()
     local text = "path/to/very/long/file.lua"
-    local truncated = str.truncate_middle(text, 10)
-    assert.is_true(truncated:find("...", 1, true) ~= nil)
-    assert.is_true(vim.fn.strdisplaywidth(truncated) <= 10)
+    assert.equals("", str.truncate_middle(text, 0))
+    assert.equals("", str.truncate_middle(text, -1))
+    assert.equals(".", str.truncate_middle(text, 1))
+    assert.equals("..", str.truncate_middle(text, 2))
+    assert.equals("...", str.truncate_middle(text, 3))
+    assert.equals("p...", str.truncate_middle(text, 4))
+  end)
+
+  it("cuts multibyte text on character boundaries", function()
+    assert.equals("äb...öp", str.truncate_middle("äbcdefghijklmnöp", 7))
+  end)
+
+  it("returns an empty string for nil", function()
+    assert.equals("", str.truncate_middle(nil, 10))
   end)
 end)
