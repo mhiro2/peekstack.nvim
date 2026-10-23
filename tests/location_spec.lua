@@ -257,6 +257,12 @@ describe("location", function()
       local narrow = location.display_text(loc, 0, { path_base = "repo", max_width = 3 })
       assert.is_true(vim.fn.strdisplaywidth(narrow) <= 3, narrow)
 
+      -- Wide characters are budgeted by display cells.
+      local wide_loc = vim.deepcopy(loc)
+      wide_loc.uri = vim.uri_from_fname(repo .. "/日本語のとても長いファイル名")
+      -- 8 cells for the path: "日" on the left leaves 3 cells for "名" on the right.
+      assert.equals("日...名:1:1", location.display_text(wide_loc, 0, { path_base = "repo", max_width = 12 }))
+
       assert(vim.uv.fs_rmdir(subdir))
       assert(vim.uv.fs_rmdir(repo .. "/.git"))
       assert(vim.uv.fs_rmdir(repo))

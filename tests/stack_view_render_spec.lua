@@ -1021,6 +1021,17 @@ describe("peekstack.ui.stack_view.render", function()
     end
   end)
 
+  it("truncates wide-character preview lines by display cells", function()
+    local preview = require("peekstack.ui.stack_view.preview")
+    local source_bufnr = new_source_buffer({ string.rep("あ", 30) }, "text")
+
+    -- 18 cells after the prefix, 15 of them for text: seven "あ" fit.
+    local line = preview.preview_line(source_bufnr, 0, 20, "  ")
+    assert.is_not_nil(line)
+    assert.equals("  " .. string.rep("あ", 7) .. "...", line.line)
+    assert.equals(#string.rep("あ", 7), line.source_col_end - line.source_col_start)
+  end)
+
   it("clamps treesitter highlight ranges on truncated preview lines", function()
     local source_bufnr = new_source_buffer({ string.rep("a", 400) }, "lua")
     local target_bufnr = new_target_buffer()

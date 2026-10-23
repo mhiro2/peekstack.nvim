@@ -92,6 +92,53 @@ function M.relative_path(path, base, opts)
   return path
 end
 
+---Return the longest prefix of text that fits in width display cells.
+---Composing characters stay with their base character.
+---@param text string
+---@param width integer
+---@return string prefix
+---@return integer prefix_width
+function M.take_width(text, width)
+  local used = 0
+  local count = vim.fn.strchars(text, true)
+  local taken = 0
+  while taken < count do
+    -- Measured at its column so a tab takes the cells it really spans.
+    local char_width = vim.fn.strdisplaywidth(vim.fn.strcharpart(text, taken, 1, true), used)
+    if used + char_width > width then
+      break
+    end
+    used = used + char_width
+    taken = taken + 1
+  end
+  return vim.fn.strcharpart(text, 0, taken, true), used
+end
+
+---Return the longest suffix of text that fits in width display cells.
+---Composing characters stay with their base character.
+---@param text string
+---@param width integer
+---@param col? integer screen column the suffix will start at (default 0)
+---@return string suffix
+---@return integer suffix_width
+function M.take_width_right(text, width, col)
+  local used = 0
+  local count = vim.fn.strchars(text, true)
+  local start = count
+  while start > 0 do
+    -- A tab's width depends on what precedes it, so the whole suffix is
+    -- measured again at the column it will start at.
+    local suffix = vim.fn.strcharpart(text, start - 1, count - start + 1, true)
+    local suffix_width = vim.fn.strdisplaywidth(suffix, col or 0)
+    if suffix_width > width then
+      break
+    end
+    used = suffix_width
+    start = start - 1
+  end
+  return vim.fn.strcharpart(text, start, count - start, true), used
+end
+
 ---@param text? string
 ---@param max_width integer
 ---@return string
@@ -111,11 +158,9 @@ function M.truncate_middle(text, max_width)
     return ellipsis:sub(1, max_width)
   end
   local remaining = max_width - ellipsis_width
-  local left = math.ceil(remaining / 2)
-  local right = remaining - left
-  local total_chars = vim.fn.strchars(text)
-  local left_text = vim.fn.strcharpart(text, 0, left)
-  local right_text = vim.fn.strcharpart(text, math.max(total_chars - right, 0), right)
+  -- A wide character that does not fit on the left hands its cell to the right.
+  local left_text, left_width = M.take_width(text, math.ceil(remaining / 2))
+  local right_text = M.take_width_right(text, remaining - left_width, left_width + ellipsis_width)
   return left_text .. ellipsis .. right_text
 end
 

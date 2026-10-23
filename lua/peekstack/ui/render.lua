@@ -205,6 +205,29 @@ function M.title_text(title)
   return table.concat(parts)
 end
 
+---Take count characters starting at character start out of chunks, keeping
+---each piece's highlight group.
+---@param chunks PeekstackTitleChunk[]
+---@param start integer
+---@param count integer
+---@return PeekstackTitleChunk[]
+local function slice_chunks(chunks, start, count)
+  local result = {}
+  local offset = 0
+  for _, c in ipairs(chunks) do
+    local text = c[1] or ""
+    local chars = vim.fn.strchars(text, true)
+    local from = math.max(start - offset, 0)
+    local to = math.min(start + count - offset, chars)
+    if to > from then
+      local piece = vim.fn.strcharpart(text, from, to - from, true)
+      table.insert(result, c[2] and { piece, c[2] } or { piece })
+    end
+    offset = offset + chars
+  end
+  return result
+end
+
 ---Truncate structured title chunks using the same middle-ellipsis strategy
 ---as str.truncate_middle, preserving highlight groups on the kept portions.
 ---@param chunks PeekstackTitleChunk[]
@@ -215,11 +238,12 @@ function M.truncate_chunks(chunks, max_width)
     return chunks or {}
   end
 
-  local total = 0
+  local texts = {}
   for _, c in ipairs(chunks) do
-    total = total + vim.fn.strdisplaywidth(c[1] or "")
+    table.insert(texts, c[1] or "")
   end
-  if total <= max_width then
+  local text = table.concat(texts)
+  if vim.fn.strdisplaywidth(text) <= max_width then
     return chunks
   end
 
@@ -229,63 +253,17 @@ function M.truncate_chunks(chunks, max_width)
     return { { ellipsis:sub(1, max_width) } }
   end
 
+  -- Cut the joined text like truncate_middle, then map both kept ends back
+  -- onto the chunks they came from.
   local remaining = max_width - ew
-  local left_n = math.ceil(remaining / 2)
-  local right_n = remaining - left_n
+  local left_text, left_width = str.take_width(text, math.ceil(remaining / 2))
+  local right_text = str.take_width_right(text, remaining - left_width, left_width + ew)
+  local total_chars = vim.fn.strchars(text, true)
+  local right_chars = vim.fn.strchars(right_text, true)
 
-  -- Left portion
-  local result = {}
-  local left_left = left_n
-  for _, c in ipairs(chunks) do
-    if left_left <= 0 then
-      break
-    end
-    local text = c[1] or ""
-    local hl = c[2]
-    local chars = vim.fn.strchars(text)
-    if chars <= left_left then
-      table.insert(result, hl and { text, hl } or { text })
-      left_left = left_left - chars
-    else
-      table.insert(
-        result,
-        hl and { vim.fn.strcharpart(text, 0, left_left), hl } or { vim.fn.strcharpart(text, 0, left_left) }
-      )
-      left_left = 0
-    end
-  end
-
+  local result = slice_chunks(chunks, 0, vim.fn.strchars(left_text, true))
   table.insert(result, { ellipsis })
-
-  -- Right portion (walk backwards)
-  local right_parts = {}
-  local right_left = right_n
-  for i = #chunks, 1, -1 do
-    if right_left <= 0 then
-      break
-    end
-    local c = chunks[i]
-    local text = c[1] or ""
-    local hl = c[2]
-    local chars = vim.fn.strchars(text)
-    if chars <= right_left then
-      table.insert(right_parts, 1, hl and { text, hl } or { text })
-      right_left = right_left - chars
-    else
-      local start = chars - right_left
-      table.insert(
-        right_parts,
-        1,
-        hl and { vim.fn.strcharpart(text, start, right_left), hl } or { vim.fn.strcharpart(text, start, right_left) }
-      )
-      right_left = 0
-    end
-  end
-
-  for _, c in ipairs(right_parts) do
-    table.insert(result, c)
-  end
-
+  vim.list_extend(result, slice_chunks(chunks, total_chars - right_chars, right_chars))
   return result
 end
 
