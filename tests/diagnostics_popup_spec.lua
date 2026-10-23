@@ -53,32 +53,6 @@ describe("peekstack.ui.diagnostics", function()
     vim.fn.delete(tmpfile)
   end)
 
-  it("does not error when diagnostic end_col exceeds the line length", function()
-    local diagnostics = require("peekstack.ui.diagnostics")
-    local bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "ab" })
-
-    local model = {
-      bufnr = bufnr,
-      line_offset = 0,
-      location = {
-        provider = "diagnostics.under_cursor",
-        text = "boom",
-        kind = vim.diagnostic.severity.ERROR,
-        range = {
-          start = { line = 0, character = 0 },
-          ["end"] = { line = 0, character = 999 },
-        },
-      },
-    }
-
-    local ok, result = pcall(diagnostics.decorate, model)
-    assert.is_true(ok)
-    assert.is_not_nil(result)
-
-    vim.api.nvim_buf_delete(bufnr, { force = true })
-  end)
-
   describe("underline range", function()
     local diagnostics = require("peekstack.ui.diagnostics")
     local bufnr
@@ -117,6 +91,11 @@ describe("peekstack.ui.diagnostics", function()
     local function range(sl, sc, el, ec)
       return { start = { line = sl, character = sc }, ["end"] = { line = el, character = ec } }
     end
+
+    it("clamps an end column past the end of a single line", function()
+      local mark = underline_for({ "ab" }, range(0, 0, 0, 999))
+      assert.are.same({ row = 0, col = 0, end_row = 0, end_col = 2 }, mark)
+    end)
 
     it("keeps an end column smaller than the start column on a later line", function()
       local mark = underline_for({ "local value = 1", "abc" }, range(0, 8, 1, 2))
@@ -187,9 +166,25 @@ describe("peekstack.ui.diagnostics", function()
     local loc = make_diagnostic_location(tmpfile)
     local model = popup.create(loc)
     assert.is_not_nil(model)
-    assert.is_true(model.title:find("...", 1, true) ~= nil)
 
+    local path_chunks = {}
+    for _, chunk in ipairs(model.title_chunks or {}) do
+      if chunk[2] == "PeekstackTitlePath" then
+        table.insert(path_chunks, chunk[1])
+      end
+    end
     popup.close(model)
+
+    assert.equals(1, #path_chunks)
+    -- The default format joins the ":" separator onto the path chunk.
+    local path = path_chunks[1]:match("^(.*):$")
+    assert.is_not_nil(path)
+    -- The middle is elided while both ends of the path stay visible.
+    assert.equals(10, vim.fn.strdisplaywidth(path))
+    assert.is_truthy(path:find("...", 1, true))
+    assert.is_true(vim.endswith(path, "lua"))
+    assert.is_false(vim.startswith(path, "..."))
+    assert.is_truthy(model.title:find("example diagnostic message", 1, true))
     vim.fn.delete(tmpfile)
     assert(vim.uv.fs_rmdir(nested))
     assert(vim.uv.fs_rmdir(tmpdir .. "/very/long/path"))

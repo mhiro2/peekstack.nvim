@@ -101,16 +101,21 @@ describe("peekstack.ui.stack_view", function()
     local original_columns = vim.o.columns
 
     local ok, err = pcall(function()
+      -- Both widths stay above the 30 column minimum: 30% of 200 and 300.
+      vim.o.columns = 200
       stack_view.open()
       local context = stack_view_context()
       assert.is_not_nil(context)
-
       local cfg_before = vim.api.nvim_win_get_config(context.winid)
-      vim.o.columns = original_columns + 40
+      assert.equals(60, cfg_before.width)
+      assert.equals(140, cfg_before.col)
+
+      vim.o.columns = 300
       stack_view.resize_all()
 
       local cfg_after = vim.api.nvim_win_get_config(context.winid)
-      assert.is_true(cfg_after.width >= cfg_before.width)
+      assert.equals(90, cfg_after.width)
+      assert.equals(210, cfg_after.col)
     end)
 
     vim.o.columns = original_columns
@@ -206,30 +211,61 @@ describe("peekstack.ui.stack_view", function()
     assert.is_true(bound["H"] == true, "H keymap should be bound in stack view")
   end)
 
-  it("moves cursor by stack item with j and k", function()
-    set_stack_items({
-      { id = 1, title = "Alpha", location = location_for("/tmp/alpha.lua"), pinned = false },
-      { id = 2, title = "Beta", location = location_for("/tmp/beta.lua"), pinned = false },
-    })
+  it("moves cursor by stack item with j and k, skipping preview lines", function()
+    local source = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(source, 0, -1, false, { "local alpha = 1", "local beta = 2", "local gamma = 3" })
+    local function item(id, title, line)
+      local loc = location_for("/tmp/" .. title .. ".lua")
+      loc.range.start.line = line
+      loc.range["end"].line = line
+      return { id = id, title = title, location = loc, source_bufnr = source, pinned = false }
+    end
+    set_stack_items({ item(1, "Alpha", 0), item(2, "Beta", 1), item(3, "Gamma", 2) })
 
-    stack_view.open()
-    local context = stack_view_context()
-    assert.is_not_nil(context)
+    local ok, err = pcall(function()
+      stack_view.open()
+      local context = stack_view_context()
+      assert.is_not_nil(context)
 
-    vim.api.nvim_set_current_win(context.winid)
-    vim.api.nvim_win_set_cursor(context.winid, { 3, 0 })
+      -- Each item renders its title line followed by one preview line.
+      local lines = vim.api.nvim_buf_get_lines(context.bufnr, 0, -1, false)
+      assert.equals(7, #lines)
+      assert.is_truthy(lines[2]:find("Alpha", 1, true))
+      assert.is_truthy(lines[3]:find("local alpha = 1", 1, true))
+      assert.is_truthy(lines[4]:find("Beta", 1, true))
+      assert.is_truthy(lines[6]:find("Gamma", 1, true))
 
-    vim.api.nvim_feedkeys("k", "mx", false)
-    vim.wait(50, function()
-      return vim.api.nvim_win_get_cursor(context.winid)[1] == 2
+      vim.api.nvim_set_current_win(context.winid)
+      local function press(keys)
+        vim.api.nvim_feedkeys(keys, "mx", false)
+        return vim.api.nvim_win_get_cursor(context.winid)[1]
+      end
+
+      vim.api.nvim_win_set_cursor(context.winid, { 2, 0 })
+      assert.equals(4, press("j"))
+      assert.equals(6, press("j"))
+      -- Stays on the last item.
+      assert.equals(6, press("j"))
+      assert.equals(4, press("k"))
+      assert.equals(2, press("k"))
+      -- Stays on the first item.
+      assert.equals(2, press("k"))
+
+      -- A count moves by that many items.
+      assert.equals(6, press("2j"))
+      assert.equals(2, press("2k"))
+
+      -- From a preview line, k moves to the previous item, not to its own title.
+      vim.api.nvim_win_set_cursor(context.winid, { 5, 0 })
+      assert.equals(2, press("k"))
+      vim.api.nvim_win_set_cursor(context.winid, { 3, 0 })
+      assert.equals(4, press("j"))
     end)
-    assert.equals(2, vim.api.nvim_win_get_cursor(context.winid)[1])
 
-    vim.api.nvim_feedkeys("j", "mx", false)
-    vim.wait(50, function()
-      return vim.api.nvim_win_get_cursor(context.winid)[1] == 3
-    end)
-    assert.equals(3, vim.api.nvim_win_get_cursor(context.winid)[1])
+    pcall(vim.api.nvim_buf_delete, source, { force = true })
+    if not ok then
+      error(err)
+    end
   end)
 
   it("does not allow cursor on the stack header line", function()
@@ -250,49 +286,117 @@ describe("peekstack.ui.stack_view", function()
     assert.equals(2, vim.api.nvim_win_get_cursor(context.winid)[1])
   end)
 
-  it("restores focus to stack view after undo close", function()
-    local model = stack.push(helpers.make_location())
-    assert.is_not_nil(model)
-    stack.close(model.id)
+  ---Open a real file in the current window and return a location builder for it.
+  ---@return fun(line: integer): PeekstackLocation, fun()
+  local function open_source_file()
+    local path = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile({ "local one = 1", "local two = 2", "local three = 3" }, path)
+    vim.api.nvim_cmd({ cmd = "edit", args = { path } }, {})
+    local bufnr = vim.api.nvim_get_current_buf()
+    local function at(line)
+      return helpers.make_location({
+        uri = vim.uri_from_fname(path),
+        range = { start = { line = line, character = 0 }, ["end"] = { line = line, character = 0 } },
+      })
+    end
+    local function cleanup()
+      close_floating_windows()
+      stack._reset()
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+      vim.fn.delete(path)
+    end
+    return at, cleanup
+  end
 
-    stack_view.open()
-    local context = stack_view_context()
-    assert.is_not_nil(context)
+  it("restores the last closed popup with u and returns focus to stack view", function()
+    local at, cleanup = open_source_file()
+    local root_winid = vim.api.nvim_get_current_win()
 
-    vim.api.nvim_set_current_win(context.winid)
-    vim.api.nvim_feedkeys("u", "mx", false)
-    vim.wait(50, function()
-      return vim.api.nvim_get_current_win() == context.winid
+    local ok, err = pcall(function()
+      local model = stack.push(at(1))
+      assert.is_not_nil(model)
+      stack.close(model.id)
+      assert.equals(0, #stack.list(root_winid))
+      assert.equals(1, #stack.history_list(root_winid))
+
+      stack_view.open()
+      local context = stack_view_context()
+      assert.is_not_nil(context)
+      assert.equals(root_winid, context.root_winid)
+
+      vim.api.nvim_set_current_win(context.winid)
+      vim.api.nvim_feedkeys("u", "mx", false)
+
+      local popups = stack.list(root_winid)
+      assert.equals(1, #popups)
+      assert.equals(0, #stack.history_list(root_winid))
+      assert.equals(at(1).uri, popups[1].location.uri)
+      assert.equals(1, popups[1].location.range.start.line)
+      assert.is_true(vim.api.nvim_win_is_valid(popups[1].winid))
+      assert.equals(2, vim.api.nvim_win_get_cursor(popups[1].winid)[1])
+
+      -- The panel re-renders with the restored popup and keeps focus.
+      local lines = vim.api.nvim_buf_get_lines(context.bufnr, 0, -1, false)
+      assert.is_truthy(lines[1]:find("Stack: 1", 1, true))
+      assert.equals(context.winid, vim.api.nvim_get_current_win())
     end)
 
-    assert.equals(context.winid, vim.api.nvim_get_current_win())
+    cleanup()
+    if not ok then
+      error(err)
+    end
   end)
 
-  it("restores focus to stack view after history select", function()
-    local model = stack.push(helpers.make_location())
-    assert.is_not_nil(model)
-    stack.close(model.id)
-
-    stack_view.open()
-    local context = stack_view_context()
-    assert.is_not_nil(context)
-
+  it("restores the selected history entry with H and returns focus to stack view", function()
+    local at, cleanup = open_source_file()
+    local root_winid = vim.api.nvim_get_current_win()
     local original_select = vim.ui.select
+
     local ok, err = pcall(function()
-      vim.api.nvim_set_current_win(context.winid)
+      local first = stack.push(at(0))
+      local second = stack.push(at(2))
+      assert.is_not_nil(first)
+      assert.is_not_nil(second)
+      stack.close(second.id)
+      stack.close(first.id)
+      assert.equals(0, #stack.list(root_winid))
+      assert.equals(2, #stack.history_list(root_winid))
+
+      stack_view.open()
+      local context = stack_view_context()
+      assert.is_not_nil(context)
+
+      local offered = nil
       vim.ui.select = function(items, _opts, on_choice)
-        on_choice(items[1])
+        offered = items
+        -- Pick the entry for line 2, which is not the most recently closed one.
+        for _, choice in ipairs(items) do
+          if choice.entry.location.range.start.line == 2 then
+            on_choice(choice)
+            return
+          end
+        end
+        on_choice(nil)
       end
 
+      vim.api.nvim_set_current_win(context.winid)
       vim.api.nvim_feedkeys("H", "mx", false)
-      vim.wait(50, function()
-        return vim.api.nvim_get_current_win() == context.winid
-      end)
+
+      assert.equals(2, #offered)
+      local popups = stack.list(root_winid)
+      assert.equals(1, #popups)
+      assert.equals(2, popups[1].location.range.start.line)
+      assert.is_true(vim.api.nvim_win_is_valid(popups[1].winid))
+
+      local remaining = stack.history_list(root_winid)
+      assert.equals(1, #remaining)
+      assert.equals(0, remaining[1].location.range.start.line)
 
       assert.equals(context.winid, vim.api.nvim_get_current_win())
     end)
-    vim.ui.select = original_select
 
+    vim.ui.select = original_select
+    cleanup()
     if not ok then
       error(err)
     end

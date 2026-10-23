@@ -1,48 +1,53 @@
 describe("peekstack.extensions", function()
   local extensions = require("peekstack.extensions")
-  local location = require("peekstack.core.location")
 
   describe("push_entry", function()
-    it("converts filename entry to PeekstackLocation via location.normalize", function()
-      local loc = location.normalize({
-        filename = "/tmp/test.lua",
-        lnum = 10,
-        col = 5,
-      }, "extension")
-      assert.is_not_nil(loc)
-      assert.is_true(loc.uri:find("test.lua") ~= nil)
-      assert.equals(9, loc.range.start.line) -- 10 -> 9 (0-indexed)
-      assert.equals(4, loc.range.start.character) -- 5 -> 4 (0-indexed)
-      assert.equals("extension", loc.provider)
+    local calls
+    local original_peek
+
+    before_each(function()
+      calls = {}
+      original_peek = require("peekstack").peek_location
+      require("peekstack").peek_location = function(loc, opts)
+        table.insert(calls, { loc = loc, opts = opts })
+      end
     end)
 
-    it("defaults lnum and col to 1", function()
-      local loc = location.normalize({
-        filename = "/tmp/test.lua",
-      }, "extension")
-      assert.is_not_nil(loc)
+    after_each(function()
+      require("peekstack").peek_location = original_peek
+    end)
+
+    it("peeks the entry as a 0-based location with the given provider and opts", function()
+      local opts = { provider = "extension.file", mode = "copy" }
+      extensions.push_entry({ filename = "/tmp/test.lua", lnum = 10, col = 5 }, opts)
+
+      assert.equals(1, #calls)
+      local loc = calls[1].loc
+      assert.equals(vim.uri_from_fname("/tmp/test.lua"), loc.uri)
+      assert.equals(9, loc.range.start.line)
+      assert.equals(4, loc.range.start.character)
+      assert.equals("extension.file", loc.provider)
+      assert.equals(opts, calls[1].opts)
+    end)
+
+    it("defaults the provider to extension and the position to the first line and column", function()
+      extensions.push_entry({ filename = "/tmp/test.lua" })
+
+      assert.equals(1, #calls)
+      local loc = calls[1].loc
+      assert.equals(vim.uri_from_fname("/tmp/test.lua"), loc.uri)
       assert.equals(0, loc.range.start.line)
       assert.equals(0, loc.range.start.character)
+      assert.equals("extension", loc.provider)
+      assert.is_nil(calls[1].opts)
     end)
 
-    it("does nothing when entry is nil", function()
-      -- Should not error
+    it("does not peek when the entry is nil or has no filename", function()
       extensions.push_entry(nil)
-    end)
-
-    it("does nothing when entry has no filename", function()
-      -- Should not error
       extensions.push_entry({})
-    end)
+      extensions.push_entry({ lnum = 3, col = 2 }, { provider = "extension.file" })
 
-    it("uses provider from opts", function()
-      local loc = location.normalize({
-        filename = "/tmp/test.lua",
-        lnum = 1,
-        col = 1,
-      }, "extension.file")
-      assert.is_not_nil(loc)
-      assert.equals("extension.file", loc.provider)
+      assert.equals(0, #calls)
     end)
   end)
 
@@ -218,12 +223,21 @@ describe("peekstack.extensions", function()
   end)
 
   describe("telescope", function()
+    -- Marks modules that were not loaded before a test, so restoring can remove
+    -- the fakes (and modules loaded through them) instead of leaving them behind.
+    local NOT_LOADED = {}
     local saved = {}
     local captured
     local builtin_calls
 
     local function stub(name, mod)
-      saved[name] = package.loaded[name]
+      if saved[name] == nil then
+        local original = package.loaded[name]
+        if original == nil then
+          original = NOT_LOADED
+        end
+        saved[name] = original
+      end
       package.loaded[name] = mod
     end
 
@@ -259,7 +273,11 @@ describe("peekstack.extensions", function()
 
     after_each(function()
       for name, mod in pairs(saved) do
-        package.loaded[name] = mod
+        if mod == NOT_LOADED then
+          package.loaded[name] = nil
+        else
+          package.loaded[name] = mod
+        end
       end
       saved = {}
     end)

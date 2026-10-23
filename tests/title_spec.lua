@@ -49,11 +49,11 @@ describe("peekstack.ui.render", function()
     vim.fn.delete(tmpfile)
   end)
 
-  it("includes PeekstackTitleIcon chunk when icons are enabled", function()
+  it("prefers the exact provider icon over the category icon", function()
     config.setup({
       ui = {
         title = {
-          icons = { enabled = true, map = { lsp = " " } },
+          icons = { enabled = true, map = { lsp = "L ", ["lsp.definition"] = "D " } },
         },
       },
     })
@@ -73,17 +73,17 @@ describe("peekstack.ui.render", function()
     local model = popup.create(loc)
     assert.is_not_nil(model)
 
-    local has_icon = false
+    local icon_chunks = {}
     for _, chunk in ipairs(model.win_opts.title or {}) do
       if type(chunk) == "table" and chunk[2] == "PeekstackTitleIcon" then
-        has_icon = true
+        table.insert(icon_chunks, chunk[1])
       end
     end
 
-    assert.is_true(has_icon)
-
     popup.close(model)
     vim.fn.delete(tmpfile)
+
+    assert.are.same({ "D " }, icon_chunks)
   end)
 
   it("omits icon chunk when icons are disabled", function()

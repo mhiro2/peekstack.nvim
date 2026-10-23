@@ -1,14 +1,25 @@
 describe("peekstack.picker.telescope", function()
   local picker = require("peekstack.picker.telescope")
+  -- Marks modules that were not loaded before a test, so restoring can remove
+  -- the fakes instead of leaving them in package.loaded.
+  local NOT_LOADED = {}
   local original_modules = {}
 
   local function save_module(name)
-    original_modules[name] = package.loaded[name]
+    local mod = package.loaded[name]
+    if mod == nil then
+      mod = NOT_LOADED
+    end
+    original_modules[name] = mod
   end
 
   local function restore_modules()
     for name, mod in pairs(original_modules) do
-      package.loaded[name] = mod
+      if mod == NOT_LOADED then
+        package.loaded[name] = nil
+      else
+        package.loaded[name] = mod
+      end
     end
     original_modules = {}
   end

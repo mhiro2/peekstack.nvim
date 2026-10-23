@@ -36,90 +36,143 @@ describe("peekstack.ui.inline_preview", function()
     inline_preview.close()
   end)
 
-  it("should render lines from a location", function()
-    local location = {
-      uri = vim.uri_from_fname(temp_file),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
+  ---@param path string
+  ---@param line integer 0-based start line
+  ---@return PeekstackLocation
+  local function location_at(path, line)
+    return {
+      uri = vim.uri_from_fname(path),
+      range = { start = { line = line, character = 0 }, ["end"] = { line = line, character = 0 } },
     }
+  end
 
+  ---@param location PeekstackLocation
+  ---@param max_lines integer
+  ---@return string[]
+  local function render(location, max_lines)
     local lines = nil
-    inline_preview.render_lines_async(location, 5, function(result)
+    inline_preview.render_lines_async(location, max_lines, function(result)
       lines = result
     end)
-    vim.wait(200, function()
+    local done = vim.wait(1000, function()
       return lines ~= nil
     end)
-    assert.is_not_nil(lines)
-    assert.is_true(#lines > 0)
+    assert.is_true(done, "render_lines_async did not complete")
+    return lines
+  end
+
+  ---@param count integer
+  ---@return string[]
+  local function numbered_lines(count)
+    local lines = {}
+    for i = 1, count do
+      lines[i] = "line" .. i
+    end
+    return lines
+  end
+
+  it("reads lines from disk starting at the location line and stops at max_lines", function()
+    vim.fn.writefile(numbered_lines(10), temp_file)
+    assert.equals(-1, vim.fn.bufnr(temp_file))
+
+    assert.same({ "line3", "line4", "line5", "line6" }, render(location_at(temp_file, 2), 4))
+  end)
+
+  it("returns the remaining lines when the file ends before max_lines", function()
+    -- Binary mode leaves the last line without a trailing newline.
+    vim.fn.writefile(numbered_lines(5), temp_file, "b")
+
+    assert.same({ "line4", "line5" }, render(location_at(temp_file, 3), 10))
+  end)
+
+  it("joins lines split across read chunks", function()
+    local lines = {}
+    for i = 1, 6 do
+      lines[i] = string.rep(string.char(96 + i), 3000)
+    end
+    vim.fn.writefile(lines, temp_file)
+
+    assert.same({ lines[2], lines[3], lines[4] }, render(location_at(temp_file, 1), 3))
+  end)
+
+  it("reads unsaved content from a loaded buffer", function()
+    vim.fn.writefile(numbered_lines(5), temp_file)
+    local bufnr = vim.fn.bufadd(temp_file)
+    vim.fn.bufload(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 1, 3, false, { "edited2", "edited3" })
+
+    local ok, result = pcall(render, location_at(temp_file, 1), 3)
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+    assert.is_true(ok, result)
+    assert.same({ "edited2", "edited3", "line4" }, result)
   end)
 
   it("should handle non-existent file gracefully", function()
-    local location = {
-      uri = "file:///non/existent/file.lua",
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
-    }
-
-    local lines = nil
-    inline_preview.render_lines_async(location, 5, function(result)
-      lines = result
-    end)
-    vim.wait(200, function()
-      return lines ~= nil
-    end)
-    assert.is_not_nil(lines)
-    assert.equals("-- Unable to read file --", lines[1])
+    assert.same({ "-- Unable to read file --" }, render(location_at("/non/existent/file.lua", 0), 5))
   end)
 
-  it("should handle lines beyond end of file", function()
-    local location = {
-      uri = vim.uri_from_fname(temp_file),
-      range = { start = { line = 99999, character = 0 }, ["end"] = { line = 99999, character = 10 } },
-    }
-
-    local lines = nil
-    inline_preview.render_lines_async(location, 5, function(result)
-      lines = result
-    end)
-    vim.wait(200, function()
-      return lines ~= nil
-    end)
-    assert.is_not_nil(lines)
-    -- May return "Unable to read file" or "Line beyond end of file" depending on context
-    -- Both are acceptable outcomes
-    local is_valid = lines[1] == "-- Line beyond end of file --" or lines[1] == "-- Unable to read file --"
-    assert.is_true(is_valid)
+  it("reports lines beyond the end of an existing file", function()
+    assert.same({ "-- Line beyond end of file --" }, render(location_at(temp_file, 99999), 5))
   end)
 
-  it("should respect max_lines setting", function()
-    local location = {
-      uri = vim.uri_from_fname(temp_file),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
-    }
-
-    local lines = nil
-    inline_preview.render_lines_async(location, 3, function(result)
-      lines = result
-    end)
-    vim.wait(200, function()
-      return lines ~= nil
-    end)
-    assert.is_true(#lines <= 3)
-  end)
-
-  it("should notify when disabled", function()
+  it("notifies and does not draw anything when disabled", function()
     config.setup({
       ui = {
         inline_preview = { enabled = false },
       },
     })
 
-    local location = {
-      uri = vim.uri_from_fname(temp_file),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
-    }
+    local notifications = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg, level)
+      table.insert(notifications, { msg = msg, level = level })
+    end
+    local ok, err = pcall(inline_preview.open, location_at(temp_file, 0))
+    vim.notify = original_notify
+    assert.is_true(ok, err)
 
-    -- Should not error when disabled
-    inline_preview.open(location)
+    assert.same({ { msg = "[peekstack] Inline preview is disabled", level = vim.log.levels.INFO } }, notifications)
+    assert.is_false(inline_preview.is_open())
+    local ns = vim.api.nvim_get_namespaces()["PeekstackInlinePreviewNS"]
+    if ns then
+      assert.same({}, vim.api.nvim_buf_get_extmarks(0, ns, 0, -1, {}))
+    end
+  end)
+
+  it("draws the previewed lines as virtual lines above the cursor", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "a", "b", "c" })
+    local prev_buf = vim.api.nvim_get_current_buf()
+    vim.api.nvim_set_current_buf(bufnr)
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+    inline_preview.open(location_at(temp_file, 1))
+    local ns = vim.api.nvim_get_namespaces()["PeekstackInlinePreviewNS"]
+    local function preview_texts()
+      local marks = vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })
+      if #marks ~= 1 then
+        return nil
+      end
+      local texts = {}
+      for _, virt_line in ipairs(marks[1][4].virt_lines or {}) do
+        texts[#texts + 1] = virt_line[1][1]
+      end
+      return texts, marks[1]
+    end
+    local done = vim.wait(1000, function()
+      local texts = preview_texts()
+      return texts ~= nil and texts[1] ~= "Loading... "
+    end)
+
+    local texts, mark = preview_texts()
+    inline_preview.close()
+    vim.api.nvim_set_current_buf(prev_buf)
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+
+    assert.is_true(done, "inline preview did not render")
+    assert.same({ "line2 ", "line3 " }, texts)
+    assert.equals(1, mark[2])
+    assert.is_true(mark[4].virt_lines_above)
   end)
 
   it("should cache namespace id", function()
