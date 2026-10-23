@@ -1,17 +1,32 @@
 local migrate = require("peekstack.persist.migrate")
 
 describe("migrate", function()
-  describe("ensure", function()
-    it("returns default for nil input", function()
-      local result = migrate.ensure(nil)
-      assert.equals(2, result.version)
-      assert.same({}, result.sessions)
+  describe("supports", function()
+    it("accepts only the store versions it can migrate", function()
+      assert.is_true(migrate.supports(1))
+      assert.is_true(migrate.supports(2))
+      for _, version in ipairs({ 0, 3, 99, "2" }) do
+        assert.is_false(migrate.supports(version), vim.inspect(version))
+      end
+      assert.is_false(migrate.supports(nil))
     end)
+  end)
 
-    it("returns default for non-table input", function()
-      assert.same({ version = 2, sessions = {} }, migrate.ensure("string"))
-      assert.same({ version = 2, sessions = {} }, migrate.ensure(42))
-      assert.same({ version = 2, sessions = {} }, migrate.ensure(true))
+  describe("ensure", function()
+    -- The persist layer refuses data without a supported version before it
+    -- gets here, so that stores it cannot read are never overwritten; this
+    -- fallback only covers direct callers.
+    it("falls back to an empty store for data it cannot migrate", function()
+      for _, input in ipairs({
+        { name = "nil", value = nil },
+        { name = "a string", value = "string" },
+        { name = "a number", value = 42 },
+        { name = "a boolean", value = true },
+        { name = "a table without a version", value = { sessions = {} } },
+        { name = "an unknown version", value = { version = 3, sessions = {} } },
+      }) do
+        assert.same({ version = 2, sessions = {} }, migrate.ensure(input.value), input.name)
+      end
     end)
 
     it("migrates version 1 data to version 2", function()
@@ -38,18 +53,6 @@ describe("migrate", function()
       assert.is_not_nil(result.sessions.test)
       assert.equals(1, #result.sessions.test.items)
       assert.equals("file:///tmp/b.lua", result.sessions.test.items[1].uri)
-    end)
-
-    it("returns default for missing version", function()
-      local result = migrate.ensure({ sessions = {} })
-      assert.equals(2, result.version)
-      assert.same({}, result.sessions)
-    end)
-
-    it("returns default for wrong version number", function()
-      local result = migrate.ensure({ version = 3, sessions = {} })
-      assert.equals(2, result.version)
-      assert.same({}, result.sessions)
     end)
 
     it("returns data with empty sessions table", function()
