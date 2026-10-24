@@ -43,6 +43,19 @@ describe("peekstack.providers.lsp", function()
     lsp_provider._request_timeout_ms = original_timeout_ms
   end)
 
+  ---Notifications emitted by peekstack itself. Neovim can deliver unrelated
+  ---warnings (e.g. about its log file) through vim.notify at any time.
+  ---@return { msg: string, level: integer }[]
+  local function peekstack_notifications()
+    local own = {}
+    for _, item in ipairs(notifications) do
+      if type(item.msg) == "string" and vim.startswith(item.msg, "[peekstack] ") then
+        table.insert(own, item)
+      end
+    end
+    return own
+  end
+
   it("maps DocumentSymbol results with hierarchy flattening", function()
     vim.lsp.get_clients = function(opts)
       assert.equals("textDocument/documentSymbol", opts.method)
@@ -245,7 +258,10 @@ describe("peekstack.providers.lsp", function()
     assert.equals("file:///tmp/one.lua", callback_result[1].uri)
     assert.equals(1, callback_result[1].range.start.line)
     assert.equals(2, callback_result[1].range.start.character)
-    assert.is_true(notifications[1].msg:find("timed out", 1, true) ~= nil)
+    local timeout_warning = {
+      { msg = "[peekstack] LSP request timed out; opening partial results", level = vim.log.levels.WARN },
+    }
+    assert.same(timeout_warning, peekstack_notifications())
 
     if delayed_handler then
       delayed_handler(nil, {
@@ -260,5 +276,6 @@ describe("peekstack.providers.lsp", function()
     -- Result unchanged after timeout; late response ignored
     assert.equals(1, #callback_result)
     assert.equals("file:///tmp/one.lua", callback_result[1].uri)
+    assert.same(timeout_warning, peekstack_notifications())
   end)
 end)

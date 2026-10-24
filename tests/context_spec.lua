@@ -39,10 +39,21 @@ describe("context", function()
     end)
 
     it("returns 0-indexed position from cursor", function()
+      local winid = vim.api.nvim_get_current_win()
+      local previous_bufnr = vim.api.nvim_win_get_buf(winid)
+      local bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_win_set_buf(winid, bufnr)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "one", "two", "three four", "five six" })
+      vim.api.nvim_win_set_cursor(winid, { 3, 4 })
+
       local ctx = context.current()
-      local cursor = vim.api.nvim_win_get_cursor(0)
-      assert.equals(cursor[1] - 1, ctx.position.line)
-      assert.equals(cursor[2], ctx.position.character)
+
+      if vim.api.nvim_buf_is_valid(previous_bufnr) then
+        vim.api.nvim_win_set_buf(winid, previous_bufnr)
+      end
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+      assert.equals(bufnr, ctx.bufnr)
+      assert.same({ line = 2, character = 4 }, ctx.position)
     end)
   end)
 

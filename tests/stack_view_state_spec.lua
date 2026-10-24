@@ -73,24 +73,32 @@ describe("peekstack.ui.stack_view.state", function()
     local initial_count = state.count()
 
     vim.api.nvim_cmd({ cmd = "tabnew" }, {})
+    local closed_tabpage = vim.api.nvim_get_current_tabpage()
     stack_view.open()
     local tab_state = state.current()
+    assert.equals(tab_state, state.all()[closed_tabpage])
+    assert.equals(initial_count + 1, state.count())
     vim.api.nvim_set_current_win(tab_state.winid)
 
-    vim.api.nvim_feedkeys("?", "nx", false)
-    vim.wait(50, function()
-      return tab_state.help_winid ~= nil and vim.api.nvim_win_is_valid(tab_state.help_winid)
-    end)
-
+    -- Use the mapped key so the real help toggle runs.
+    vim.api.nvim_feedkeys("?", "mx", false)
     local help_winid = tab_state.help_winid
+    assert.is_not_nil(help_winid)
+    assert.is_true(vim.api.nvim_win_is_valid(help_winid))
+    local help_augroup = tab_state.help_augroup
+    local autoclose_group = tab_state.autoclose_group
+    assert.is_not_nil(help_augroup)
+    assert.is_not_nil(autoclose_group)
+
     vim.api.nvim_cmd({ cmd = "tabclose" }, {})
 
-    vim.wait(50, function()
+    local cleaned = vim.wait(200, function()
       return state.count() == initial_count
     end)
-
-    if help_winid then
-      assert.is_false(vim.api.nvim_win_is_valid(help_winid))
-    end
+    assert.is_true(cleaned, "stack view state of the closed tab was not removed")
+    assert.is_nil(state.all()[closed_tabpage])
+    assert.is_false(vim.api.nvim_win_is_valid(help_winid))
+    assert.is_false(pcall(vim.api.nvim_get_autocmds, { group = help_augroup }))
+    assert.is_false(pcall(vim.api.nvim_get_autocmds, { group = autoclose_group }))
   end)
 end)

@@ -79,16 +79,37 @@ describe("peekstack.persist.lock", function()
 
   it("waits for another process to release the lock before reading the store", function()
     hold_lock_elsewhere()
-    local result = save("mine")
+    local lock_path = lock.lock_path(path)
+    local original_open = vim.uv.fs_open
+    local attempts = 0
+    local result = nil
+    local ok, err = pcall(function()
+      vim.uv.fs_open = function(file, flags, ...)
+        if file == lock_path and flags == "wx" then
+          attempts = attempts + 1
+        end
+        return original_open(file, flags, ...)
+      end
+      result = save("mine")
 
-    vim.wait(60, function()
-      return false
-    end, 10)
-    assert.is_nil(result())
+      -- Release as soon as the save has found the lock taken and tried again,
+      -- well within the time the save keeps retrying.
+      assert.is_true(
+        vim.wait(3000, function()
+          return attempts >= 2 or result() ~= nil
+        end, 1),
+        "Timed out waiting for the save to retry the lock"
+      )
+      assert.is_nil(result())
+    end)
+    vim.uv.fs_open = original_open
+    if not ok then
+      error(err)
+    end
 
     -- The other process writes its session, then releases the lock.
     assert.is_true(store.write_sync(path, { version = 2, sessions = { theirs = empty_session() } }))
-    vim.fn.delete(lock.lock_path(path))
+    vim.fn.delete(lock_path)
 
     assert.is_true(vim.wait(3000, function()
       return result() ~= nil

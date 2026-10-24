@@ -118,20 +118,83 @@ describe("peekstack.persist.auto", function()
     assert.equals(0, calls)
   end)
 
-  it("debounces save calls", function()
+  it("debounces save calls until the stack stays unchanged for debounce_ms", function()
+    -- Drive the debounce timer from a fake clock instead of waiting on real
+    -- time, so the checks just before and after the deadline are exact.
+    local now = 0
+    ---@type { due: integer?, callback: fun()? }[]
+    local timers = {}
+    local function fake_timer()
+      local timer = { due = nil, callback = nil }
+      function timer.start(_self, timeout, _repeat, callback)
+        timer.due = now + timeout
+        timer.callback = callback
+      end
+      function timer.stop()
+        timer.due = nil
+      end
+      function timer.is_active()
+        return timer.due ~= nil
+      end
+      function timer.is_closing()
+        return false
+      end
+      function timer.close()
+        timer.due = nil
+      end
+      timers[#timers + 1] = timer
+      return timer
+    end
+    ---@param ms integer
+    local function advance(ms)
+      now = now + ms
+      for _, timer in ipairs(timers) do
+        if timer.due and timer.due <= now then
+          timer.due = nil
+          timer.callback()
+        end
+      end
+      -- The timer callback hands the save to the main loop; run everything
+      -- scheduled so far before looking at the result.
+      local drained = false
+      vim.schedule(function()
+        drained = true
+      end)
+      assert.is_true(vim.wait(1000, function()
+        return drained
+      end, 1))
+    end
+
     local calls = 0
     original_save = persist.save_current
     persist.save_current = function()
       calls = calls + 1
     end
 
-    auto.schedule_save({ root_winid = vim.api.nvim_get_current_win() })
-    auto.schedule_save({ root_winid = vim.api.nvim_get_current_win() })
+    local winid = vim.api.nvim_get_current_win()
+    local original_new_timer = vim.uv.new_timer
+    local ok, err = pcall(function()
+      vim.uv.new_timer = fake_timer
+      -- debounce_ms is 20 in this spec's config.
+      assert.is_true(auto.schedule_save({ root_winid = winid }))
+      advance(15)
+      assert.equals(0, calls)
 
-    local ok = vim.wait(200, function()
-      return calls == 1
-    end, 10)
-    assert.is_true(ok, "Timed out waiting for debounced save")
+      -- A change inside the quiet period starts the wait over.
+      assert.is_true(auto.schedule_save({ root_winid = winid }))
+      advance(19)
+      assert.equals(0, calls)
+
+      advance(1)
+      assert.equals(1, calls)
+
+      advance(1000)
+      assert.equals(1, calls)
+    end)
+    vim.uv.new_timer = original_new_timer
+    if not ok then
+      error(err)
+    end
   end)
 
   it("uses synchronous save on VimLeavePre path", function()

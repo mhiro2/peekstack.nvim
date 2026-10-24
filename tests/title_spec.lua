@@ -49,11 +49,11 @@ describe("peekstack.ui.render", function()
     vim.fn.delete(tmpfile)
   end)
 
-  it("includes PeekstackTitleIcon chunk when icons are enabled", function()
+  it("prefers the exact provider icon over the category icon", function()
     config.setup({
       ui = {
         title = {
-          icons = { enabled = true, map = { lsp = " " } },
+          icons = { enabled = true, map = { lsp = "L ", ["lsp.definition"] = "D " } },
         },
       },
     })
@@ -73,17 +73,17 @@ describe("peekstack.ui.render", function()
     local model = popup.create(loc)
     assert.is_not_nil(model)
 
-    local has_icon = false
+    local icon_chunks = {}
     for _, chunk in ipairs(model.win_opts.title or {}) do
       if type(chunk) == "table" and chunk[2] == "PeekstackTitleIcon" then
-        has_icon = true
+        table.insert(icon_chunks, chunk[1])
       end
     end
 
-    assert.is_true(has_icon)
-
     popup.close(model)
     vim.fn.delete(tmpfile)
+
+    assert.are.same({ "D " }, icon_chunks)
   end)
 
   it("omits icon chunk when icons are disabled", function()
@@ -190,5 +190,47 @@ describe("peekstack.ui.render", function()
 
     popup.close(model)
     vim.fn.delete(tmpfile)
+  end)
+
+  describe("truncate_chunks", function()
+    local render = require("peekstack.ui.render")
+
+    ---@param chunks PeekstackTitleChunk[]
+    ---@return string
+    local function joined(chunks)
+      local parts = {}
+      for _, chunk in ipairs(chunks) do
+        table.insert(parts, chunk[1])
+      end
+      return table.concat(parts)
+    end
+
+    it("keeps both ends and their highlights within max_width", function()
+      local chunks = render.truncate_chunks({ { "lsp.refs ", "Provider" }, { "path/to/file.lua", "Path" } }, 12)
+      assert.same({ { "lsp.r", "Provider" }, { "..." }, { ".lua", "Path" } }, chunks)
+    end)
+
+    it("splits kept ends across chunk boundaries", function()
+      local chunks = render.truncate_chunks({ { "ab", "A" }, { "cdefghij", "B" }, { "kl", "C" } }, 9)
+      assert.same({ { "ab", "A" }, { "c", "B" }, { "..." }, { "j", "B" }, { "kl", "C" } }, chunks)
+    end)
+
+    it("measures a tab on the right at the column it lands on", function()
+      local chunks = render.truncate_chunks({ { "123456789ZZZZZZ", "A" }, { "abcdefg\tx", "B" } }, 21)
+      assert.same({ { "123456789", "A" }, { "..." }, { "efg\tx", "B" } }, chunks)
+    end)
+
+    it("budgets wide characters by display cells", function()
+      local chunks =
+        render.truncate_chunks({ { "定義 ", "Provider" }, { "日本語のファイル名.lua", "Path" } }, 14)
+      assert.equals(14, vim.fn.strdisplaywidth(joined(chunks)))
+      -- 11 cells remain. The left gets 6 but "日" does not fit in the sixth, so
+      -- that cell lets "名" join ".lua" on the right.
+      assert.same({ { "定義 ", "Provider" }, { "..." }, { "名.lua", "Path" } }, chunks)
+
+      local narrow = render.truncate_chunks({ { "日本語のファイル名", "Path" } }, 8)
+      assert.is_true(vim.fn.strdisplaywidth(joined(narrow)) <= 8, joined(narrow))
+      assert.same({ { "日", "Path" }, { "..." }, { "名", "Path" } }, narrow)
+    end)
   end)
 end)

@@ -1,3 +1,5 @@
+local str = require("peekstack.util.str")
+
 local M = {}
 
 local NS = vim.api.nvim_create_namespace("PeekstackStackView")
@@ -297,8 +299,7 @@ function M.preview_line(source_bufnr, line, max_width, preview_prefix)
   local prefix_display_width = vim.fn.strdisplaywidth(preview_prefix)
   local available = math.max(10, max_width - prefix_display_width)
   if vim.fn.strdisplaywidth(text) > available then
-    local keep_chars = math.max(available - 3, 0)
-    local kept = vim.fn.strcharpart(text, 0, keep_chars)
+    local kept = str.take_width(text, math.max(available - 3, 0))
     text = kept .. "..."
     source_col_end = source_col_start + #kept
   end

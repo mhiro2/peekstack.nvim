@@ -178,26 +178,6 @@ describe("peekstack.health", function()
     assert.is_true(found)
   end)
 
-  it("reports persist status when enabled inside a git repo", function()
-    vim.fn.has = function()
-      return 1
-    end
-    vim.fn.executable = function()
-      return 1
-    end
-    config.setup({ persist = { enabled = true } })
-
-    health.check()
-
-    local found_persist = false
-    for _, msg in ipairs(messages) do
-      if msg:find("persist") then
-        found_persist = true
-      end
-    end
-    assert.is_true(found_persist)
-  end)
-
   it("reports tree-sitter info when context is enabled without a parser", function()
     vim.fn.has = function()
       return 1
@@ -264,18 +244,42 @@ describe("peekstack.health", function()
     assert.is_not_nil(find_message("provider 'marks' disabled"))
   end)
 
-  it("reports persist storage path when persist is enabled", function()
+  it("reports persist and auto persist as active with the repository storage path inside a git repo", function()
     vim.fn.has = function()
       return 1
     end
     vim.fn.executable = function()
       return 1
     end
-    config.setup({ persist = { enabled = true } })
+    local original_cwd = vim.fn.getcwd()
+    -- Resolve symlinks (e.g. /var -> /private/var) so the path matches getcwd().
+    local root = vim.fn.resolve(vim.fn.tempname())
+    local repo = root .. "/repo"
+    vim.fn.mkdir(repo .. "/.git", "p")
+    vim.fn.mkdir(repo .. "/src", "p")
+    vim.api.nvim_set_current_dir(repo .. "/src")
 
-    health.check()
+    config.setup({
+      persist = {
+        enabled = true,
+        max_items = 42,
+        auto = { enabled = true, debounce_ms = 250, save_on_leave = false },
+      },
+    })
 
-    assert.is_not_nil(find_message("storage path:"))
+    local ok, err = pcall(health.check)
+    vim.api.nvim_set_current_dir(original_cwd)
+    vim.fn.delete(root, "rf")
+    assert.is_true(ok, tostring(err))
+
+    local storage_path = vim.fn.stdpath("state") .. "/peekstack/repo_" .. vim.fn.sha256(repo) .. ".json"
+    assert.is_true(vim.list_contains(messages, "ok:persist enabled (max_items=42)"))
+    assert.is_true(vim.list_contains(messages, "info:storage path: " .. storage_path))
+    assert.is_true(
+      vim.list_contains(messages, 'ok:auto persist enabled (session="auto", debounce_ms=250, save_on_leave=false)')
+    )
+    assert.is_nil(find_message("not inside a git repository"))
+    assert.is_nil(find_message("persist disabled"))
   end)
 
   it("reports quick_peek and inline_preview close events", function()
@@ -318,24 +322,29 @@ describe("peekstack.health", function()
     assert.is_not_nil(find_message("picker.builtin.preview_lines = 3"))
   end)
 
-  it("does not error when persist.auto is not a table", function()
+  it("treats a non-table persist.auto as disabled without erroring", function()
     vim.fn.has = function()
       return 1
     end
     vim.fn.executable = function()
       return 1
     end
-    config.setup({
-      persist = {
-        enabled = true,
-        auto = true,
-      },
-    })
+    -- config.setup() replaces a non-table auto with a table, so hand health a
+    -- config that bypassed that sanitizing to reach its own guard.
+    config.setup({ persist = { enabled = true } })
+    local cfg = vim.deepcopy(config.get())
+    cfg.persist.auto = true
+    local original_get = config.get
+    config.get = function()
+      return cfg
+    end
 
-    assert.has_no_error(function()
-      health.check()
-    end)
-    assert.is_not_nil(find_message("auto persist disabled"))
+    local ok, err = pcall(health.check)
+    config.get = original_get
+
+    assert.is_true(ok, tostring(err))
+    assert.is_true(vim.list_contains(messages, "info:auto persist disabled"))
+    assert.is_nil(find_message("auto persist enabled"))
   end)
 
   it("warns when auto persist is enabled outside a git repository", function()

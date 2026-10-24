@@ -246,9 +246,22 @@ describe("location", function()
       }
 
       local text = location.display_text(loc, 0, { path_base = "repo", max_width = 12 })
-      assert.is_true(text:find(":1:1", 1, true) ~= nil)
+      assert.is_true(vim.endswith(text, ":1:1"), text)
       assert.is_true(text:find("...", 1, true) ~= nil)
       assert.is_nil(text:find(tmpdir, 1, true))
+      assert.is_true(vim.fn.strdisplaywidth(text) <= 12, text)
+      -- The head of the repo-relative path survives the truncation.
+      assert.is_true(vim.startswith(text, "sub"), text)
+
+      -- Narrower than the position suffix itself.
+      local narrow = location.display_text(loc, 0, { path_base = "repo", max_width = 3 })
+      assert.is_true(vim.fn.strdisplaywidth(narrow) <= 3, narrow)
+
+      -- Wide characters are budgeted by display cells.
+      local wide_loc = vim.deepcopy(loc)
+      wide_loc.uri = vim.uri_from_fname(repo .. "/日本語のとても長いファイル名")
+      -- 8 cells for the path: "日" on the left leaves 3 cells for "名" on the right.
+      assert.equals("日...名:1:1", location.display_text(wide_loc, 0, { path_base = "repo", max_width = 12 }))
 
       assert(vim.uv.fs_rmdir(subdir))
       assert(vim.uv.fs_rmdir(repo .. "/.git"))
@@ -311,18 +324,36 @@ describe("location", function()
         end
 
         local limit = location._realpath_cache_limit()
-        local oldest = location_for("/tmp/peekstack-location-lru-0.lua")
+        ---@param idx integer
+        ---@return PeekstackLocation
+        local function nth(idx)
+          return location_for(string.format("/tmp/peekstack-location-lru-%d.lua", idx))
+        end
+        local oldest = nth(0)
+        local second_oldest = nth(1)
 
         assert.is_true(location.is_same_position(oldest, oldest.uri, 0, 0))
         assert.equals(1, calls)
 
-        for idx = 1, limit do
-          local loc = location_for(string.format("/tmp/peekstack-location-lru-%d.lua", idx))
+        -- Fill the cache up to its limit.
+        for idx = 1, limit - 1 do
+          local loc = nth(idx)
           assert.is_true(location.is_same_position(loc, loc.uri, 0, 0))
         end
+        assert.equals(limit, calls)
+
+        -- Using the oldest entry again makes it the most recently used one.
+        assert.is_true(location.is_same_position(oldest, oldest.uri, 0, 0))
+        assert.equals(limit, calls)
+
+        -- One more entry overflows the cache and evicts the least recently used.
+        local newest = nth(limit)
+        assert.is_true(location.is_same_position(newest, newest.uri, 0, 0))
         assert.equals(limit + 1, calls)
 
         assert.is_true(location.is_same_position(oldest, oldest.uri, 0, 0))
+        assert.equals(limit + 1, calls)
+        assert.is_true(location.is_same_position(second_oldest, second_oldest.uri, 0, 0))
         assert.equals(limit + 2, calls)
       end)
 

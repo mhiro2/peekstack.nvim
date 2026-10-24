@@ -1,8 +1,10 @@
 describe("peekstack.persist.store", function()
   local store = require("peekstack.persist.store")
-  local fs = require("peekstack.util.fs")
 
-  local test_path = fs.scope_path("global")
+  -- Each test gets a store file of its own, so nothing another test (or
+  -- another spec process) writes can change what a test reads.
+  local test_dir = nil
+  local test_path = nil
   local wait_timeout_ms = 500
   local wait_interval_ms = 10
 
@@ -80,28 +82,18 @@ describe("peekstack.persist.store", function()
     assert.is_true(ok, "Timed out waiting for raw write")
   end
 
-  ---@param path string
-  local function delete_and_wait(path)
-    local done = false
-    vim.uv.fs_unlink(path, function()
-      done = true
-    end)
-    local ok = vim.wait(wait_timeout_ms, function()
-      return done
-    end, wait_interval_ms)
-    assert.is_true(ok, "Timed out waiting for file delete")
-  end
-
   before_each(function()
-    write_and_wait(test_path, { version = 2, sessions = {} })
+    test_dir = vim.fn.tempname()
+    vim.fn.mkdir(test_dir, "p")
+    test_path = test_dir .. "/store.json"
   end)
 
   after_each(function()
-    write_and_wait(test_path, { version = 2, sessions = {} })
+    vim.fn.delete(test_dir, "rf")
   end)
 
   it("returns empty data when file is missing", function()
-    delete_and_wait(test_path)
+    assert.is_nil(vim.uv.fs_stat(test_path))
 
     local called = false
     local result = nil
@@ -151,6 +143,7 @@ describe("peekstack.persist.store", function()
   end)
 
   it("returns nil and warns when reading fails with an I/O error", function()
+    write_and_wait(test_path, { version = 2, sessions = {} })
     local original_fs_read = vim.uv.fs_read
     local result = "unset"
     local warnings = capture_warnings(function()
@@ -249,6 +242,7 @@ describe("peekstack.persist.store", function()
   end)
 
   it("read_sync returns nil when reading fails with an I/O error", function()
+    assert.is_true(store.write_sync(test_path, { version = 2, sessions = {} }))
     local original_fs_read = vim.uv.fs_read
     local result = "unset"
     local warnings = capture_warnings(function()
@@ -269,7 +263,7 @@ describe("peekstack.persist.store", function()
   end)
 
   it("read_sync returns empty data when the file is missing", function()
-    delete_and_wait(test_path)
+    assert.is_nil(vim.uv.fs_stat(test_path))
     assert.same({ version = 2, sessions = {} }, store.read_sync(test_path))
   end)
 
@@ -331,9 +325,14 @@ describe("peekstack.persist.store", function()
     assert.is_true(successes[1])
     assert.is_true(successes[2])
 
+    -- Each write replaces the file whole, so the last rename leaves exactly
+    -- one of the payloads, and neither write leaves its temp file behind.
     local result = read_and_wait(test_path)
-    assert.equals(2, result.version)
-    assert.is_true(result.sessions.first ~= nil or result.sessions.second ~= nil)
+    assert.is_true(
+      vim.deep_equal(first, result) or vim.deep_equal(second, result),
+      "expected one complete payload, got " .. vim.inspect(result)
+    )
+    assert.same({ "store.json" }, vim.fn.readdir(test_dir))
   end)
 
   it("write_sync returns false when payload cannot be encoded", function()

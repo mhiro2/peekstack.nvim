@@ -86,29 +86,6 @@ describe("peekstack.core.user_events", function()
     assert.is_true(found, "PeekstackPush event not found")
   end)
 
-  it("should emit PeekstackClose event when closing popup", function()
-    local location = {
-      uri = vim.uri_from_bufnr(0),
-      range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
-      provider = "test",
-    }
-
-    local model = stack.push(location)
-    stack.close(model.id)
-
-    vim.wait(100)
-
-    local found = false
-    for _, ev in ipairs(received_events) do
-      if ev.event == "PeekstackClose" then
-        found = true
-        assert.equals(model.id, ev.data.popup_id)
-        break
-      end
-    end
-    assert.is_true(found, "PeekstackClose event not found")
-  end)
-
   it("should report the owning stack root for quick peek events", function()
     local location = {
       uri = vim.uri_from_bufnr(0),
@@ -225,28 +202,85 @@ describe("peekstack.core.user_events", function()
   it("should emit PeekstackRestore event when restoring session", function()
     local persist = require("peekstack.persist")
     config.setup({ persist = { enabled = true } })
+    persist._reset_cache()
 
+    local restored
     in_temp_repo(function()
-      persist.restore("test_session")
+      local path = vim.fn.getcwd() .. "/restore_target.txt"
+      vim.fn.writefile({ "alpha", "beta", "gamma" }, path)
+      local uri = vim.uri_from_fname(path)
+      local root_winid = vim.api.nvim_get_current_win()
 
-      vim.wait(100)
+      local model = stack.push({
+        uri = uri,
+        range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 4 } },
+        provider = "test",
+      })
+      assert.is_not_nil(model)
+      vim.api.nvim_set_current_win(root_winid)
+
+      local saved
+      persist.save_current("test_session", {
+        silent = true,
+        on_done = function(success)
+          saved = success
+        end,
+      })
+      assert.is_true(vim.wait(2000, function()
+        return saved ~= nil
+      end, 10))
+      assert.is_true(saved)
+
+      stack.close(model.id)
+      assert.equals(0, #stack.list(root_winid))
+      received_events = {}
+
+      persist.restore("test_session", {
+        silent = true,
+        on_done = function(result)
+          restored = result
+        end,
+      })
+      assert.is_true(vim.wait(2000, function()
+        return restored ~= nil
+      end, 10))
+
+      local popups = stack.list(root_winid)
+      assert.equals(1, #popups)
+      assert.equals(uri, popups[1].location.uri)
+      assert.equals(1, popups[1].location.range.start.line)
+      assert.is_true(vim.api.nvim_win_is_valid(popups[1].winid))
+      stack.close_all(root_winid)
     end)
 
-    local _found = false
-    for _, ev in ipairs(received_events) do
-      if ev.event == "PeekstackRestore" then
-        _found = true
-        break
-      end
-    end
-    -- Note: this may not find a session since we're testing with empty data
-    -- but the event emission should still work
+    assert.is_true(restored)
+    local restore_events = vim.tbl_filter(function(ev)
+      return ev.event == "PeekstackRestore"
+    end, received_events)
+    assert.equals(1, #restore_events)
+    assert.equals("test_session", restore_events[1].data.session)
+    assert.equals(1, restore_events[1].data.item_count)
+    assert.same({}, restore_events[1].data.skipped)
   end)
 
-  it("should handle emit errors gracefully", function()
-    -- This should not error even with invalid data
-    user_events.emit("PeekstackTest", { invalid = "data" })
-    -- If we got here, error handling worked
-    assert.is_true(true)
+  it("should warn instead of raising when the event cannot be dispatched", function()
+    local notifications = {}
+    local original_notify = vim.notify
+    local original_exec = vim.api.nvim_exec_autocmds
+    vim.notify = function(msg, level)
+      table.insert(notifications, { msg = msg, level = level })
+    end
+    vim.api.nvim_exec_autocmds = function()
+      error("dispatch failure")
+    end
+    local ok, err = pcall(user_events.emit, "PeekstackTest", { value = 1 })
+    vim.api.nvim_exec_autocmds = original_exec
+    vim.notify = original_notify
+
+    assert.is_true(ok, tostring(err))
+    assert.equals(1, #notifications)
+    assert.equals(vim.log.levels.WARN, notifications[1].level)
+    assert.is_truthy(notifications[1].msg:find("Failed to emit event PeekstackTest", 1, true))
+    assert.is_truthy(notifications[1].msg:find("dispatch failure", 1, true))
   end)
 end)

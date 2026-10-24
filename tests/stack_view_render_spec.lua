@@ -448,22 +448,57 @@ describe("peekstack.ui.stack_view.render", function()
     assert.is_true(joined:find("Cycle B", 1, true) ~= nil)
   end)
 
-  it("truncates long titles in the render pipeline", function()
+  -- Prefix rendered before the label of the first, unfocused entry.
+  local FIRST_ENTRY_PREFIX = "  1. "
+
+  for _, case in ipairs({
+    { title = "a-very-very-long-title", max_width = 10 },
+    { title = "a-very-very-long-title", max_width = 7 },
+  }) do
+    it(string.format("truncates plain titles to %d display cells", case.max_width), function()
+      local model = build_model({
+        config = { ui = { path = { max_width = case.max_width } } },
+        items = { popup(1, { title = case.title }) },
+      })
+
+      local line = model.lines[2]
+      assert.is_true(vim.startswith(line, FIRST_ENTRY_PREFIX))
+      local label = line:sub(#FIRST_ENTRY_PREFIX + 1)
+      assert.equals(case.max_width, vim.fn.strdisplaywidth(label))
+      assert.is_truthy(label:find("...", 1, true))
+      assert.equals(case.title:sub(1, 1), label:sub(1, 1))
+      assert.equals(case.title:sub(-1), label:sub(-1))
+    end)
+  end
+
+  it("prefers title_chunks over the plain title and keeps chunk highlights when truncating", function()
     local model = build_model({
-      config = {
-        ui = {
-          path = {
-            max_width = 10,
-          },
-        },
-      },
+      config = { ui = { path = { max_width = 20 } } },
       items = {
-        popup(1, { title = "a-very-very-long-title" }),
+        popup(1, {
+          title = "plain title that must not be rendered",
+          title_chunks = {
+            { "lsp.references", "PeekstackTitleProvider" },
+            { " " },
+            { "src/deeply/nested/module.lua", "PeekstackTitlePath" },
+          },
+        }),
       },
     })
 
-    local joined = table.concat(model.lines, "\n")
-    assert.is_true(joined:find("...", 1, true) ~= nil)
+    local line = model.lines[2]
+    assert.is_nil(line:find("plain title", 1, true))
+    local label = line:sub(#FIRST_ENTRY_PREFIX + 1)
+    assert.equals(20, vim.fn.strdisplaywidth(label))
+    -- 9 cells from the left, "...", 8 cells from the right.
+    assert.equals("lsp.refer...dule.lua", label)
+
+    local by_group = {}
+    for _, hl in ipairs(model.highlights[2]) do
+      by_group[hl.hl_group] = line:sub(hl.col_start + 1, hl.col_end)
+    end
+    assert.equals("lsp.refer", by_group["PeekstackStackViewProvider"])
+    assert.equals("dule.lua", by_group["PeekstackStackViewPath"])
   end)
 
   it("shows the focus marker only on the focused popup", function()
@@ -986,6 +1021,17 @@ describe("peekstack.ui.stack_view.render", function()
     end
   end)
 
+  it("truncates wide-character preview lines by display cells", function()
+    local preview = require("peekstack.ui.stack_view.preview")
+    local source_bufnr = new_source_buffer({ string.rep("あ", 30) }, "text")
+
+    -- 18 cells after the prefix, 15 of them for text: seven "あ" fit.
+    local line = preview.preview_line(source_bufnr, 0, 20, "  ")
+    assert.is_not_nil(line)
+    assert.equals("  " .. string.rep("あ", 7) .. "...", line.line)
+    assert.equals(#string.rep("あ", 7), line.source_col_end - line.source_col_start)
+  end)
+
   it("clamps treesitter highlight ranges on truncated preview lines", function()
     local source_bufnr = new_source_buffer({ string.rep("a", 400) }, "lua")
     local target_bufnr = new_target_buffer()
@@ -1064,14 +1110,20 @@ describe("peekstack.ui.stack_view.render", function()
       assert.is_not_nil(preview_line_nr)
       local preview_len = #lines[preview_line_nr]
 
-      local extmarks = vim.api.nvim_buf_get_extmarks(target_bufnr, ns, 0, -1, { details = true })
-      for _, mark in ipairs(extmarks) do
-        local row = mark[2]
+      -- The visible source text ends right before the appended ellipsis.
+      local preview_line = lines[preview_line_nr]
+      local text_start, text_end = preview_line:find("a+%.%.%.$")
+      assert.is_not_nil(text_start)
+      assert.equals(preview_len, text_end)
+
+      local string_marks = {}
+      for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(target_bufnr, ns, 0, -1, { details = true })) do
         local details = mark[4] or {}
-        if row == preview_line_nr - 1 and details.hl_group == "@string.peekstack_test_trunc" then
-          assert.is_true((details.end_col or 0) <= preview_len)
+        if details.hl_group == "@string.peekstack_test_trunc" then
+          table.insert(string_marks, { row = mark[2], col = mark[3], end_col = details.end_col })
         end
       end
+      assert.are.same({ { row = preview_line_nr - 1, col = text_start - 1, end_col = preview_len - 3 } }, string_marks)
     end)
 
     vim.treesitter.get_parser = original_get_parser

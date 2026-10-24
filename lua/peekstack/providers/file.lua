@@ -82,53 +82,106 @@ local function resolve_target(target, source_name)
   return resolved, lnum, col
 end
 
----@return string
-local function cursor_target()
-  local target = vim.fn.expand("<cfile>")
-  local wide_target = vim.fn.expand("<cWORD>")
-  if wide_target ~= "" and wide_target:find(":%d+") and not target:find(":%d+") then
-    return wide_target
+-- A path with a :line[:col] suffix inside a WORD, without the quotes,
+-- brackets and separators that wrap a reference in prose or markup.
+local SPEC_PATTERN = "[^%s\"'`%(%)%[%]<>{},;]+:%d+[:%d]*"
+
+---Byte offset of the cursor inside the WORD under it, if it is on one.
+---@param word string
+---@return integer?
+local function cursor_offset_in(word)
+  local line = vim.api.nvim_get_current_line()
+  local col = vim.api.nvim_win_get_cursor(0)[2] + 1
+  if line:sub(col, col):match("^%s?$") then
+    return nil
   end
-  return target
+  local start = col
+  while start > 1 and not line:sub(start - 1, start - 1):match("%s") do
+    start = start - 1
+  end
+  if line:sub(start, start + #word - 1) ~= word then
+    return nil
+  end
+  return col - start + 1
+end
+
+---Candidate references under the cursor, most likely first.
+---@return string[]
+local function cursor_targets()
+  local target = vim.fn.expand("<cfile>")
+  if target:match("^%a+://") or target:find(":%d+") then
+    return { target }
+  end
+
+  local word = vim.fn.expand("<cWORD>")
+  if not word:find(":%d+") then
+    return target ~= "" and { target } or {}
+  end
+
+  -- <cfile> drops the :line[:col] suffix. The whole WORD comes first since
+  -- file names may contain punctuation, then the WORD without the quotes or
+  -- brackets around it, then the spec cut out of it under the cursor, then
+  -- <cfile> itself, and only then specs elsewhere in the WORD.
+  local candidates = { word }
+  local unwrapped = word:gsub("^[\"'`%(%[<{]+", ""):gsub("[\"'`%)%]>},;.]+$", "")
+  if unwrapped ~= word and unwrapped ~= "" then
+    table.insert(candidates, unwrapped)
+  end
+  local offset = cursor_offset_in(word)
+  local elsewhere = {}
+  local init = 1
+  while true do
+    local spec_start, spec_end = word:find(SPEC_PATTERN, init)
+    if not spec_start then
+      break
+    end
+    local spec = word:sub(spec_start, spec_end):gsub(":+$", "")
+    if offset and offset >= spec_start and offset <= spec_end then
+      table.insert(candidates, spec)
+    else
+      table.insert(elsewhere, spec)
+    end
+    init = spec_end + 1
+  end
+  if target ~= "" then
+    table.insert(candidates, target)
+  end
+  return vim.list_extend(candidates, elsewhere)
+end
+
+---@param uri string
+---@param lnum integer
+---@param col integer
+---@return PeekstackLocation[]
+local function locations_at(uri, lnum, col)
+  local loc = location.normalize({
+    uri = uri,
+    range = {
+      start = { line = lnum - 1, character = col - 1 },
+      ["end"] = { line = lnum - 1, character = col - 1 },
+    },
+  }, "file.under_cursor")
+  return loc and { loc } or {}
 end
 
 ---Get file path under cursor
 ---@param ctx PeekstackProviderContext
 ---@param cb fun(locations: PeekstackLocation[])
 function M.under_cursor(ctx, cb)
-  local target = cursor_target()
-  if not target or target == "" then
-    cb({})
+  local targets = cursor_targets()
+  if #targets == 1 and targets[1]:match("^%a+://") then
+    cb(locations_at(fs.fname_to_uri(targets[1]), 1, 1))
     return
   end
-  if not target:match("^%a+://") then
-    local source_name = vim.api.nvim_buf_get_name(ctx.bufnr)
+  local source_name = vim.api.nvim_buf_get_name(ctx.bufnr)
+  for _, target in ipairs(targets) do
     local resolved, lnum, col = resolve_target(target, source_name)
-    if not resolved then
-      cb({})
+    if resolved then
+      cb(locations_at(fs.fname_to_uri(resolved), lnum or 1, col or 1))
       return
     end
-    target = resolved
-    lnum = lnum or 1
-    col = col or 1
-
-    local uri = fs.fname_to_uri(target)
-    local loc = location.normalize({
-      uri = uri,
-      range = {
-        start = { line = lnum - 1, character = col - 1 },
-        ["end"] = { line = lnum - 1, character = col - 1 },
-      },
-    }, "file.under_cursor")
-    cb(loc and { loc } or {})
-    return
   end
-  local uri = fs.fname_to_uri(target)
-  local loc = location.normalize(
-    { uri = uri, range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } } },
-    "file.under_cursor"
-  )
-  cb(loc and { loc } or {})
+  cb({})
 end
 
 return M

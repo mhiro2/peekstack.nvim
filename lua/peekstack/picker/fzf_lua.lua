@@ -45,16 +45,20 @@ function M.pick(locations, opts, cb)
     },
   })
 
-  fzf.fzf_exec(function()
-    local lines = {}
-    for _, item in ipairs(items) do
-      local file = item.file or ""
-      local label = item.label:gsub("[%r\n\t]", " ")
-      local loc = string.format("%s:%d:%d", file, item.lnum, item.col)
-      table.insert(lines, string.format("%s\t%s\t%d", loc, label, item.index))
-    end
-    return lines
-  end, exec_opts)
+  -- Control characters would split an entry into several fzf lines or shift
+  -- the tab-delimited fields, so both visible fields are sanitized.
+  local lines = {}
+  for _, item in ipairs(items) do
+    local file = (item.file or ""):gsub("[\r\n\t]", " ")
+    local label = item.label:gsub("[\r\n\t]", " ")
+    local loc = string.format("%s:%d:%d", file, item.lnum, item.col)
+    table.insert(lines, string.format("%s\t%s\t%d", loc, label, item.index))
+  end
+
+  -- fzf-lua streams a table of strings line by line. A function source would
+  -- have to push each line through its write callback instead of returning
+  -- them, so the prepared table is passed directly.
+  fzf.fzf_exec(lines, exec_opts)
 end
 
 return M

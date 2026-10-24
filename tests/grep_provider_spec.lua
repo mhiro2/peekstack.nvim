@@ -24,6 +24,19 @@ describe("peekstack.providers.grep", function()
     vim.fn.executable = original_executable
   end)
 
+  ---Notifications emitted by peekstack itself. Neovim can deliver unrelated
+  ---warnings (e.g. about its log file) through vim.notify at any time.
+  ---@return { msg: string, level: integer }[]
+  local function peekstack_notifications()
+    local own = {}
+    for _, item in ipairs(notifications) do
+      if type(item.msg) == "string" and vim.startswith(item.msg, "[peekstack] ") then
+        table.insert(own, item)
+      end
+    end
+    return own
+  end
+
   it("parses vimgrep output with Unix paths", function()
     local output = "/tmp/sample.lua:3:5:hello"
     local items = grep._parse_output(output, vim.fn.getcwd())
@@ -35,16 +48,23 @@ describe("peekstack.providers.grep", function()
     assert.equals("hello", items[1].text)
   end)
 
-  it("parses vimgrep output with Windows drive paths", function()
+  it("parses vimgrep output with Windows drive paths using the host path rules", function()
     local output = "C:\\Users\\dev\\sample.lua:12:34:hit"
-    local items = grep._parse_output(output, vim.fn.getcwd())
+    local items = grep._parse_output(output, "/work/project")
 
     assert.equals(1, #items)
     assert.equals("grep.search", items[1].provider)
     assert.equals(11, items[1].range.start.line)
     assert.equals(33, items[1].range.start.character)
     assert.equals("hit", items[1].text)
-    assert.is_true(items[1].uri:find("sample.lua", 1, true) ~= nil)
+    if vim.fn.has("win32") == 1 then
+      -- An absolute drive path keeps its drive and directories.
+      assert.equals(vim.uri_from_fname("C:/Users/dev/sample.lua"), items[1].uri)
+    else
+      -- Elsewhere a drive prefix is not absolute: the whole name, drive colon
+      -- and backslashes included, is a file inside the search directory.
+      assert.equals("file:///work/project/C:%5cUsers%5cdev%5csample.lua", items[1].uri)
+    end
   end)
 
   it("prefers the actual file path when text also contains colon-separated numbers", function()
@@ -99,10 +119,70 @@ describe("peekstack.providers.grep", function()
       return items ~= nil
     end)
 
-    assert.equals(0, #items)
-    assert.equals(1, #notifications)
-    assert.equals(vim.log.levels.WARN, notifications[1].level)
-    assert.is_true(notifications[1].msg:find("check .gitignore/.ignore patterns or encoding", 1, true) ~= nil)
+    assert.same({}, items)
+    assert.same({
+      {
+        msg = "[peekstack] rg failed; check .gitignore/.ignore patterns or encoding: error reading .ignore: invalid UTF-8",
+        level = vim.log.levels.WARN,
+      },
+    }, peekstack_notifications())
+  end)
+
+  it("warns and returns no results without prompting when rg is missing", function()
+    local prompted = false
+    local ran = false
+    local items = nil
+
+    vim.fn.executable = function(name)
+      assert.equals("rg", name)
+      return 0
+    end
+    vim.ui.input = function()
+      prompted = true
+    end
+    vim.system = function()
+      ran = true
+    end
+
+    grep.search({}, function(result)
+      items = result
+    end)
+
+    assert.same({}, items)
+    assert.is_false(prompted)
+    assert.is_false(ran)
+    assert.same(
+      { { msg = "[peekstack] rg not found in PATH", level = vim.log.levels.WARN } },
+      peekstack_notifications()
+    )
+  end)
+
+  it("returns no results without running rg when the prompt is cancelled or empty", function()
+    vim.fn.executable = function(_)
+      return 1
+    end
+    local ran = false
+    vim.system = function()
+      ran = true
+    end
+
+    -- A cancelled prompt answers nil; an accepted blank prompt answers "".
+    for _, case in ipairs({ { answer = nil }, { answer = "" } }) do
+      local items = nil
+      vim.ui.input = function(opts, cb)
+        assert.equals("rg > ", opts.prompt)
+        cb(case.answer)
+      end
+
+      grep.search({}, function(result)
+        items = result
+      end)
+
+      assert.same({}, items)
+    end
+
+    assert.is_false(ran)
+    assert.same({}, peekstack_notifications())
   end)
 
   describe("working directory", function()

@@ -347,7 +347,9 @@ Diagnostics:
     diagnostics.in_buffer      all diagnostics in the current buffer
 
 File:
-    file.under_cursor          file path under cursor
+    file.under_cursor          file path under cursor; a path:line[:col]
+                               suffix opens at that position, also inside
+                               quotes, brackets or Markdown links
 
 Grep (requires rg):
     grep.search                prompts for a ripgrep query

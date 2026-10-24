@@ -95,31 +95,6 @@ describe("peekstack.persist.sessions", function()
     return result or { version = 2, sessions = {} }
   end
 
-  ---@param scope string
-  ---@param predicate fun(data: PeekstackStoreData): boolean
-  local function wait_for_store(scope, predicate)
-    local satisfied = false
-    local in_flight = false
-    local ok = vim.wait(wait_timeout_ms, function()
-      if satisfied then
-        return true
-      end
-      if not in_flight then
-        in_flight = true
-        store.read(fs.scope_path(scope), {
-          on_done = function(data)
-            if predicate(data) then
-              satisfied = true
-            end
-            in_flight = false
-          end,
-        })
-      end
-      return satisfied
-    end, wait_interval_ms)
-    assert.is_true(ok, "Timed out waiting for store update")
-  end
-
   ---@param name string
   ---@param present boolean
   ---@return table<string, PeekstackSession>
@@ -513,15 +488,17 @@ describe("peekstack.persist.sessions", function()
           saved = success
         end,
       })
-      vim.wait(wait_timeout_ms, function()
+      local waited = vim.wait(wait_timeout_ms, function()
         return saved ~= nil
       end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for save: " .. name)
       return saved
     end
 
     for _, case in ipairs({
       { name = "corrupt JSON", content = '{"version": 2, "sessions": {"keep": ' },
       { name = "an unknown version", content = '{"version":99,"sessions":{"keep":{}}}' },
+      { name = "a store without a version", content = '{"sessions":{"keep":{"items":[]}}}' },
       { name = "a JSON value that is not an object", content = "[1, 2]" },
     }) do
       it("should not overwrite " .. case.name, function()
@@ -559,7 +536,9 @@ describe("peekstack.persist.sessions", function()
         assert.is_false(save("sync_overwrite", { sync = true }))
         persist.delete_session("keep")
         persist.rename_session("keep", "renamed")
-        vim.wait(100)
+        -- Updates run in order, so once this save is done the delete and the
+        -- rename have run too, all while reads still fail.
+        assert.is_false(save("after_queue"))
       end)
       vim.uv.fs_read = original_fs_read
       if not ok then
@@ -782,10 +761,47 @@ describe("peekstack.persist.sessions", function()
     vim.notify = original_notify
   end)
 
-  it("should handle non-existent sessions gracefully", function()
-    persist.restore("non_existent")
-    -- Should not error
-  end)
+  for _, silent in ipairs({ false, true }) do
+    local mode = silent and "silently" or "with a notification"
+    it("should report a missing session as not restored " .. mode, function()
+      local existing = push_popup("missing_restore_existing", { title = "Existing" })
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg)
+        if vim.startswith(msg, "[peekstack]") then
+          messages[#messages + 1] = msg
+        end
+      end
+      local restored = nil
+      local ok, err = pcall(function()
+        persist.restore("non_existent", {
+          silent = silent,
+          on_done = function(result)
+            restored = result
+          end,
+        })
+        local waited = vim.wait(wait_timeout_ms, function()
+          return restored ~= nil
+        end, wait_interval_ms)
+        assert.is_true(waited, "Timed out waiting for restore callback")
+      end)
+      vim.notify = original_notify
+      if not ok then
+        error(err)
+      end
+
+      assert.is_false(restored)
+      local popups = stack.list()
+      assert.equals(1, #popups)
+      assert.equals(existing.model.id, popups[1].id)
+      if silent then
+        assert.same({}, messages)
+      else
+        assert.same({ "[peekstack] No saved session: non_existent" }, messages)
+      end
+    end)
+  end
 
   it("should batch reflow when restoring a session", function()
     local original_push = stack.push
@@ -940,55 +956,74 @@ describe("peekstack.persist.sessions", function()
     assert.is_false(restore_done)
   end)
 
-  it("should migrate version 1 to version 2 schema", function()
-    -- Write version 1 data
-    local v1_data = {
+  it("should list and restore a version 1 store as the default session", function()
+    local path = make_file("legacy_v1", { "line1", "line2" })
+    write_and_wait(test_scope, {
       version = 1,
       items = {
         {
-          uri = "file:///test.lua",
-          range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 10 } },
-          title = "Test",
+          uri = vim.uri_from_fname(path),
+          range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 1 } },
+          title = "Legacy",
           provider = "test",
-          ts = os.time(),
+          ts = 1,
         },
       },
-    }
-    write_and_wait(test_scope, v1_data)
+    })
+    persist._reset_cache()
 
-    wait_for_store(test_scope, function(read_data)
-      return read_data.version == 1 and type(read_data.items) == "table"
-    end)
+    local sessions = persist.list_sessions({ silent = true })
+    assert.same({ "default" }, vim.tbl_keys(sessions))
+    assert.equals(1, #sessions.default.items)
+    assert.equals("Legacy", sessions.default.items[1].title)
 
-    -- Read and ensure migration
-    local migrated = migrate.ensure(read_and_wait(test_scope))
+    local restored = nil
+    persist.restore(nil, {
+      silent = true,
+      on_done = function(result)
+        restored = result
+      end,
+    })
+    local waited = vim.wait(wait_timeout_ms, function()
+      return restored ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for restore callback")
+    assert.is_true(restored)
 
-    assert.equals(2, migrated.version)
-    assert.is_not_nil(migrated.sessions)
-    assert.is_not_nil(migrated.sessions.default)
-    assert.is_not_nil(migrated.sessions.default.items)
-    assert.equals(1, #migrated.sessions.default.items)
+    local popups = stack.list()
+    assert.equals(1, #popups)
+    assert.equals(vim.uri_from_fname(path), popups[1].location.uri)
+    assert.equals(1, popups[1].location.range.start.line)
+    assert.equals("Legacy", popups[1].title)
   end)
 
   it("should always use repo storage when saving", function()
-    config.setup({ persist = { enabled = true, max_items = 200 } })
+    local saved = nil
+    persist.save_current("scoped_session", {
+      silent = true,
+      on_done = function(success)
+        saved = success
+      end,
+    })
+    local waited = vim.wait(wait_timeout_ms, function()
+      return saved ~= nil
+    end, wait_interval_ms)
+    assert.is_true(waited, "Timed out waiting for save")
+    assert.is_true(saved)
 
-    write_and_wait("global", { version = 2, sessions = {} })
-    write_and_wait("repo", { version = 2, sessions = {} })
-
-    persist.save_current("scoped_session", { silent = true })
-
-    wait_for_store("repo", function(read_data)
-      local ensured = migrate.ensure(read_data)
-      return ensured.sessions.scoped_session ~= nil
-    end)
-
-    local repo_data = migrate.ensure(read_and_wait("repo"))
-    local global_data = migrate.ensure(read_and_wait("global"))
-    assert.is_not_nil(repo_data.sessions.scoped_session)
-    assert.is_nil(global_data.sessions.scoped_session)
-
-    write_and_wait("global", { version = 2, sessions = {} })
+    -- The save lands in the repository's store and in no other store file.
+    local repo_path = fs.scope_path("repo")
+    local base = vim.fs.dirname(repo_path)
+    local holders = {}
+    for _, name in ipairs(vim.fn.readdir(base)) do
+      if name:match("%.json$") then
+        local data = store.read_sync(base .. "/" .. name)
+        if data and data.sessions and data.sessions.scoped_session then
+          holders[#holders + 1] = base .. "/" .. name
+        end
+      end
+    end
+    assert.same({ repo_path }, holders)
   end)
 
   it("should use root_winid when saving", function()
@@ -1013,56 +1048,63 @@ describe("peekstack.persist.sessions", function()
     stack.current_stack(winid1).popups = { popup(1, "file:///tmp/a.lua") }
     stack.current_stack(winid2).popups = { popup(2, "file:///tmp/b.lua"), popup(3, "file:///tmp/c.lua") }
 
-    persist.save_current("root_specific", { root_winid = winid2, silent = true })
-
-    wait_for_store(test_scope, function(read_data)
-      local ensured = migrate.ensure(read_data)
-      return ensured.sessions.root_specific
-        and ensured.sessions.root_specific.items
-        and #ensured.sessions.root_specific.items == 2
+    local saved = nil
+    local ok, err = pcall(function()
+      persist.save_current("root_specific", {
+        root_winid = winid2,
+        silent = true,
+        on_done = function(success)
+          saved = success
+        end,
+      })
+      local waited = vim.wait(wait_timeout_ms, function()
+        return saved ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for save")
     end)
+    vim.api.nvim_win_close(winid2, true)
+    stack._reset()
+    if not ok then
+      error(err)
+    end
 
+    assert.is_true(saved)
     local data = migrate.ensure(read_and_wait(test_scope))
     assert.equals(2, #data.sessions.root_specific.items)
     assert.equals("file:///tmp/b.lua", data.sessions.root_specific.items[1].uri)
     assert.equals("file:///tmp/c.lua", data.sessions.root_specific.items[2].uri)
-
-    vim.api.nvim_win_close(winid2, true)
-    stack._reset()
   end)
 
-  it("should suppress notifications when silent", function()
+  it("should suppress the save notification when silent", function()
     local original_notify = vim.notify
     local notifications = {}
     vim.notify = function(msg)
-      table.insert(notifications, msg)
+      if vim.startswith(msg, "[peekstack]") then
+        table.insert(notifications, msg)
+      end
     end
 
     local save_done = nil
-    local restore_done = nil
+    local ok, err = pcall(function()
+      persist.save_current("silent_session", {
+        silent = true,
+        on_done = function(success)
+          save_done = success
+        end,
+      })
 
-    persist.save_current("silent_session", {
-      silent = true,
-      on_done = function(success)
-        save_done = success
-      end,
-    })
-    persist.restore("missing_session", {
-      silent = true,
-      on_done = function(restored)
-        restore_done = restored
-      end,
-    })
-
-    local waited = vim.wait(wait_timeout_ms, function()
-      return save_done ~= nil and restore_done ~= nil
-    end, wait_interval_ms)
-    assert.is_true(waited, "Timed out waiting for silent persist callbacks")
-    assert.is_true(save_done)
-    assert.is_false(restore_done)
-    assert.is_false(vim.list_contains(notifications, "[peekstack] Session saved: silent_session"))
-    assert.is_false(vim.list_contains(notifications, "[peekstack] No saved session: missing_session"))
+      local waited = vim.wait(wait_timeout_ms, function()
+        return save_done ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for silent save callback")
+    end)
     vim.notify = original_notify
+    if not ok then
+      error(err)
+    end
+
+    assert.is_true(save_done)
+    assert.same({}, notifications)
   end)
 
   it("should save pinned and buffer_mode in session items", function()
@@ -1564,19 +1606,29 @@ describe("peekstack.persist.sessions", function()
     }
 
     stack_view.open()
-    persist.save_current("stack_view_active")
-
-    wait_for_store(test_scope, function(read_data)
-      local ensured = migrate.ensure(read_data)
-      return ensured.sessions.stack_view_active
-        and ensured.sessions.stack_view_active.items
-        and #ensured.sessions.stack_view_active.items == 1
+    local saved = nil
+    local ok, err = pcall(function()
+      persist.save_current("stack_view_active", {
+        silent = true,
+        on_done = function(success)
+          saved = success
+        end,
+      })
+      local waited = vim.wait(wait_timeout_ms, function()
+        return saved ~= nil
+      end, wait_interval_ms)
+      assert.is_true(waited, "Timed out waiting for save")
     end)
+    stack_view.toggle()
+    if not ok then
+      error(err)
+    end
+
+    assert.is_true(saved)
     local data = migrate.ensure(read_and_wait(test_scope))
     assert.is_not_nil(data.sessions.stack_view_active)
     assert.equals(1, #data.sessions.stack_view_active.items)
-
-    stack_view.toggle()
+    assert.equals("file:///tmp/test.lua", data.sessions.stack_view_active.items[1].uri)
   end)
 
   it("should not update cache when sync save write fails", function()
@@ -1611,6 +1663,12 @@ describe("peekstack.persist.sessions", function()
 
   it("should not update cache when async save write fails", function()
     push_popup("write_fail_async", { title = "Async fail" })
+    -- Load the cache with what is on disk, so a cache written with the failed
+    -- payload would show up in the synchronous list below.
+    persist.save_current("cached", { silent = true, sync = true })
+    assert.same({ "cached" }, vim.tbl_keys(persist.list_sessions({ silent = true })))
+    local path = fs.scope_path(test_scope)
+    local before = table.concat(vim.fn.readfile(path, "b"), "\n")
 
     local original_write = store.write
     local ok, err = pcall(function()
@@ -1635,19 +1693,6 @@ describe("peekstack.persist.sessions", function()
       end, wait_interval_ms)
       assert.is_true(waited, "Timed out waiting for save callback")
       assert.is_false(saved)
-
-      local listed = nil
-      persist.list_sessions({
-        silent = true,
-        on_done = function(sessions)
-          listed = sessions
-        end,
-      })
-      local list_waited = vim.wait(wait_timeout_ms, function()
-        return listed ~= nil
-      end, wait_interval_ms)
-      assert.is_true(list_waited, "Timed out waiting for list callback")
-      assert.is_nil(listed["write_fail_async_session"])
     end)
 
     store.write = original_write
@@ -1655,6 +1700,10 @@ describe("peekstack.persist.sessions", function()
     if not ok then
       error(err)
     end
+
+    -- The synchronous list returns the cache as is, without reading the disk.
+    assert.same({ "cached" }, vim.tbl_keys(persist.list_sessions({ silent = true })))
+    assert.equals(before, table.concat(vim.fn.readfile(path, "b"), "\n"))
   end)
 
   it("should not update cache when delete write fails", function()
